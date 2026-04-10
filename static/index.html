@@ -31,6 +31,15 @@ html,body{background:var(--bg);color:var(--text);font-family:Helvetica,Arial,san
 .nav-child.active{color:var(--green);font-weight:600}
 #content{flex:1;padding:20px 20px;min-width:0}
 #cards-grid{display:none;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:14px}
+#cards-grid.list-view{grid-template-columns:1fr;gap:8px}
+#cards-grid.list-view .market-card{flex-direction:row;align-items:center;gap:12px;padding:10px 14px}
+#cards-grid.list-view .card-top{flex-shrink:0;width:120px;flex-direction:column;align-items:flex-start}
+#cards-grid.list-view .card-icon{display:none}
+#cards-grid.list-view .card-title{flex:1;font-size:13px}
+#cards-grid.list-view .card-ticker{flex-shrink:0}
+#cards-grid.list-view .outcome-row{border-top:none;padding:0}
+#layout-toggle{background:transparent;border:1px solid var(--border);color:var(--text-dim);padding:7px 10px;border-radius:6px;font-size:13px;cursor:pointer;font-family:inherit;display:flex;align-items:center;gap:5px;flex-shrink:0}
+#layout-toggle:hover{border-color:var(--green);color:var(--green)}
 .market-card{background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:14px;display:flex;flex-direction:column;gap:8px}
 .market-card:hover{border-color:#333}
 .card-top{display:flex;justify-content:space-between;align-items:flex-start;gap:8px}
@@ -88,6 +97,13 @@ html,body{background:var(--bg);color:var(--text);font-family:Helvetica,Arial,san
       <option value="earliest">Earliest first</option>
       <option value="latest">Latest first</option>
     </select>
+    <button id="layout-toggle" title="Toggle layout">
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+        <rect x="1" y="1" width="14" height="4" rx="1"/>
+        <rect x="1" y="7" width="14" height="4" rx="1"/>
+        <rect x="1" y="13" width="14" height="2" rx="1"/>
+      </svg>
+    </button>
   </div>
   <div id="cat-tabs"></div>
 </div>
@@ -108,7 +124,7 @@ html,body{background:var(--bg);color:var(--text);font-family:Helvetica,Arial,san
 var state = {
   category: null, sport: null, soccerComp: null,
   search: "", dateFilter: "all", dateFrom: "", dateTo: "",
-  sort: "earliest",
+  sort: "earliest", layout: "grid",
   offset: 0, total: 0, loading: false, allLoaded: false,
   categories: [], sports: [], soccerComps: []
 };
@@ -443,6 +459,20 @@ document.getElementById("sort-sel").addEventListener("change", function(e) {
   state.offset = 0; state.allLoaded = false;
   document.getElementById("cards-grid").innerHTML = "";
   loadMore();
+});
+
+document.getElementById("layout-toggle").addEventListener("click", function() {
+  var grid = document.getElementById("cards-grid");
+  var btn = document.getElementById("layout-toggle");
+  if (state.layout === "grid") {
+    state.layout = "list";
+    grid.classList.add("list-view");
+    btn.innerHTML = '<svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><rect x="1" y="1" width="6" height="6" rx="1"/><rect x="9" y="1" width="6" height="6" rx="1"/><rect x="1" y="9" width="6" height="6" rx="1"/><rect x="9" y="9" width="6" height="6" rx="1"/></svg>';
+  } else {
+    state.layout = "grid";
+    grid.classList.remove("list-view");
+    btn.innerHTML = '<svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><rect x="1" y="1" width="14" height="4" rx="1"/><rect x="1" y="7" width="14" height="4" rx="1"/><rect x="1" y="13" width="14" height="2" rx="1"/></svg>';
+  }
 });
 
 boot();
