@@ -383,6 +383,13 @@ def get_sports():
     sports.sort(key=lambda x: list(_SPORT_SERIES.keys()).index(x["name"]) if x["name"] in _SPORT_SERIES else 99)
     return {"sports": sports, "soccer_comps": sorted(soccer_comps)}
 
+@app.get("/api/meta")
+def get_meta():
+    """Fast endpoint - returns static categories and sports list without waiting for data fetch."""
+    sports_list = [{"name": k, "count": 0, "icon": SPORT_ICONS.get(k,"🏆"), "subtabs": []} for k in _SPORT_SERIES.keys()]
+    cats_list = [{"name": c, "count": 0} for c in TOP_CATS]
+    return {"categories": cats_list, "sports": sports_list, "soccer_comps": []}
+
 @app.get("/api/categories")
 def get_categories():
     records = get_data()
