@@ -8,10 +8,10 @@
 *{box-sizing:border-box;margin:0;padding:0}
 :root{--bg:#000;--bg2:#0a0a0a;--bg3:#111;--border:#1a1a1a;--green:#00ff00;--green-dim:#00aa00;--green-bg:#001500;--red:#ff3333;--text:#fff;--text-dim:#888;--text-muted:#444}
 html,body{height:100%;background:var(--bg);color:var(--text);font-family:Helvetica,Arial,sans-serif}
-#header{position:sticky;top:0;z-index:100;background:rgba(0,0,0,0.95);border-bottom:1px solid var(--border);padding:12px 24px 0}
+#header{position:sticky;top:0;z-index:100;background:rgba(0,0,0,0.95);border-bottom:1px solid var(--border);padding:8px 24px 0}
 #logo{font-size:2.4rem;font-weight:900;color:var(--green);text-align:center;padding:8px 0 12px}
-#controls{display:flex;gap:10px;align-items:center;padding-bottom:10px;flex-wrap:wrap}
-#search-input{flex:1;min-width:200px;background:var(--bg2);border:1px solid var(--border);color:var(--text);padding:8px 14px;border-radius:6px;font-size:13px;outline:none;font-family:inherit}
+#controls{display:flex;gap:8px;align-items:center;padding-bottom:10px}
+#search-input{flex:1;min-width:0;background:var(--bg2);border:1px solid var(--border);color:var(--text);padding:8px 14px;border-radius:6px;font-size:13px;outline:none;font-family:inherit}
 #search-input:focus{border-color:var(--green)}
 #search-input::placeholder{color:var(--text-muted)}
 #date-sel{background:var(--bg2);border:1px solid var(--border);color:var(--text);padding:8px 12px;border-radius:6px;font-size:13px;font-family:inherit;outline:none;cursor:pointer}
@@ -68,7 +68,7 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:Helveti
 <div id="header">
   <div id="logo">OddsIQ</div>
   <div id="controls">
-    <input id="search-input" type="text" placeholder="Search team, player, market...">
+    <input id="search-input" type="text" placeholder="&#128269;  Search team, player, market...">
     <select id="date-sel">
       <option value="all">All dates</option>
       <option value="today">Today</option>
