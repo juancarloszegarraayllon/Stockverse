@@ -354,10 +354,17 @@ def get_data():
         game_date = parse_game_date_from_ticker(event_ticker)
         exp_dt   = safe_dt(first_mk.get("expected_expiration_time"))
         close_dt = safe_dt(first_mk.get("close_time"))
+        open_dt  = safe_dt(first_mk.get("open_time"))
         kickoff_dt = None
         if game_date and sport and sport in DURATION:
-            if exp_dt: kickoff_dt = exp_dt - DURATION[sport]
-            elif close_dt: kickoff_dt = close_dt - DURATION[sport]
+            # Prefer open_time as kickoff (most accurate)
+            # Fall back to expiration - duration estimate
+            if open_dt and open_dt.date() == game_date:
+                kickoff_dt = open_dt
+            elif exp_dt:
+                kickoff_dt = exp_dt - DURATION[sport]
+            elif close_dt:
+                kickoff_dt = close_dt - DURATION[sport]
         sort_dt = game_date if game_date else (close_dt.date() if close_dt else None)
         outcomes = []
         for mk in mkts:
