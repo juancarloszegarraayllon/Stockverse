@@ -182,8 +182,10 @@ function selectCat(key) {
   state.category = key;
   state.sport = null;
   state.soccerComp = null;
+  state.search = "";
   state.offset = 0;
   state.allLoaded = false;
+  document.getElementById("search-input").value = "";
   renderCatTabs();
   renderNav();
   if (key === null) {
@@ -202,7 +204,7 @@ function selectCat(key) {
 
 function renderNav() {
   var nav = document.getElementById("nav");
-  if (state.category !== "Sports") { nav.style.display = "none"; return; }
+  if (state.category !== "Sports" || state.search) { nav.style.display = "none"; return; }
   nav.style.display = "block";
   nav.innerHTML = "";
 
@@ -255,6 +257,10 @@ function selectSport(name) {
   state.soccerComp = null;
   state.offset = 0;
   state.allLoaded = false;
+  state.category = "Sports";
+  renderCatTabs();
+  document.getElementById("home-screen").style.display = "none";
+  document.getElementById("cards-grid").style.display = "grid";
   document.getElementById("cards-grid").innerHTML = "";
   renderNav();
   loadMore();
@@ -357,13 +363,22 @@ document.getElementById("search-input").addEventListener("input", function(e) {
     state.allLoaded = false;
     // When searching, show results across all categories
     if (state.search) {
+      // Search across all - don't filter by category or sport
       state.category = "All";
       state.sport = null;
       state.soccerComp = null;
-      renderCatTabs();
-      renderNav();
+    } else {
+      // Search cleared - go back to home
+      state.category = null;
+    }
+    renderCatTabs();
+    renderNav();
+    if (state.search) {
       document.getElementById("home-screen").style.display = "none";
       document.getElementById("cards-grid").style.display = "grid";
+    } else {
+      document.getElementById("home-screen").style.display = "flex";
+      document.getElementById("cards-grid").style.display = "none";
     }
     document.getElementById("cards-grid").innerHTML = "";
     loadMore();
