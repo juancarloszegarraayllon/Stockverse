@@ -338,10 +338,10 @@ def get_data():
         lambda r: SOCCER_COMP.get(r["_series"],"Other") if r["_sport"]=="Soccer" else "", axis=1)
 
     DURATION = {
-        "Soccer": timedelta(hours=3), "Baseball": timedelta(hours=4),
-        "Basketball": timedelta(hours=3, minutes=30),
-        "Hockey": timedelta(hours=3, minutes=30),
-        "Football": timedelta(hours=4), "Cricket": timedelta(hours=5),
+        "Soccer": timedelta(hours=1), "Baseball": timedelta(hours=2),
+        "Basketball": timedelta(hours=1, minutes=30),
+        "Hockey": timedelta(hours=1, minutes=30),
+        "Football": timedelta(hours=2), "Cricket": timedelta(hours=3),
     }
 
     def extract(row):
@@ -357,8 +357,10 @@ def get_data():
         open_dt  = safe_dt(first_mk.get("open_time"))
         kickoff_dt = None
         if game_date and sport and sport in DURATION:
-            # Use close_time - duration to estimate kickoff
-            # close_time includes ~1hr buffer after game end on Kalshi
+            # Log raw times to debug offset
+            if "BELGRANO" in event_ticker.upper() or "ALDOSIVI" in event_ticker.upper():
+                import logging
+                logging.warning(f"DEBUG {event_ticker}: close_dt={close_dt}, exp_dt={exp_dt}, open_dt={open_dt}, game_date={game_date}")
             if close_dt:
                 kickoff_dt = close_dt - DURATION[sport]
             elif exp_dt:
