@@ -1,0 +1,497 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>OddsIQ</title>
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg: #000;
+  --bg2: #0a0a0a;
+  --bg3: #111;
+  --border: #1a1a1a;
+  --green: #00ff00;
+  --green-dim: #00aa00;
+  --green-bg: #001500;
+  --red: #ff3333;
+  --red-bg: #150000;
+  --text: #ffffff;
+  --text-dim: #888;
+  --text-muted: #444;
+  --yes-bg: #001a00;
+  --no-bg: #1a0000;
+}
+
+html, body { height: 100%; background: var(--bg); color: var(--text); font-family: Helvetica, Arial, sans-serif; overflow-x: hidden; }
+
+/* ── Header ── */
+#header {
+  position: sticky; top: 0; z-index: 100;
+  background: rgba(0,0,0,0.95); backdrop-filter: blur(8px);
+  border-bottom: 1px solid var(--border);
+  padding: 12px 24px 0;
+}
+#logo {
+  font-size: 2.4rem; font-weight: 900; color: var(--green);
+  letter-spacing: -1px; text-align: center; padding: 8px 0 12px;
+  font-family: Helvetica, Arial, sans-serif;
+}
+#controls {
+  display: flex; gap: 10px; align-items: center; padding-bottom: 10px; flex-wrap: wrap;
+}
+#search-input {
+  flex: 1; min-width: 200px; background: var(--bg2); border: 1px solid var(--border);
+  color: var(--text); padding: 8px 14px; border-radius: 6px; font-size: 13px;
+  outline: none; font-family: inherit;
+}
+#search-input:focus { border-color: var(--green); }
+#search-input::placeholder { color: var(--text-muted); }
+#date-sel {
+  background: var(--bg2); border: 1px solid var(--border); color: var(--text);
+  padding: 8px 12px; border-radius: 6px; font-size: 13px; font-family: inherit;
+  outline: none; cursor: pointer;
+}
+#date-sel:focus { border-color: var(--green); }
+#undated-label {
+  display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-dim);
+  cursor: pointer; white-space: nowrap;
+}
+#undated-toggle {
+  width: 32px; height: 18px; appearance: none; background: var(--bg3);
+  border: 1px solid var(--border); border-radius: 9px; cursor: pointer;
+  position: relative; transition: background 0.2s;
+}
+#undated-toggle:checked { background: var(--green); border-color: var(--green); }
+#undated-toggle::after {
+  content: ''; position: absolute; top: 2px; left: 2px;
+  width: 12px; height: 12px; background: #fff; border-radius: 50%; transition: left 0.2s;
+}
+#undated-toggle:checked::after { left: 16px; }
+#refresh-btn {
+  background: transparent; border: 1px solid var(--border); color: var(--text-dim);
+  padding: 8px 14px; border-radius: 6px; font-size: 13px; cursor: pointer; font-family: inherit;
+  transition: border-color 0.2s, color 0.2s;
+}
+#refresh-btn:hover { border-color: var(--green); color: var(--green); }
+
+/* ── Category tabs ── */
+#cat-tabs {
+  display: flex; gap: 0; border-bottom: 1px solid var(--green);
+  overflow-x: auto; scrollbar-width: none;
+}
+#cat-tabs::-webkit-scrollbar { display: none; }
+.cat-tab {
+  padding: 8px 16px; font-size: 12px; color: var(--text-muted);
+  cursor: pointer; border: none; background: transparent; font-family: inherit;
+  white-space: nowrap; border-bottom: 2px solid transparent;
+  transition: color 0.2s; margin-bottom: -1px;
+}
+.cat-tab:hover { color: var(--text); }
+.cat-tab.active { color: var(--green); background: var(--green-bg); border-radius: 6px 6px 0 0; border-bottom: 2px solid var(--green); }
+
+/* ── Main layout ── */
+#main { display: flex; min-height: calc(100vh - 140px); }
+
+/* ── Nav ── */
+#nav {
+  width: 200px; min-width: 200px; padding: 12px 8px;
+  position: sticky; top: 140px; height: calc(100vh - 140px);
+  overflow-y: auto; border-right: 1px solid var(--border);
+  scrollbar-width: thin; scrollbar-color: var(--border) transparent;
+}
+#nav::-webkit-scrollbar { width: 4px; }
+#nav::-webkit-scrollbar-track { background: transparent; }
+#nav::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+.nav-item {
+  display: block; width: 100%; background: transparent; border: none;
+  color: var(--text); font-family: inherit; font-size: 13px;
+  text-align: left; padding: 5px 6px; cursor: pointer;
+  border-radius: 4px; transition: color 0.15s; line-height: 1.4;
+}
+.nav-item:hover { color: var(--text-dim); }
+.nav-item.active { color: var(--green); font-weight: 700; }
+
+.nav-child {
+  display: block; width: 100%; background: transparent; border: none;
+  color: var(--text-muted); font-family: inherit; font-size: 12px;
+  text-align: left; padding: 3px 6px 3px 18px; cursor: pointer;
+  border-radius: 4px; transition: color 0.15s; line-height: 1.4;
+}
+.nav-child:hover { color: var(--text-dim); }
+.nav-child.active { color: var(--green); font-weight: 600; }
+
+/* ── Cards ── */
+#content { flex: 1; padding: 16px 20px; min-width: 0; }
+
+#cards-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 14px;
+}
+
+.market-card {
+  background: var(--bg2); border: 1px solid var(--border);
+  border-radius: 10px; padding: 14px; display: flex;
+  flex-direction: column; gap: 8px;
+  transition: border-color 0.2s, transform 0.15s;
+  animation: fadeIn 0.3s ease;
+}
+.market-card:hover { border-color: #333; transform: translateY(-1px); }
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.card-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; }
+.cat-pill {
+  font-size: 10px; font-weight: 700; text-transform: uppercase;
+  letter-spacing: 0.5px; color: var(--text-dim);
+}
+.card-date { font-size: 11px; color: var(--text-muted); white-space: nowrap; }
+.card-icon { font-size: 20px; }
+.card-title { font-size: 13px; font-weight: 600; line-height: 1.4; color: var(--text); }
+.card-ticker a {
+  font-size: 10px; color: var(--text-muted); text-decoration: none;
+  font-family: monospace; letter-spacing: 0.3px;
+}
+.card-ticker a:hover { color: var(--green); }
+
+.outcome-row {
+  display: flex; align-items: center; gap: 6px;
+  padding: 4px 0; border-top: 1px solid var(--border);
+}
+.outcome-label { flex: 1; font-size: 11px; color: var(--text-dim); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.outcome-chance { font-size: 11px; color: var(--text-dim); width: 32px; text-align: right; flex-shrink: 0; }
+.outcome-odds { display: flex; gap: 4px; flex-shrink: 0; }
+.odds-box {
+  display: flex; flex-direction: column; align-items: center;
+  padding: 3px 6px; border-radius: 4px; min-width: 36px;
+}
+.odds-yes { background: var(--yes-bg); border: 1px solid #003300; }
+.odds-no  { background: var(--no-bg);  border: 1px solid #330000; }
+.odds-label { font-size: 8px; font-weight: 700; letter-spacing: 0.5px; }
+.odds-yes .odds-label { color: var(--green-dim); }
+.odds-no  .odds-label { color: var(--red); }
+.odds-price { font-size: 11px; font-weight: 700; }
+.odds-yes .odds-price { color: var(--green); }
+.odds-no  .odds-price { color: var(--red); }
+
+/* ── Status ── */
+#status {
+  text-align: center; padding: 40px 20px; color: var(--text-muted); font-size: 14px;
+}
+#loader {
+  display: flex; justify-content: center; padding: 20px;
+}
+.spinner {
+  width: 24px; height: 24px; border: 2px solid var(--border);
+  border-top-color: var(--green); border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+#sentinel { height: 40px; }
+#count-bar {
+  text-align: center; font-size: 11px; color: var(--text-muted); padding: 8px 0;
+}
+
+/* Home screen */
+#home-screen {
+  display: flex; flex-direction: column; align-items: center;
+  justify-content: center; min-height: 60vh; gap: 12px;
+}
+#home-screen h2 { font-size: 1.4rem; color: var(--green); font-weight: 700; }
+#home-screen p  { font-size: 14px; color: var(--text-muted); }
+</style>
+</head>
+<body>
+
+<div id="header">
+  <div id="logo">OddsIQ</div>
+  <div id="controls">
+    <input id="search-input" type="text" placeholder="🔍  Search team, player, market…">
+    <select id="date-sel">
+      <option value="all">All dates</option>
+      <option value="today">Today</option>
+      <option value="week">This week</option>
+    </select>
+    <label id="undated-label">
+      <input type="checkbox" id="undated-toggle" checked>
+      Include undated
+    </label>
+    <button id="refresh-btn">Refresh</button>
+  </div>
+  <div id="cat-tabs"></div>
+</div>
+
+<div id="main">
+  <div id="nav" style="display:none"></div>
+  <div id="content">
+    <div id="home-screen">
+      <h2>Welcome to OddsIQ</h2>
+      <p>Select a category above to browse markets.</p>
+    </div>
+    <div id="cards-grid" style="display:none"></div>
+    <div id="loader" style="display:none"><div class="spinner"></div></div>
+    <div id="count-bar"></div>
+    <div id="sentinel"></div>
+  </div>
+</div>
+
+<script>
+const API = '';  // same origin
+
+// ── State ──────────────────────────────────────────────────────────────────────
+let state = {
+  category: null,
+  sport: null,
+  soccerComp: null,
+  search: '',
+  dateFilter: 'all',
+  includeUndated: true,
+  offset: 0,
+  total: 0,
+  loading: false,
+  allLoaded: false,
+  categories: [],
+  sports: [],
+  soccerComps: [],
+};
+
+// ── Boot ───────────────────────────────────────────────────────────────────────
+async function boot() {
+  const [catRes, sportRes] = await Promise.all([
+    fetch(`${API}/api/categories`).then(r=>r.json()),
+    fetch(`${API}/api/sports`).then(r=>r.json()),
+  ]);
+  state.categories = catRes.categories || [];
+  state.sports     = sportRes.sports   || [];
+  state.soccerComps= sportRes.soccer_comps || [];
+  renderCatTabs();
+}
+
+// ── Category tabs ──────────────────────────────────────────────────────────────
+function renderCatTabs() {
+  const el = document.getElementById('cat-tabs');
+  const tabs = [
+    { label: '', key: null },
+    { label: 'All', key: 'All' },
+    ...state.categories.map(c => ({ label: c.name, key: c.name }))
+  ];
+  el.innerHTML = tabs.map(t =>
+    `<button class="cat-tab${state.category === t.key && t.key !== null ? ' active' : t.key === null && state.category === null ? ' active' : ''}"
+      onclick="selectCat(${JSON.stringify(t.key)})">${t.label}</button>`
+  ).join('');
+}
+
+function selectCat(key) {
+  state.category = key;
+  state.sport = null;
+  state.soccerComp = null;
+  state.offset = 0;
+  state.allLoaded = false;
+  renderCatTabs();
+  renderNav();
+
+  if (key === null) {
+    document.getElementById('home-screen').style.display = 'flex';
+    document.getElementById('cards-grid').style.display = 'none';
+    document.getElementById('nav').style.display = 'none';
+    document.getElementById('count-bar').textContent = '';
+    return;
+  }
+  document.getElementById('home-screen').style.display = 'none';
+  document.getElementById('cards-grid').style.display = 'grid';
+  document.getElementById('cards-grid').innerHTML = '';
+  loadMore();
+}
+
+// ── Nav (Sports) ───────────────────────────────────────────────────────────────
+function renderNav() {
+  const nav = document.getElementById('nav');
+  if (state.category !== 'Sports') {
+    nav.style.display = 'none';
+    return;
+  }
+  nav.style.display = 'block';
+  const selSport = state.sport;
+  const selComp  = state.soccerComp;
+  let html = '';
+
+  // All sports
+  html += `<button class="nav-item${!selSport ? ' active' : ''}" onclick="selectSport(null)">All sports (${state.sports.reduce((a,s)=>a+s.count,0)})</button>`;
+
+  for (const s of state.sports) {
+    const isActive = selSport === s.name;
+    const arrow = isActive ? ' ▾' : ' ▸';
+    html += `<button class="nav-item${isActive ? ' active' : ''}" onclick="selectSport(${JSON.stringify(s.name)})">${s.name} (${s.count})${arrow}</button>`;
+
+    if (isActive && s.name === 'Soccer' && state.soccerComps.length) {
+      html += `<button class="nav-child${!selComp ? ' active' : ''}" onclick="selectComp(null)">All</button>`;
+      for (const comp of state.soccerComps) {
+        html += `<button class="nav-child${selComp===comp ? ' active' : ''}" onclick="selectComp(${JSON.stringify(comp)})">${selComp===comp ? '▸ ':''  }${comp}</button>`;
+      }
+    }
+  }
+  nav.innerHTML = html;
+}
+
+function selectSport(name) {
+  if (state.sport === name && name !== null) {
+    state.sport = null; // collapse
+  } else {
+    state.sport = name;
+  }
+  state.soccerComp = null;
+  state.offset = 0;
+  state.allLoaded = false;
+  document.getElementById('cards-grid').innerHTML = '';
+  renderNav();
+  loadMore();
+}
+
+function selectComp(comp) {
+  state.soccerComp = comp;
+  state.offset = 0;
+  state.allLoaded = false;
+  document.getElementById('cards-grid').innerHTML = '';
+  renderNav();
+  loadMore();
+}
+
+// ── Load cards ─────────────────────────────────────────────────────────────────
+async function loadMore() {
+  if (state.loading || state.allLoaded || state.category === null) return;
+  state.loading = true;
+  document.getElementById('loader').style.display = 'flex';
+
+  const params = new URLSearchParams({
+    offset: state.offset,
+    limit: 24,
+    date_filter: state.dateFilter,
+    include_undated: state.includeUndated,
+    sort: 'earliest',
+  });
+  if (state.category && state.category !== 'All') params.set('category', state.category);
+  if (state.sport) params.set('sport', state.sport);
+  if (state.soccerComp) params.set('soccer_comp', state.soccerComp);
+  if (state.search) params.set('search', state.search);
+
+  try {
+    const res = await fetch(`${API}/api/events?${params}`);
+    const data = await res.json();
+    state.total = data.total;
+    state.offset += data.events.length;
+    if (state.offset >= state.total) state.allLoaded = true;
+    appendCards(data.events);
+    updateCountBar();
+  } catch(e) {
+    console.error(e);
+  } finally {
+    state.loading = false;
+    document.getElementById('loader').style.display = 'none';
+  }
+}
+
+function appendCards(events) {
+  const grid = document.getElementById('cards-grid');
+  for (const ev of events) {
+    grid.insertAdjacentHTML('beforeend', buildCard(ev));
+  }
+}
+
+function buildCard(ev) {
+  const sport  = ev._sport || '';
+  const cat    = ev.category || 'Other';
+  const catMeta = {
+    'Sports':'🏟️','Elections':'🗳️','Politics':'🏛️','Economics':'📈',
+    'Financials':'💰','Crypto':'₿','Companies':'🏢','Entertainment':'🎬',
+    'Climate and Weather':'🌍','Science and Technology':'🔬',
+    'Health':'🏥','Social':'👥','World':'🌐','Transportation':'✈️','Mentions':'💬',
+  };
+  const sportIcons = {Soccer:'⚽',Basketball:'🏀',Baseball:'⚾',Football:'🏈',Hockey:'🏒',Tennis:'🎾',Golf:'⛳',MMA:'🥊',Cricket:'🏏',Esports:'🎮',Motorsport:'🏎️',Boxing:'🥊',Rugby:'🏉',Lacrosse:'🥍',Chess:'♟️',Darts:'🎯','Aussie Rules':'🏉','Other Sports':'🏆'};
+  const icon  = sport ? (sportIcons[sport] || catMeta[cat] || '📊') : (catMeta[cat] || '📊');
+  const label = sport || cat;
+  const dt    = ev._display_dt || '';
+  const ticker = ev.event_ticker || '';
+  const series = ev.series_ticker || '';
+  const url = series ? `https://kalshi.com/markets/${series.toLowerCase()}/${series.toLowerCase().replace('kx','')}/${ticker.toLowerCase()}` : '';
+
+  const outcomes = (ev.outcomes || []).slice(0,5).map(o => `
+    <div class="outcome-row">
+      <div class="outcome-label">${o.label}</div>
+      <div class="outcome-chance">${o.chance}</div>
+      <div class="outcome-odds">
+        <div class="odds-box odds-yes"><div class="odds-label">YES</div><div class="odds-price">${o.yes}</div></div>
+        <div class="odds-box odds-no"><div class="odds-label">NO</div><div class="odds-price">${o.no}</div></div>
+      </div>
+    </div>`).join('');
+
+  return `<div class="market-card">
+    <div class="card-top">
+      <span class="cat-pill">${label}</span>
+      ${dt ? `<span class="card-date">${dt}</span>` : ''}
+    </div>
+    <div class="card-icon">${icon}</div>
+    <div class="card-title">${ev.title}</div>
+    <div class="card-ticker">${url ? `<a href="${url}" target="_blank">${ticker}</a>` : `<span style="font-size:10px;color:#444;font-family:monospace">${ticker}</span>`}</div>
+    ${outcomes}
+  </div>`;
+}
+
+function updateCountBar() {
+  const bar = document.getElementById('count-bar');
+  if (state.category === null) { bar.textContent=''; return; }
+  bar.textContent = state.allLoaded
+    ? `${state.total} markets`
+    : `${state.offset} of ${state.total}`;
+}
+
+// ── Infinite scroll ────────────────────────────────────────────────────────────
+const sentinel = document.getElementById('sentinel');
+const observer = new IntersectionObserver(entries => {
+  if (entries[0].isIntersecting) loadMore();
+}, { rootMargin: '300px' });
+observer.observe(sentinel);
+
+// ── Controls ───────────────────────────────────────────────────────────────────
+let searchTimer;
+document.getElementById('search-input').addEventListener('input', e => {
+  clearTimeout(searchTimer);
+  searchTimer = setTimeout(() => {
+    state.search = e.target.value.trim();
+    state.offset = 0; state.allLoaded = false;
+    document.getElementById('cards-grid').innerHTML = '';
+    loadMore();
+  }, 350);
+});
+
+document.getElementById('date-sel').addEventListener('change', e => {
+  state.dateFilter = e.target.value;
+  state.offset = 0; state.allLoaded = false;
+  document.getElementById('cards-grid').innerHTML = '';
+  loadMore();
+});
+
+document.getElementById('undated-toggle').addEventListener('change', e => {
+  state.includeUndated = e.target.checked;
+  state.offset = 0; state.allLoaded = false;
+  document.getElementById('cards-grid').innerHTML = '';
+  loadMore();
+});
+
+document.getElementById('refresh-btn').addEventListener('click', async () => {
+  await fetch(`${API}/api/refresh`);
+  state.offset = 0; state.allLoaded = false;
+  document.getElementById('cards-grid').innerHTML = '';
+  await boot();
+  loadMore();
+});
+
+boot();
+</script>
+</body>
+</html>
