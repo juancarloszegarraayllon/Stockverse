@@ -357,15 +357,14 @@ def get_data():
         open_dt  = safe_dt(first_mk.get("open_time"))
         kickoff_dt = None
         if game_date and sport and sport in DURATION:
-            # Use expected_expiration_time - duration for kickoff estimate
-            # exp_dt is more reliable than close_dt for timing
-            if exp_dt:
+            # close_time = when Kalshi closes betting = kickoff time for live sports
+            # exp_dt = game end + buffer (too late, don't use directly)
+            if close_dt and close_dt.date() == game_date:
+                kickoff_dt = close_dt
+            elif exp_dt and exp_dt.date() == game_date:
                 kickoff_dt = exp_dt - DURATION[sport]
-            elif close_dt:
-                kickoff_dt = close_dt - DURATION[sport]
-            # Sanity check: kickoff date must match game_date from ticker
-            if kickoff_dt and kickoff_dt.date() != game_date:
-                # Date mismatch - just show the date, not the time
+            # If date mismatch (timezone edge case), try adjusting
+            if kickoff_dt and abs((kickoff_dt.date() - game_date).days) > 1:
                 kickoff_dt = None
         sort_dt = game_date if game_date else (exp_dt.date() if exp_dt else (close_dt.date() if close_dt else None))
         outcomes = []
@@ -392,8 +391,23 @@ def get_data():
             yes    = f"{int(round(yf*100))}¢"  if yf is not None else "—"
             no     = f"{int(round(nf*100))}¢"  if nf is not None else "—"
             outcomes.append({"label":label[:35],"chance":chance,"yes":yes,"no":no})
-        # For display: use kickoff_dt if valid, otherwise just game_date
-        display = fmt_date(kickoff_dt) if kickoff_dt else (game_date.strftime("%b %-d") if game_date else "")
+        # For display: show time from kickoff_dt but date from game_date (more reliable)
+        if kickoff_dt and game_date:
+            try:
+                import pytz as _pytz
+                eastern = _pytz.timezone("US/Eastern")
+                kt = kickoff_dt.astimezone(eastern)
+                hour = kt.hour % 12 or 12
+                ampm = "am" if kt.hour < 12 else "pm"
+                tz_label = kt.strftime("%Z")
+                mon = game_date.strftime("%b")
+                display = f"{mon} {game_date.day}, {hour}:{kt.strftime('%M')}{ampm} {tz_label}"
+            except:
+                display = fmt_date(kickoff_dt)
+        elif game_date:
+            display = game_date.strftime("%b %-d")
+        else:
+            display = ""
         return sort_dt, game_date, kickoff_dt, display, outcomes
 
     records = []
