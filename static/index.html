@@ -388,22 +388,29 @@ document.getElementById("search-input").addEventListener("input", function(e) {
 });
 document.getElementById("date-sel").addEventListener("change", function(e) {
   state.dateFilter = e.target.value;
+  var cd = document.getElementById("custom-dates");
+  cd.style.display = state.dateFilter === "custom" ? "flex" : "none";
+  state.offset = 0; state.allLoaded = false;
+  document.getElementById("cards-grid").innerHTML = "";
+  if (state.dateFilter !== "custom") loadMore();
+});
+document.getElementById("date-from").addEventListener("change", function(e) {
+  state.dateFrom = e.target.value;
   state.offset = 0; state.allLoaded = false;
   document.getElementById("cards-grid").innerHTML = "";
   loadMore();
 });
-document.getElementById("undated-toggle").addEventListener("change", function(e) {
-  state.includeUndated = e.target.checked;
+document.getElementById("date-to").addEventListener("change", function(e) {
+  state.dateTo = e.target.value;
   state.offset = 0; state.allLoaded = false;
   document.getElementById("cards-grid").innerHTML = "";
   loadMore();
 });
-document.getElementById("refresh-btn").addEventListener("click", function() {
-  fetch("/api/refresh").then(function() {
-    state.offset = 0; state.allLoaded = false;
-    document.getElementById("cards-grid").innerHTML = "";
-    boot().then(function() { if (state.category) loadMore(); });
-  });
+document.getElementById("sort-sel").addEventListener("change", function(e) {
+  state.sort = e.target.value;
+  state.offset = 0; state.allLoaded = false;
+  document.getElementById("cards-grid").innerHTML = "";
+  loadMore();
 });
 
 boot();
