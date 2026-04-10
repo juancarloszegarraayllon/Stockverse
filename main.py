@@ -1,6 +1,5 @@
 from fastapi import FastAPI, Query
-from fastapi.staticfiles import StaticFiles
-from fastapi.responses import HTMLResponse, FileResponse
+from fastapi.responses import HTMLResponse
 from fastapi.middleware.cors import CORSMiddleware
 import pandas as pd
 import os, time, tempfile, functools
@@ -361,8 +360,12 @@ def refresh():
     return {"ok": True}
 
 # ── Serve frontend ─────────────────────────────────────────────────────────────
-app.mount("/static", StaticFiles(directory="static"), name="static")
+import os as _os
 
-@app.get("/", response_class=HTMLResponse)
+@app.get("/", response_class=HTMLResponse)  
 def root():
-    return FileResponse("static/index.html")
+    p = _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), "static", "index.html")
+    if _os.path.exists(p):
+        with open(p, "r") as f:
+            return f.read()
+    return "<h1>static/index.html not found</h1><p>Make sure index.html is in the static/ folder</p>"
