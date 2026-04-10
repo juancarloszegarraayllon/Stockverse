@@ -355,11 +355,12 @@ def get_events(
     sport: Optional[str] = None,
     soccer_comp: Optional[str] = None,
     search: Optional[str] = None,
-    date_filter: Optional[str] = "all",  # all, today, week
-    include_undated: bool = True,
+    date_filter: Optional[str] = "all",
     sort: Optional[str] = "earliest",
+    date_from: Optional[str] = None,
+    date_to: Optional[str] = None,
     offset: int = 0,
-    limit: int = 20,
+    limit: int = 24,
 ):
     from datetime import date as _date
     records = get_data()
@@ -409,9 +410,14 @@ def get_events(
                     kd = _date.fromisoformat(kdt[:10])
                     if date_filter == "today" and kd != today: continue
                     if date_filter == "week" and not (today <= kd <= today + timedelta(days=6)): continue
+                    if date_filter == "custom":
+                        if date_from:
+                            df = _date.fromisoformat(date_from)
+                            if kd < df: continue
+                        if date_to:
+                            dt = _date.fromisoformat(date_to)
+                            if kd > dt: continue
                 except: pass
-            else:
-                if not include_undated: continue
 
         results.append(r)
 
