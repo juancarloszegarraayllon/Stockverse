@@ -296,9 +296,19 @@ def get_events(
         if sport and sport != "All sports":
             if r["_sport"] != sport: continue
 
-        # Soccer comp filter
+        # Soccer comp / subtab filter
         if soccer_comp and soccer_comp != "All":
-            if r["_soccer_comp"] != soccer_comp: continue
+            if sport == "Soccer" or r["_sport"] == "Soccer":
+                if r["_soccer_comp"] != soccer_comp: continue
+            else:
+                # Non-soccer subtab filter
+                sp = r["_sport"]
+                tabs_def = SPORT_SUBTABS.get(sp, [])
+                if tabs_def:
+                    lk = SERIES_TO_SUBTAB.get(sp, {})
+                    series = r.get("series_ticker", "").upper()
+                    subtab = lk.get(series, "Other")
+                    if subtab != soccer_comp: continue
 
         # Search
         if search:
@@ -336,13 +346,40 @@ def get_sports():
     records = get_data()
     sport_counts = {}
     soccer_comps = set()
+    sport_series = {}  # sport -> set of series tickers present in data
+
     for r in records:
         if r["_is_sport"]:
             s = r["_sport"]
             sport_counts[s] = sport_counts.get(s, 0) + 1
+            if s not in sport_series:
+                sport_series[s] = set()
+            sport_series[s].add(r["series_ticker"].upper())
             if s == "Soccer" and r["_soccer_comp"] and r["_soccer_comp"] not in ("Other",""):
                 soccer_comps.add(r["_soccer_comp"])
-    sports = [{"name":k,"count":v,"icon":SPORT_ICONS.get(k,"🏆")} for k,v in sport_counts.items() if k in _SPORT_SERIES]
+
+    sports = []
+    for k, v in sport_counts.items():
+        if k not in _SPORT_SERIES:
+            continue
+        # Build subtabs for this sport
+        subtabs = []
+        if k == "Soccer":
+            subtabs = sorted(soccer_comps)
+        else:
+            tabs_def = SPORT_SUBTABS.get(k, [])
+            if tabs_def:
+                present = sport_series.get(k, set())
+                for tab_name, series_list in tabs_def:
+                    if any(s in present for s in series_list):
+                        subtabs.append(tab_name)
+        sports.append({
+            "name": k,
+            "count": v,
+            "icon": SPORT_ICONS.get(k, "🏆"),
+            "subtabs": subtabs
+        })
+
     sports.sort(key=lambda x: list(_SPORT_SERIES.keys()).index(x["name"]) if x["name"] in _SPORT_SERIES else 99)
     return {"sports": sports, "soccer_comps": sorted(soccer_comps)}
 
