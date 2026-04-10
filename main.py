@@ -357,15 +357,24 @@ def get_data():
         open_dt  = safe_dt(first_mk.get("open_time"))
         kickoff_dt = None
         if game_date and sport and sport in DURATION:
-            # close_time = when Kalshi closes betting = kickoff time for live sports
-            # exp_dt = game end + buffer (too late, don't use directly)
+            import logging as _log
+            _log.warning(f"TIME_DEBUG {event_ticker}: game_date={game_date}, close_dt={close_dt}, exp_dt={exp_dt}, close_date={close_dt.date() if close_dt else None}")
             if close_dt and close_dt.date() == game_date:
                 kickoff_dt = close_dt
-            elif exp_dt and exp_dt.date() == game_date:
+            elif close_dt:
+                # Try converting close_dt to Eastern first, then compare
+                try:
+                    import pytz as _ptz
+                    _east = _ptz.timezone("US/Eastern")
+                    close_eastern = close_dt.astimezone(_east)
+                    _log.warning(f"TIME_DEBUG close_eastern={close_eastern}, close_eastern.date={close_eastern.date()}")
+                    if close_eastern.date() == game_date:
+                        kickoff_dt = close_dt
+                except: pass
+            if not kickoff_dt and exp_dt:
                 kickoff_dt = exp_dt - DURATION[sport]
-            # If date mismatch (timezone edge case), try adjusting
-            if kickoff_dt and abs((kickoff_dt.date() - game_date).days) > 1:
-                kickoff_dt = None
+                if kickoff_dt and abs((kickoff_dt.date() - game_date).days) > 1:
+                    kickoff_dt = None
         sort_dt = game_date if game_date else (exp_dt.date() if exp_dt else (close_dt.date() if close_dt else None))
         outcomes = []
         for mk in mkts:
