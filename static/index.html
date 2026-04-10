@@ -28,7 +28,7 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:Helveti
 .cat-tab:hover{color:var(--text)}
 .cat-tab.active{color:var(--green);background:var(--green-bg);border-radius:6px 6px 0 0;border-bottom:2px solid var(--green)}
 #main{display:flex;min-height:calc(100vh - 140px)}
-#nav{width:200px;min-width:200px;padding:12px 8px;position:sticky;top:140px;height:calc(100vh - 140px);overflow-y:auto;border-right:1px solid var(--border);scrollbar-width:thin;scrollbar-color:var(--border) transparent;display:none}
+#nav{width:200px;min-width:200px;padding:12px 8px;position:sticky;top:140px;height:calc(100vh - 140px);overflow-y:auto;border-right:1px solid var(--border);scrollbar-width:thin;scrollbar-color:var(--border) transparent;display:none;flex-shrink:0}
 .nav-item{display:block;width:100%;background:transparent;border:none;color:var(--text);font-family:inherit;font-size:13px;text-align:left;padding:5px 6px;cursor:pointer;border-radius:4px;line-height:1.4}
 .nav-item:hover{color:var(--text-dim)}
 .nav-item.active{color:var(--green);font-weight:700}
@@ -125,6 +125,19 @@ var CAT_EMOJI = {
 
 async function boot() {
   try {
+    // Step 1: Load static metadata instantly (no data fetch needed)
+    var rm = await fetch("/api/meta");
+    var dm = await rm.json();
+    state.categories = dm.categories || [];
+    state.sports = dm.sports || [];
+    state.soccerComps = dm.soccer_comps || [];
+    state.sportSubtabs = {};
+    for (var i = 0; i < state.sports.length; i++) {
+      state.sportSubtabs[state.sports[i].name] = state.sports[i].subtabs || [];
+    }
+    renderCatTabs(); // Show menu immediately
+
+    // Step 2: Load real counts in background
     var r1 = await fetch("/api/categories");
     var d1 = await r1.json();
     state.categories = d1.categories || [];
@@ -136,7 +149,8 @@ async function boot() {
     for (var i = 0; i < state.sports.length; i++) {
       state.sportSubtabs[state.sports[i].name] = state.sports[i].subtabs || [];
     }
-    renderCatTabs();
+    renderCatTabs(); // Update with real counts
+    if (state.category === "Sports") renderNav();
   } catch(ex) { console.error("boot error", ex); }
 }
 
