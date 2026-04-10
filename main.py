@@ -283,9 +283,11 @@ def get_events(
     # Filter
     results = []
     for r in records:
-        # Category filter
+        # Category filter - skip if searching globally
         if category and category != "All":
-            if category == "Sports":
+            if search:
+                pass  # search overrides category filter
+            elif category == "Sports":
                 if not r["_is_sport"]: continue
             else:
                 if r["category"] != category: continue
