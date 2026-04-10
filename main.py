@@ -283,17 +283,17 @@ def get_events(
     # Filter
     results = []
     for r in records:
-        # Category filter - skip if searching globally
-        if category and category != "All":
-            if search:
-                pass  # search overrides category filter
-            elif category == "Sports":
+        # Category filter
+        if search:
+            pass  # when searching, show all categories
+        elif category and category != "All":
+            if category == "Sports":
                 if not r["_is_sport"]: continue
             else:
                 if r["category"] != category: continue
 
-        # Sport filter
-        if sport and sport != "All sports":
+        # Sport filter - skip when searching globally
+        if not search and sport and sport != "All sports":
             if r["_sport"] != sport: continue
 
         # Soccer comp / subtab filter
@@ -386,9 +386,18 @@ def get_sports():
 @app.get("/api/meta")
 def get_meta():
     """Fast endpoint - returns static categories and sports list without waiting for data fetch."""
-    sports_list = [{"name": k, "count": 0, "icon": SPORT_ICONS.get(k,"🏆"), "subtabs": []} for k in _SPORT_SERIES.keys()]
+    # Build static soccer comps from SOCCER_COMP values
+    soccer_comps = sorted(set(v for v in SOCCER_COMP.values() if v not in ("Other","")))
+    sports_list = []
+    for k in _SPORT_SERIES.keys():
+        if k == "Soccer":
+            subtabs = soccer_comps
+        else:
+            tabs_def = SPORT_SUBTABS.get(k, [])
+            subtabs = [t for t,_ in tabs_def] if tabs_def else []
+        sports_list.append({"name": k, "count": 0, "icon": SPORT_ICONS.get(k,"🏆"), "subtabs": subtabs})
     cats_list = [{"name": c, "count": 0} for c in TOP_CATS]
-    return {"categories": cats_list, "sports": sports_list, "soccer_comps": []}
+    return {"categories": cats_list, "sports": sports_list, "soccer_comps": soccer_comps}
 
 @app.get("/api/categories")
 def get_categories():
