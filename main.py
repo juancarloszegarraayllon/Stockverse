@@ -270,9 +270,9 @@ def fmt_date(d):
             hour = d.hour % 12 or 12
             ampm = "am" if d.hour < 12 else "pm"
             return f"{d.strftime('%b')} {d.day}, {hour}:{d.strftime('%M')}{ampm} {tz_label}"
-        return d.strftime("%b %d")
+        return d.strftime("%b %-d")
     except:
-        try: return d.strftime("%b %d") if d else ""
+        try: return d.strftime("%b %-d") if d else ""
         except: return ""
 
 # ── Kalshi client ──────────────────────────────────────────────────────────────
@@ -338,10 +338,10 @@ def get_data():
         lambda r: SOCCER_COMP.get(r["_series"],"Other") if r["_sport"]=="Soccer" else "", axis=1)
 
     DURATION = {
-        "Soccer": timedelta(hours=1), "Baseball": timedelta(hours=2),
-        "Basketball": timedelta(hours=1, minutes=30),
-        "Hockey": timedelta(hours=1, minutes=30),
-        "Football": timedelta(hours=2), "Cricket": timedelta(hours=3),
+        "Soccer": timedelta(hours=2), "Baseball": timedelta(hours=3),
+        "Basketball": timedelta(hours=2, minutes=30),
+        "Hockey": timedelta(hours=2, minutes=30),
+        "Football": timedelta(hours=3), "Cricket": timedelta(hours=4),
     }
 
     def extract(row):
@@ -357,15 +357,17 @@ def get_data():
         open_dt  = safe_dt(first_mk.get("open_time"))
         kickoff_dt = None
         if game_date and sport and sport in DURATION:
-            # Log raw times to debug offset
-            if "BELGRANO" in event_ticker.upper() or "ALDOSIVI" in event_ticker.upper():
-                import logging
-                logging.warning(f"DEBUG {event_ticker}: close_dt={close_dt}, exp_dt={exp_dt}, open_dt={open_dt}, game_date={game_date}")
-            if close_dt:
-                kickoff_dt = close_dt - DURATION[sport]
-            elif exp_dt:
+            # Use expected_expiration_time - duration for kickoff estimate
+            # exp_dt is more reliable than close_dt for timing
+            if exp_dt:
                 kickoff_dt = exp_dt - DURATION[sport]
-        sort_dt = game_date if game_date else (close_dt.date() if close_dt else None)
+            elif close_dt:
+                kickoff_dt = close_dt - DURATION[sport]
+            # Sanity check: kickoff date must match game_date from ticker
+            if kickoff_dt and kickoff_dt.date() != game_date:
+                # Date mismatch - just show the date, not the time
+                kickoff_dt = None
+        sort_dt = game_date if game_date else (exp_dt.date() if exp_dt else (close_dt.date() if close_dt else None))
         outcomes = []
         for mk in mkts:
             label = str(mk.get("yes_sub_title") or "").strip()
@@ -390,7 +392,9 @@ def get_data():
             yes    = f"{int(round(yf*100))}¢"  if yf is not None else "—"
             no     = f"{int(round(nf*100))}¢"  if nf is not None else "—"
             outcomes.append({"label":label[:35],"chance":chance,"yes":yes,"no":no})
-        return sort_dt, game_date, kickoff_dt, fmt_date(kickoff_dt) if kickoff_dt else "", outcomes
+        # For display: use kickoff_dt if valid, otherwise just game_date
+        display = fmt_date(kickoff_dt) if kickoff_dt else (game_date.strftime("%b %-d") if game_date else "")
+        return sort_dt, game_date, kickoff_dt, display, outcomes
 
     records = []
     for _, row in df.iterrows():
