@@ -48,6 +48,14 @@ html,body{background:var(--bg);color:var(--text);font-family:Helvetica,Arial,san
 .card-ticker a{font-size:10px;color:var(--text-muted);text-decoration:none;font-family:monospace}
 .card-ticker a:hover{color:var(--green)}
 .card-ticker span{font-size:10px;color:var(--text-muted);font-family:monospace}
+.tennis-score{display:flex;flex-direction:column;gap:4px;padding:6px 0 4px;border-top:1px solid var(--border);margin-top:4px}
+.tennis-row{display:flex;align-items:center;gap:6px;font-size:12px}
+.tennis-row .tn-name{flex:1;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tennis-row .tn-sets{color:var(--text-dim);font-weight:700;font-size:11px;margin-left:4px}
+.tennis-row .tn-serve{width:10px;display:inline-block;text-align:center;color:var(--green);font-size:10px}
+.tennis-row .tn-box{min-width:26px;padding:3px 7px;border:1px solid var(--border);border-radius:4px;background:var(--bg3);text-align:center;font-size:11px;font-weight:700;color:var(--text)}
+.tennis-row .tn-history{display:flex;gap:3px}
+.tennis-row .tn-history .tn-box{background:transparent;color:var(--text-dim);border-color:transparent;padding:3px 4px;min-width:18px}
 .outcome-header{display:flex;align-items:center;gap:6px;padding:6px 0 2px}
 .outcome-header .outcome-label{flex:1}
 .header-chance{min-width:58px;text-align:center;font-size:8px;font-weight:700;letter-spacing:0.4px;color:var(--text-muted);text-transform:uppercase;flex-shrink:0}
@@ -618,6 +626,59 @@ function tickLiveClocks() {
 }
 setInterval(tickLiveClocks, 500);
 
+// Render a 2-row tennis scoreboard (player per row, sets +
+// current games + current points) when _live_state.tennis is
+// present. Returns empty string for non-tennis cards.
+function buildTennisScore(ev) {
+  if (!ev || !ev._live_state) return "";
+  var t = ev._live_state.tennis;
+  if (!t) return "";
+  var r1Name = t.row1_name || "";
+  var r2Name = t.row2_name || "";
+  if (!r1Name || !r2Name) return "";
+  function esc(s) {
+    return String(s || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  }
+  function renderRow(which) {
+    var name = which === 1 ? r1Name : r2Name;
+    var sets = which === 1 ? t.row1_sets : t.row2_sets;
+    var games = which === 1 ? t.row1_games : t.row2_games;
+    var point = which === 1 ? t.row1_point : t.row2_point;
+    var server = t.server === ("row" + which);
+    var hist = t.set_history || [];
+    var html = '<div class="tennis-row">';
+    html += '<span class="tn-name">' + esc(name);
+    if (sets !== "" && sets !== undefined && sets !== null) {
+      html += ' <span class="tn-sets">' + esc(sets) + '</span>';
+    }
+    html += '</span>';
+    html += '<span class="tn-serve">' + (server ? "\u25CF" : "") + '</span>';
+    // Show set history for completed sets (all but the last), each
+    // as a small muted box.
+    if (hist.length > 1) {
+      html += '<div class="tn-history">';
+      for (var i = 0; i < hist.length - 1; i++) {
+        var val = which === 1 ? hist[i].row1 : hist[i].row2;
+        if (val !== undefined && val !== null) {
+          html += '<div class="tn-box">' + esc(val) + '</div>';
+        }
+      }
+      html += '</div>';
+    }
+    // Current set games box
+    if (games !== "" && games !== undefined && games !== null) {
+      html += '<div class="tn-box">' + esc(games) + '</div>';
+    }
+    // Current game points box (only shown when populated)
+    if (point !== "" && point !== undefined && point !== null) {
+      html += '<div class="tn-box">' + esc(point) + '</div>';
+    }
+    html += '</div>';
+    return html;
+  }
+  return '<div class="tennis-score">' + renderRow(1) + renderRow(2) + '</div>';
+}
+
 function buildCard(ev) {
   var sport = ev._sport || "";
   var cat = ev.category || "Other";
@@ -643,6 +704,8 @@ function buildCard(ev) {
   if (url) h += "<a href=\"" + url + "\" target=\"_blank\">" + ticker + "</a>";
   else h += "<span>" + ticker + "</span>";
   h += "</div>";
+  // Tennis scoreboard (2 rows per player) when available.
+  h += buildTennisScore(ev);
   var max = Math.min(outcomes.length, 5);
   if (max > 0) {
     h += "<div class=\"outcome-header\">";
@@ -800,6 +863,27 @@ async function refreshVisible() {
       if (slot) {
         var fresh = renderTimeSlot(ev);
         if (slot.innerHTML !== fresh) slot.innerHTML = fresh;
+      }
+      // Tennis scoreboard (if present) — update in place from the
+      // freshly fetched _live_state so live score changes flow in
+      // without rebuilding the whole card.
+      var tscore = card.querySelector(".tennis-score");
+      var freshTennis = buildTennisScore(ev);
+      if (tscore && freshTennis) {
+        if (tscore.outerHTML !== freshTennis) {
+          tscore.outerHTML = freshTennis;
+        }
+      } else if (!tscore && freshTennis) {
+        // Card didn't have a tennis block before (tennis match just
+        // went live) — insert it before outcome-header.
+        var anchor = card.querySelector(".outcome-header") || card.querySelector(".outcome-row");
+        if (anchor) {
+          var tmp = document.createElement("div");
+          tmp.innerHTML = freshTennis;
+          if (tmp.firstChild) anchor.parentNode.insertBefore(tmp.firstChild, anchor);
+        }
+      } else if (tscore && !freshTennis) {
+        tscore.parentNode.removeChild(tscore);
       }
       var rows = card.querySelectorAll(".outcome-row");
       var outs = ev.outcomes || [];

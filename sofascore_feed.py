@@ -264,6 +264,43 @@ def _parse_event(ev: Dict[str, Any], sport_label: str) -> Optional[Dict[str, Any
                 if hp_pt not in (None, "") or ap_pt not in (None, ""):
                     label += f" {hp_pt or '0'}-{ap_pt or '0'}"
                 g["short_detail"] = label
+            # Structured tennis data for the frontend's two-row
+            # scoreboard. Sets won come from homeScore.current /
+            # awayScore.current, current set games from the last
+            # periodN pair, and current game points from .point.
+            g["tennis_home_name"] = home_name
+            g["tennis_away_name"] = away_name
+            g["tennis_home_sets"] = (
+                "" if home_score is None else str(home_score)
+            )
+            g["tennis_away_sets"] = (
+                "" if away_score is None else str(away_score)
+            )
+            if set_scores:
+                cur_h_games, cur_a_games, _ = set_scores[-1]
+                g["tennis_home_games"] = str(cur_h_games)
+                g["tennis_away_games"] = str(cur_a_games)
+                # Full per-set history for clients that want it.
+                g["tennis_set_history"] = [
+                    {"set": n, "home": h, "away": a}
+                    for (h, a, n) in set_scores
+                ]
+            else:
+                g["tennis_home_games"] = "0"
+                g["tennis_away_games"] = "0"
+                g["tennis_set_history"] = []
+            hp_pt2 = home_score_obj.get("point")
+            ap_pt2 = away_score_obj.get("point")
+            g["tennis_home_point"] = "" if hp_pt2 in (None,) else str(hp_pt2)
+            g["tennis_away_point"] = "" if ap_pt2 in (None,) else str(ap_pt2)
+            # Serving indicator: SofaScore sometimes exposes this
+            # via ev["serving"] / ev["firstToServe"]; capture if
+            # present. "home" / "away" / "".
+            serving = ev.get("serving")
+            if serving in ("home", "away"):
+                g["tennis_server"] = serving
+            else:
+                g["tennis_server"] = ""
         except Exception:
             pass
     return g

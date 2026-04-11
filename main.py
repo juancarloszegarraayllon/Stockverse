@@ -928,6 +928,35 @@ def get_events(
                 "away_score":     g.get("away_score", ""),
                 "score_display":  _score_display(title, g),
             }
+            # Tennis: attach structured per-player data so the
+            # frontend can render a vertical 2-row scoreboard
+            # instead of the single-line breakdown. Flip sides
+            # when the Kalshi title lists the away player first.
+            if g.get("sport") == "Tennis":
+                flip = _needs_flip(title, g)
+                home_key, away_key = ("away", "home") if flip else ("home", "away")
+                rc["_live_state"]["tennis"] = {
+                    "row1_name":   g.get(f"tennis_{home_key}_name", ""),
+                    "row2_name":   g.get(f"tennis_{away_key}_name", ""),
+                    "row1_sets":   g.get(f"tennis_{home_key}_sets", ""),
+                    "row2_sets":   g.get(f"tennis_{away_key}_sets", ""),
+                    "row1_games":  g.get(f"tennis_{home_key}_games", ""),
+                    "row2_games":  g.get(f"tennis_{away_key}_games", ""),
+                    "row1_point":  g.get(f"tennis_{home_key}_point", ""),
+                    "row2_point":  g.get(f"tennis_{away_key}_point", ""),
+                    "set_history": [
+                        {
+                            "set":  s.get("set"),
+                            "row1": s.get(home_key),
+                            "row2": s.get(away_key),
+                        }
+                        for s in (g.get("tennis_set_history") or [])
+                    ],
+                    "server": (
+                        "row1" if g.get("tennis_server") == home_key
+                        else ("row2" if g.get("tennis_server") == away_key else "")
+                    ),
+                }
             # If ESPN or SofaScore gave us the actual scheduled
             # kickoff time, override our DURATION-based estimate
             # with it. Kalshi's expected_expiration_time varies per
