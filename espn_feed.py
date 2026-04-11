@@ -14,6 +14,7 @@ import asyncio
 import logging
 import re
 import time
+import unicodedata
 from typing import Any, Dict, List, Optional, Tuple
 
 try:
@@ -126,7 +127,18 @@ STATUS = {
     "leagues_err": 0,
     "games": 0,
     "last_error": None,
+    # Per-league breakdown: slug -> {ok: bool, games: int, live: int}
+    "leagues": {},
 }
+
+
+def _normalize(s: str) -> str:
+    """Lowercase + strip accents, for case/accent-insensitive matching."""
+    if not s:
+        return ""
+    s = unicodedata.normalize("NFD", str(s))
+    s = "".join(c for c in s if unicodedata.category(c) != "Mn")
+    return s.lower()
 
 
 def _parse_clock_secs(s: Optional[str]) -> Optional[int]:
@@ -185,14 +197,14 @@ def _annotate_clock_running(games: List[Dict[str, Any]]):
 
 
 def _team_phrases(team: Dict[str, Any]) -> List[str]:
-    """Lowercased search phrases for matching a team against Kalshi
-    titles. Skips anything shorter than 3 chars to avoid abbreviation
-    false positives."""
+    """Lowercased, accent-stripped search phrases for matching a team
+    against Kalshi titles. Skips anything shorter than 3 chars to
+    avoid abbreviation false positives."""
     phrases = set()
     for key in ("displayName", "shortDisplayName", "nickname", "location", "name"):
         v = team.get(key)
         if v:
-            s = str(v).strip().lower()
+            s = _normalize(v).strip()
             if len(s) >= 3:
                 phrases.add(s)
     # Sort longest first so matching prefers specific names.
@@ -276,12 +288,20 @@ async def run_espn_feed():
                 results = await asyncio.gather(*tasks, return_exceptions=True)
                 all_games = []
                 ok = err = 0
-                for res in results:
+                per_league: Dict[str, Dict[str, Any]] = {}
+                for (slug, league, sport), res in zip(LEAGUES, results):
                     if isinstance(res, Exception) or res is None:
                         err += 1
+                        per_league[slug] = {"league": league, "ok": False, "games": 0}
                     else:
                         ok += 1
                         all_games.extend(res)
+                        per_league[slug] = {
+                            "league": league,
+                            "ok": True,
+                            "games": len(res),
+                        }
+                STATUS["leagues"] = per_league
                 _annotate_clock_running(all_games)
                 ESPN_GAMES = all_games
                 STATUS["last_fetch_ts"] = time.time()
@@ -297,18 +317,28 @@ async def run_espn_feed():
             await asyncio.sleep(POLL_INTERVAL)
 
 
+def _phrase_in_title(phrase: str, normalized_title: str) -> bool:
+    """True if `phrase` appears in the already-normalized title as a
+    whole-word match (not a substring). Prevents false positives like
+    'mito' matching 'atromitos'."""
+    if not phrase:
+        return False
+    pattern = r"(?<!\w)" + re.escape(phrase) + r"(?!\w)"
+    return re.search(pattern, normalized_title) is not None
+
+
 def match_game(title: str, sport: str) -> Optional[Dict[str, Any]]:
     """Return the first ESPN live game whose home and away team phrases
-    both appear in the Kalshi event title (case-insensitive), or None.
-    """
+    both appear in the Kalshi event title as whole words (case and
+    accent insensitive), or None."""
     if not title or not sport:
         return None
-    t = title.lower()
+    t = _normalize(title)
     for g in ESPN_GAMES:
         if g.get("sport") != sport:
             continue
-        home_hit = any(p and p in t for p in g.get("home_phrases", []))
-        away_hit = any(p and p in t for p in g.get("away_phrases", []))
+        home_hit = any(_phrase_in_title(p, t) for p in g.get("home_phrases", []))
+        away_hit = any(_phrase_in_title(p, t) for p in g.get("away_phrases", []))
         if home_hit and away_hit:
             return g
     return None

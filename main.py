@@ -798,10 +798,9 @@ def get_events(
 
     def _score_display(title: str, g: dict) -> str:
         """Build an ordered score string whose team order matches how
-        the teams appear in the Kalshi event title. ESPN's feed uses
-        home/away which doesn't always line up with Kalshi, so we pick
-        whichever team phrase appears *first* in the title and put
-        that team on the left."""
+        the teams appear in the Kalshi event title. ESPN phrases are
+        already accent-stripped/lowercased, so normalize the title
+        the same way before searching."""
         if not g:
             return ""
         hs = g.get("home_score", "")
@@ -810,7 +809,11 @@ def get_events(
             return ""
         ha = g.get("home_abbr", "") or "HOME"
         aa = g.get("away_abbr", "") or "AWAY"
-        tl = (title or "").lower()
+        try:
+            from espn_feed import _normalize
+            tl = _normalize(title or "")
+        except Exception:
+            tl = (title or "").lower()
         def first_pos(phrases):
             best = -1
             for p in phrases or ():
