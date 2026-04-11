@@ -465,10 +465,12 @@ def _format_outcomes(stored_outcomes):
     overlaying live WebSocket prices from LIVE_PRICES where
     available. Markets with no real liquidity (zero size on both
     yes-side and no-side) show — instead of a computed mid-price,
-    matching how Kalshi's own UI renders illiquid markets. Final
-    list is sorted by chance descending (with — values pushed to
-    the end) to match Kalshi's ordering convention for multi-
-    outcome markets."""
+    matching how Kalshi's own UI renders illiquid markets. For
+    markets with ≥5 outcomes the list is sorted by chance
+    descending so the top 5 shown by default are the most likely
+    results; shorter markets (binary yes/no, 3-way home/draw/away,
+    etc.) preserve Kalshi's natural insertion order so row
+    positions stay stable across live updates."""
     try:
         from kalshi_ws import LIVE_PRICES
     except Exception:
@@ -505,9 +507,11 @@ def _format_outcomes(stored_outcomes):
             "yes":    f"{int(round(yes_c))}¢"    if yes_c    is not None else "—",
             "no":     f"{int(round(no_c))}¢"     if no_c     is not None else "—",
         }))
-    # Sort by chance descending. None chances (dead markets) sort
-    # last so they don't mask liquid outcomes above the fold.
-    tmp.sort(key=lambda pair: (pair[0] is None, -(pair[0] or 0)))
+    # Only sort long cards. Short cards (binary / 3-way) keep the
+    # Kalshi API insertion order so row positions don't jitter on
+    # live updates and users can anchor to a specific outcome.
+    if len(tmp) >= 5:
+        tmp.sort(key=lambda pair: (pair[0] is None, -(pair[0] or 0)))
     return [item for _, item in tmp]
 
 
