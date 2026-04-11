@@ -297,32 +297,45 @@ def get_client():
     _client = KalshiClient(cfg)
     return _client
 
+def fetch_status(client, status, with_markets, max_pages):
+    """Fetch all events for a given status, return list."""
+    import logging as _log
+    events, cursor = [], None
+    for _ in range(max_pages):
+        try:
+            kw = {"limit":200,"status":status}
+            if with_markets: kw["with_nested_markets"] = True
+            if cursor: kw["cursor"] = cursor
+            resp  = client.get_events(**kw).to_dict()
+            batch = resp.get("events",[])
+            if not batch: break
+            events.extend(batch)
+            cursor = resp.get("cursor") or resp.get("next_cursor")
+            if not cursor: break
+            time.sleep(0.05)
+        except Exception as e:
+            _log.warning(f"fetch_status error status={status}: {e}")
+            if "429" in str(e): time.sleep(3)
+            else: break
+    _log.warning(f"fetch_status done status={status}: {len(events)} events")
+    return events
+
 def paginate(with_markets=False, max_pages=30):
     client = get_client()
-    events = []
     seen = set()
-    # Fetch both open and closed to include live/in-progress games
-    for status in ["open", "closed"]:
-        cursor = None
-        for _ in range(max_pages):
-            try:
-                kw = {"limit":200,"status":status}
-                if with_markets: kw["with_nested_markets"] = True
-                if cursor: kw["cursor"] = cursor
-                resp  = client.get_events(**kw).to_dict()
-                batch = resp.get("events",[])
-                if not batch: break
-                for ev in batch:
-                    eid = ev.get("event_ticker","")
-                    if eid not in seen:
-                        seen.add(eid)
-                        events.append(ev)
-                cursor = resp.get("cursor") or resp.get("next_cursor")
-                if not cursor: break
-                time.sleep(0.05)
-            except Exception as e:
-                if "429" in str(e): time.sleep(3)
-                else: break
+    events = []
+    # Always fetch open events first
+    for ev in fetch_status(client, "open", with_markets, max_pages):
+        eid = ev.get("event_ticker","")
+        if eid not in seen:
+            seen.add(eid)
+            events.append(ev)
+    # Then add closed (live/in-progress) events
+    for ev in fetch_status(client, "closed", with_markets, max_pages):
+        eid = ev.get("event_ticker","")
+        if eid not in seen:
+            seen.add(eid)
+            events.append(ev)
     return events
 
 # ── Cache with TTL ─────────────────────────────────────────────────────────────
@@ -335,8 +348,12 @@ def get_data():
     if _cache["data"] is not None and now - _cache["ts"] < CACHE_TTL:
         return _cache["data"]
 
+    import logging as _log2
     all_ev = paginate(with_markets=True, max_pages=30)
+    _log2.warning(f"paginate returned {len(all_ev)} events")
     if not all_ev:
+        _cache["data"] = []
+        _cache["ts"] = now
         return []
 
     df = pd.DataFrame(all_ev)
