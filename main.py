@@ -43,6 +43,11 @@ async def startup_event():
         asyncio.create_task(run_espn_feed())
     except Exception as e:
         logging.getLogger("oddsiq").warning("failed to start espn feed: %s", e)
+    try:
+        from sportsdb_feed import run_sportsdb_feed
+        asyncio.create_task(run_sportsdb_feed())
+    except Exception as e:
+        logging.getLogger("oddsiq").warning("failed to start sportsdb feed: %s", e)
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
 UTC = timezone.utc
@@ -789,12 +794,17 @@ def get_events(
     total = len(results)
     page  = results[offset:offset+limit]
     # Overlay live WebSocket prices on the paginated page, and attach
-    # ESPN-sourced live game state when we can match by team names.
+    # live game state from ESPN first, falling back to TheSportsDB
+    # for leagues ESPN doesn't cover (J2, K League, etc.).
     try:
         from espn_feed import match_game, compact_label
     except Exception:
         match_game = None
         compact_label = None
+    try:
+        from sportsdb_feed import match_game as sdb_match_game
+    except Exception:
+        sdb_match_game = None
 
     def _score_display(title: str, g: dict) -> str:
         """Build an ordered score string whose team order matches how
@@ -833,27 +843,30 @@ def get_events(
     for r in page:
         rc = dict(r)
         rc["outcomes"] = _format_outcomes(r.get("outcomes", []))
-        if match_game is not None:
-            sport = r.get("_sport", "")
-            title = r.get("title", "")
-            if sport and title:
+        sport = r.get("_sport", "")
+        title = r.get("title", "")
+        g = None
+        if sport and title:
+            if match_game is not None:
                 g = match_game(title, sport)
-                if g:
-                    rc["_live_state"] = {
-                        "label":          compact_label(g),
-                        "state":          g.get("state", ""),
-                        "short_detail":   g.get("short_detail", ""),
-                        "display_clock":  g.get("display_clock", ""),
-                        "period":         g.get("period", 0),
-                        "league":         g.get("league", ""),
-                        "captured_at_ms": g.get("captured_at_ms", 0),
-                        "clock_running":  g.get("clock_running", True),
-                        "home_abbr":      g.get("home_abbr", ""),
-                        "away_abbr":      g.get("away_abbr", ""),
-                        "home_score":     g.get("home_score", ""),
-                        "away_score":     g.get("away_score", ""),
-                        "score_display":  _score_display(title, g),
-                    }
+            if g is None and sdb_match_game is not None:
+                g = sdb_match_game(title, sport)
+        if g:
+            rc["_live_state"] = {
+                "label":          compact_label(g) if compact_label else "",
+                "state":          g.get("state", ""),
+                "short_detail":   g.get("short_detail", ""),
+                "display_clock":  g.get("display_clock", ""),
+                "period":         g.get("period", 0),
+                "league":         g.get("league", ""),
+                "captured_at_ms": g.get("captured_at_ms", 0),
+                "clock_running":  g.get("clock_running", True),
+                "home_abbr":      g.get("home_abbr", ""),
+                "away_abbr":      g.get("away_abbr", ""),
+                "home_score":     g.get("home_score", ""),
+                "away_score":     g.get("away_score", ""),
+                "score_display":  _score_display(title, g),
+            }
         formatted.append(rc)
     return {"total": total, "offset": offset, "limit": limit, "events": formatted}
 
@@ -990,6 +1003,94 @@ def espn_raw():
         return {"games": list(ESPN_GAMES)[:50]}
     except Exception as e:
         return {"error": str(e)}
+
+@app.get("/api/sportsdb_status")
+def sportsdb_status():
+    """Debug endpoint: reports the TheSportsDB poller state."""
+    try:
+        from sportsdb_feed import STATUS, SPORTSDB_GAMES
+        return {"status": dict(STATUS), "games": len(SPORTSDB_GAMES)}
+    except Exception as e:
+        return {"error": str(e)}
+
+@app.get("/api/sportsdb_raw")
+def sportsdb_raw():
+    """Debug endpoint: returns the current SPORTSDB_GAMES list."""
+    try:
+        from sportsdb_feed import SPORTSDB_GAMES
+        return {"games": list(SPORTSDB_GAMES)[:50]}
+    except Exception as e:
+        return {"error": str(e)}
+
+@app.get("/api/live_audit")
+def live_audit():
+    """Debug endpoint: reports the Live-tab pipeline end-to-end.
+    How many cached records, how many pass the Live filter, how many
+    have ESPN or SportsDB state attached, broken down by sport."""
+    from datetime import datetime as _dt
+    records = _cache.get("data") or []
+    now_utc = _dt.now(timezone.utc)
+    by_sport = {}
+    total_live = 0
+    for r in records:
+        kdt = r.get("_kickoff_dt")
+        gdt = r.get("_game_end_dt")
+        if not (kdt and gdt):
+            continue
+        try:
+            k = _dt.fromisoformat(kdt)
+            g = _dt.fromisoformat(gdt)
+        except Exception:
+            continue
+        if not (k <= now_utc < g):
+            continue
+        total_live += 1
+        sp = r.get("_sport") or "(none)"
+        by_sport[sp] = by_sport.get(sp, 0) + 1
+    espn_matched = sportsdb_matched = unmatched = 0
+    sample_unmatched = []
+    try:
+        from espn_feed import match_game as em
+    except Exception:
+        em = None
+    try:
+        from sportsdb_feed import match_game as sm
+    except Exception:
+        sm = None
+    for r in records:
+        kdt = r.get("_kickoff_dt")
+        gdt = r.get("_game_end_dt")
+        if not (kdt and gdt):
+            continue
+        try:
+            k = _dt.fromisoformat(kdt)
+            g = _dt.fromisoformat(gdt)
+        except Exception:
+            continue
+        if not (k <= now_utc < g):
+            continue
+        title = r.get("title", "")
+        sport = r.get("_sport", "")
+        g_espn = em(title, sport) if em and sport and title else None
+        if g_espn:
+            espn_matched += 1
+            continue
+        g_sdb = sm(title, sport) if sm and sport and title else None
+        if g_sdb:
+            sportsdb_matched += 1
+            continue
+        unmatched += 1
+        if len(sample_unmatched) < 20:
+            sample_unmatched.append({"title": title, "sport": sport})
+    return {
+        "total_cached": len(records),
+        "total_live": total_live,
+        "by_sport": by_sport,
+        "espn_matched": espn_matched,
+        "sportsdb_matched": sportsdb_matched,
+        "unmatched": unmatched,
+        "sample_unmatched": sample_unmatched,
+    }
 
 @app.get("/api/debug_match")
 def debug_match(title: str, sport: str = "Soccer"):
