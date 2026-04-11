@@ -583,6 +583,8 @@ def get_events(
     from datetime import date as _date
     records = get_data()
     today = _date.today()
+    from datetime import datetime as _dt
+    now_utc = _dt.now(timezone.utc)
 
     # Filter
     results = []
@@ -591,7 +593,20 @@ def get_events(
         if search:
             pass  # when searching, show all categories
         elif category and category != "All":
-            if category == "Sports":
+            if category == "Live":
+                # Keep only sport events currently in progress.
+                kdt = r.get("_kickoff_dt")
+                gdt = r.get("_game_end_dt")
+                if not (kdt and gdt):
+                    continue
+                try:
+                    k = _dt.fromisoformat(kdt)
+                    g = _dt.fromisoformat(gdt)
+                    if not (k <= now_utc < g):
+                        continue
+                except Exception:
+                    continue
+            elif category == "Sports":
                 if not r["_is_sport"]: continue
             else:
                 # Map display name to Kalshi API category names

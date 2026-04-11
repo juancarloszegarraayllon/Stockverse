@@ -81,6 +81,10 @@ html,body{background:var(--bg);color:var(--text);font-family:Helvetica,Arial,san
 .live-badge{display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:800;color:var(--red);text-transform:uppercase;letter-spacing:0.8px}
 .live-dot{width:7px;height:7px;border-radius:50%;background:var(--red);box-shadow:0 0 6px rgba(255,51,51,0.9);animation:live-pulse 1.2s infinite ease-in-out}
 @keyframes live-pulse{0%,55%{opacity:1;transform:scale(1)}65%,100%{opacity:0.25;transform:scale(0.85)}}
+.cat-tab-live{color:var(--red) !important}
+.cat-tab-live:hover{color:var(--red) !important}
+.cat-tab-live.active{color:var(--red) !important;background:rgba(255,51,51,0.1);border-bottom-color:var(--red) !important}
+.cat-tab-live::before{content:"";display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--red);margin-right:7px;box-shadow:0 0 6px rgba(255,51,51,0.9);animation:live-pulse 1.2s infinite ease-in-out;vertical-align:middle}
 </style>
 </head>
 <body>
@@ -186,18 +190,19 @@ function renderCatTabs() {
   var el = document.getElementById("cat-tabs");
   el.innerHTML = "";
 
-  var allKeys = [null, "All"];
+  var allKeys = [null, "All", "Live"];
+  var allLabels = ["", "All", "Live"];
   for (var i = 0; i < state.categories.length; i++) {
     allKeys.push(state.categories[i].name);
-  }
-  var allLabels = ["", "All"];
-  for (var i = 0; i < state.categories.length; i++) {
     allLabels.push(state.categories[i].name);
   }
 
   for (var i = 0; i < allKeys.length; i++) {
     var btn = document.createElement("button");
-    btn.className = "cat-tab" + (state.category === allKeys[i] ? " active" : "");
+    var cls = "cat-tab";
+    if (state.category === allKeys[i]) cls += " active";
+    if (allKeys[i] === "Live") cls += " cat-tab-live";
+    btn.className = cls;
     btn.textContent = allLabels[i];
     (function(key) {
       btn.addEventListener("click", function() { selectCat(key); });
