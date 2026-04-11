@@ -528,12 +528,12 @@ def get_data():
             display = game_date.strftime("%b %-d")
         else:
             display = ""
-        return sort_dt, sort_ts_dt, game_date, kickoff_dt, display, outcomes
+        return sort_dt, sort_ts_dt, game_date, kickoff_dt, exp_dt, display, outcomes
 
     records = []
     for _, row in df.iterrows():
         try:
-            sort_dt, sort_ts_dt, game_date, kickoff_dt, display_dt, outcomes = extract(row)
+            sort_dt, sort_ts_dt, game_date, kickoff_dt, game_end_dt, display_dt, outcomes = extract(row)
             _sport = str(row.get("_sport",""))
             _series = str(row.get("series_ticker","")).upper()
             _soccer_comp = str(row.get("_soccer_comp",""))
@@ -554,6 +554,7 @@ def get_data():
                 "_is_sport": bool(row.get("_is_sport",False)),
                 "_display_dt": display_dt,
                 "_kickoff_dt": kickoff_dt.isoformat() if kickoff_dt else None,
+                "_game_end_dt": game_end_dt.isoformat() if (kickoff_dt and game_end_dt) else None,
                 "_sort_dt": sort_dt.isoformat() if sort_dt else None,
                 "_sort_ts": sort_ts_dt.isoformat() if sort_ts_dt else None,
                 "outcomes": outcomes,

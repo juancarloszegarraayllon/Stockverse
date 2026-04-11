@@ -77,6 +77,10 @@ html,body{background:var(--bg);color:var(--text);font-family:Helvetica,Arial,san
 .outcome-chance.flash-down{animation:flash-down-bg 0.9s ease-out;border-radius:3px}
 .odds-box.flash-up{animation:flash-up-box 0.9s ease-out}
 .odds-box.flash-down{animation:flash-down-box 0.9s ease-out}
+.card-time-slot{display:inline-flex;align-items:center;flex-shrink:0}
+.live-badge{display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:800;color:var(--red);text-transform:uppercase;letter-spacing:0.8px}
+.live-dot{width:7px;height:7px;border-radius:50%;background:var(--red);box-shadow:0 0 6px rgba(255,51,51,0.9);animation:live-pulse 1.2s infinite ease-in-out}
+@keyframes live-pulse{0%,55%{opacity:1;transform:scale(1)}65%,100%{opacity:0.25;transform:scale(0.85)}}
 </style>
 </head>
 <body>
@@ -347,26 +351,43 @@ function appendCards(evs) {
   }
 }
 
-function buildCard(ev) {
-  var sport = ev._sport || "";
-  var cat = ev.category || "Other";
-  var icon = sport ? (SPORT_EMOJI[sport] || CAT_EMOJI[cat] || "") : (CAT_EMOJI[cat] || "");
-  var label = sport || cat;
+function isLive(ev) {
+  if (!ev._kickoff_dt || !ev._game_end_dt) return false;
+  try {
+    var now = Date.now();
+    var k = new Date(ev._kickoff_dt).getTime();
+    var g = new Date(ev._game_end_dt).getTime();
+    return k <= now && now < g;
+  } catch (e) { return false; }
+}
+
+function buildDateText(ev) {
   var dt = ev._display_dt || "";
-  // If we have kickoff time, show it alongside the date
   if (ev._kickoff_dt && ev._sport) {
     try {
       var kd = new Date(ev._kickoff_dt);
       var opts = {hour: "numeric", minute: "2-digit", timeZone: "America/New_York", timeZoneName: "short"};
       var timeStr = kd.toLocaleTimeString("en-US", opts);
-      // Build full display: use _display_dt for date, add time
-      if (dt) {
-        dt = dt + ", " + timeStr;
-      } else {
-        dt = kd.toLocaleDateString("en-US", {month:"short", day:"numeric", timeZone:"America/New_York"}) + ", " + timeStr;
-      }
-    } catch(e) {}
+      if (dt) dt = dt + ", " + timeStr;
+      else dt = kd.toLocaleDateString("en-US", {month:"short", day:"numeric", timeZone:"America/New_York"}) + ", " + timeStr;
+    } catch (e) {}
   }
+  return dt;
+}
+
+function renderTimeSlot(ev) {
+  if (isLive(ev)) {
+    return '<span class="live-badge"><span class="live-dot"></span>LIVE</span>';
+  }
+  var dt = buildDateText(ev);
+  return dt ? '<span class="card-date">' + dt + '</span>' : '';
+}
+
+function buildCard(ev) {
+  var sport = ev._sport || "";
+  var cat = ev.category || "Other";
+  var icon = sport ? (SPORT_EMOJI[sport] || CAT_EMOJI[cat] || "") : (CAT_EMOJI[cat] || "");
+  var label = sport || cat;
   var ticker = ev.event_ticker || "";
   var series = ev.series_ticker || "";
   var url = series ? "https://kalshi.com/markets/" + series.toLowerCase() + "/" + series.toLowerCase().replace("kx", "") + "/" + ticker.toLowerCase() : "";
@@ -379,7 +400,7 @@ function buildCard(ev) {
   h += "<span class=\"cat-pill\">" + label + "</span>";
   if (subcat) h += "<span class=\"sub-pill\">" + subcat + "</span>";
   h += "</div>";
-  if (dt) h += "<span class=\"card-date\">" + dt + "</span>";
+  h += '<span class="card-time-slot">' + renderTimeSlot(ev) + '</span>';
   h += "</div>";
   if (icon) h += "<div class=\"card-icon\">" + icon + "</div>";
   h += "<div class=\"card-title\">" + ev.title + "</div>";
@@ -528,6 +549,13 @@ async function refreshVisible() {
       var sel = '[data-event-ticker="' + (ev.event_ticker || "").replace(/"/g, '\\"') + '"]';
       var card = grid.querySelector(sel);
       if (!card) continue;
+      // Keep the LIVE badge / date in sync so games that cross kickoff
+      // while the tab is open flip to live automatically.
+      var slot = card.querySelector(".card-time-slot");
+      if (slot) {
+        var fresh = renderTimeSlot(ev);
+        if (slot.innerHTML !== fresh) slot.innerHTML = fresh;
+      }
       var rows = card.querySelectorAll(".outcome-row");
       var outs = ev.outcomes || [];
       for (var j = 0; j < rows.length && j < outs.length; j++) {
