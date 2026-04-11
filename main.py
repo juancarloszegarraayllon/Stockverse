@@ -1024,26 +1024,54 @@ def espn_status():
         return {"error": str(e)}
 
 @app.get("/api/kalshi_event_raw")
-def kalshi_event_raw(ticker: str):
-    """Debug: fetches a single Kalshi event by event_ticker and
-    returns its complete raw structure (every field on the event
-    plus every field on its first market). Use this to verify
-    whether Kalshi's API exposes anything we could use as a live
-    game state — score, clock, period, status, etc."""
+def kalshi_event_raw(ticker: str = "", status: str = "open"):
+    """Debug: fetches a small page of Kalshi events (open by
+    default) and returns the full raw structure of one of them —
+    every field on the event and every field on each of its
+    markets. Used to verify whether Kalshi's public API exposes
+    any live game state we could use directly (score, clock,
+    period, status, sub_title hints, etc.).
+
+    If `ticker` is passed, returns that specific event if found
+    within the fetched page; otherwise returns the first event."""
     try:
         client = get_client()
-        resp = client.get_event(event_ticker=ticker, with_nested_markets=True).to_dict()
-        ev = resp.get("event") or resp
-        out: Dict[str, Any] = {
-            "event_fields": sorted(list((ev or {}).keys())) if isinstance(ev, dict) else None,
-            "event": ev,
+        resp = client.get_events(
+            limit=50,
+            status=status,
+            with_nested_markets=True,
+        ).to_dict()
+        events = resp.get("events", []) or []
+        if not events:
+            return {"error": "no events returned", "status": status}
+        picked = None
+        if ticker:
+            for ev in events:
+                if ev.get("event_ticker") == ticker:
+                    picked = ev
+                    break
+            if picked is None:
+                return {
+                    "error": f"ticker {ticker!r} not in first 50 {status} events",
+                    "available_tickers": [e.get("event_ticker") for e in events[:15]],
+                }
+        else:
+            picked = events[0]
+        markets = picked.get("markets") or []
+        first_market = markets[0] if markets else {}
+        all_market_fields = set()
+        for mk in markets:
+            if isinstance(mk, dict):
+                all_market_fields.update(mk.keys())
+        return {
+            "event_ticker": picked.get("event_ticker"),
+            "event_fields": sorted(list(picked.keys())),
+            "event": picked,
+            "market_count": len(markets),
+            "first_market_fields": sorted(list(first_market.keys())) if isinstance(first_market, dict) else None,
+            "union_of_all_market_fields": sorted(list(all_market_fields)),
+            "first_market": first_market,
         }
-        markets = (ev or {}).get("markets") or []
-        if markets and isinstance(markets, list):
-            first = markets[0] or {}
-            out["first_market_fields"] = sorted(list(first.keys()))
-            out["first_market"] = first
-        return out
     except Exception as e:
         return {"error": f"{type(e).__name__}: {e}"}
 
