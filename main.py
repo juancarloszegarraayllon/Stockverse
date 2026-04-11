@@ -299,22 +299,30 @@ def get_client():
 
 def paginate(with_markets=False, max_pages=30):
     client = get_client()
-    events, cursor = [], None
-    for _ in range(max_pages):
-        try:
-            kw = {"limit":200,"status":"open"}
-            if with_markets: kw["with_nested_markets"] = True
-            if cursor: kw["cursor"] = cursor
-            resp  = client.get_events(**kw).to_dict()
-            batch = resp.get("events",[])
-            if not batch: break
-            events.extend(batch)
-            cursor = resp.get("cursor") or resp.get("next_cursor")
-            if not cursor: break
-            time.sleep(0.05)
-        except Exception as e:
-            if "429" in str(e): time.sleep(3)
-            else: break
+    events = []
+    seen = set()
+    # Fetch both open and closed to include live/in-progress games
+    for status in ["open", "closed"]:
+        cursor = None
+        for _ in range(max_pages):
+            try:
+                kw = {"limit":200,"status":status}
+                if with_markets: kw["with_nested_markets"] = True
+                if cursor: kw["cursor"] = cursor
+                resp  = client.get_events(**kw).to_dict()
+                batch = resp.get("events",[])
+                if not batch: break
+                for ev in batch:
+                    eid = ev.get("event_ticker","")
+                    if eid not in seen:
+                        seen.add(eid)
+                        events.append(ev)
+                cursor = resp.get("cursor") or resp.get("next_cursor")
+                if not cursor: break
+                time.sleep(0.05)
+            except Exception as e:
+                if "429" in str(e): time.sleep(3)
+                else: break
     return events
 
 # ── Cache with TTL ─────────────────────────────────────────────────────────────
