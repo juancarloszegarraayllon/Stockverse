@@ -511,6 +511,19 @@ def _format_outcomes(stored_outcomes):
             chance_c = yes_c = no_c = None
         else:
             chance_c, yes_c, no_c = _midprice_and_ask(yb, ya, nb, na)
+            # Prefer last-traded price as the "chance" when the
+            # market has actually been traded. Kalshi's UI does the
+            # same: for an illiquid market like Barcelona in Women's
+            # CL Champion where the spread is 3¢ / 84¢ (midprice
+            # 43.5%) but the most recent trade hit at 84¢, the
+            # chance should read 84% not 43%. YES/NO price boxes
+            # still show the live bid/ask since those are the
+            # actual "pay to buy" prices right now.
+            last = o.get("_last")
+            if live and live.get("last_price") is not None:
+                last = live["last_price"]
+            if last is not None and last > 0:
+                chance_c = last
         tmp.append((chance_c, {
             "label":  o.get("label", ""),
             "ticker": tk,
@@ -619,6 +632,7 @@ def get_data():
             ya = _cents_from(mk, "yes_ask_dollars", "yes_ask")
             nb = _cents_from(mk, "no_bid_dollars",  "no_bid")
             na = _cents_from(mk, "no_ask_dollars",  "no_ask")
+            last_price = _cents_from(mk, "last_price_dollars", "last_price")
             # Raw liquidity sizes — used by _format_outcomes to
             # recognize "no real market" cases (both sides have zero
             # orders) and show — instead of computing a garbage
@@ -645,8 +659,9 @@ def get_data():
                 "_yb": yb, "_ya": ya, "_nb": nb, "_na": na,
                 "_yb_sz": yb_size, "_ya_sz": ya_size,
                 "_nb_sz": nb_size, "_na_sz": na_size,
-                "_vol": volume,
-                "_oi":  open_interest,
+                "_vol":  volume,
+                "_oi":   open_interest,
+                "_last": last_price,
             })
         # Show date+time if we have kickoff, otherwise just date
         if kickoff_dt and game_date:
@@ -1361,47 +1376,37 @@ def kalshi_search(q: str = "", limit: int = 20):
     """Debug: search Kalshi events (both open and closed) for any
     whose title or event_ticker contains `q` (case-insensitive).
     Returns the event_ticker + title for matches so you can copy
-    a ticker into /api/kalshi_event_raw without guessing."""
+    a ticker into /api/kalshi_event_raw without guessing. Searches
+    the already-cached REST snapshot first to avoid hammering
+    Kalshi's API with fresh pagination calls on every search."""
     if not q:
         return {"error": "q required"}
-    try:
-        client = get_client()
-        needle = q.lower()
-        hits = []
-        for s in ("open", "closed"):
-            cursor = None
-            for _ in range(15):
-                kw = {"limit": 200, "status": s, "with_nested_markets": False}
-                if cursor:
-                    kw["cursor"] = cursor
-                try:
-                    resp = client.get_events(**kw).to_dict()
-                except Exception as e:
-                    return {"error": f"get_events err on status={s}: {e}"}
-                for ev in resp.get("events", []) or []:
-                    title = (ev.get("title") or "").lower()
-                    ticker = (ev.get("event_ticker") or "").lower()
-                    if needle in title or needle in ticker:
-                        hits.append({
-                            "event_ticker": ev.get("event_ticker"),
-                            "title": ev.get("title"),
-                            "sub_title": ev.get("sub_title"),
-                            "series_ticker": ev.get("series_ticker"),
-                            "category": ev.get("category"),
-                            "status": s,
-                        })
-                        if len(hits) >= limit:
-                            break
-                if len(hits) >= limit:
-                    break
-                cursor = resp.get("cursor") or resp.get("next_cursor")
-                if not cursor:
-                    break
+    needle = q.lower()
+    hits = []
+    # Serve from the cached snapshot if we have one. The cached
+    # records don't carry the full Kalshi event dict, only the
+    # fields we need — but event_ticker + title are enough for
+    # search/discovery.
+    records = _cache.get("data") or []
+    seen_tickers = set()
+    for r in records:
+        t = (r.get("title") or "").lower()
+        tk = (r.get("event_ticker") or "").lower()
+        if needle in t or needle in tk:
+            et = r.get("event_ticker")
+            if et in seen_tickers:
+                continue
+            seen_tickers.add(et)
+            hits.append({
+                "event_ticker": r.get("event_ticker"),
+                "title":        r.get("title"),
+                "series_ticker": r.get("series_ticker"),
+                "category":     r.get("category"),
+                "source":       "cache",
+            })
             if len(hits) >= limit:
                 break
-        return {"q": q, "count": len(hits), "hits": hits}
-    except Exception as e:
-        return {"error": f"{type(e).__name__}: {e}"}
+    return {"q": q, "count": len(hits), "hits": hits}
 
 @app.get("/api/espn_probe")
 async def espn_probe(slug: str):

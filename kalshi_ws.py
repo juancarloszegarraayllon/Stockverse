@@ -107,11 +107,14 @@ def _extract_update(msg):
         return None
     fields = {}
     # Dollar-string fields (what Kalshi's "ticker" channel actually sends).
+    # price_dollars is the most-recent trade price, which main.py
+    # prefers as the "chance" display for markets that have traded.
     for k_dollars, k_out in (
         ("yes_bid_dollars", "yes_bid"),
         ("yes_ask_dollars", "yes_ask"),
         ("no_bid_dollars",  "no_bid"),
         ("no_ask_dollars",  "no_ask"),
+        ("price_dollars",   "last_price"),
     ):
         v = body.get(k_dollars)
         if v is not None:
