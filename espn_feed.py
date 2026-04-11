@@ -56,6 +56,7 @@ LEAGUES = [
     ("soccer/gre.1", "Greek Super League", "Soccer"),
     ("soccer/den.1", "Danish Superliga", "Soccer"),
     ("soccer/swe.1", "Allsvenskan", "Soccer"),
+    ("soccer/swe.2", "Superettan", "Soccer"),
     ("soccer/nor.1", "Eliteserien", "Soccer"),
     ("soccer/sui.1", "Swiss Super League", "Soccer"),
     ("soccer/aut.1", "Austrian Bundesliga", "Soccer"),
