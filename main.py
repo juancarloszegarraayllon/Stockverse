@@ -377,6 +377,20 @@ def get_data():
                 kickoff_dt = exp_dt - DURATION[sport]
 
         sort_dt = game_date if game_date else (exp_dt.date() if exp_dt else (close_dt.date() if close_dt else None))
+        # Precise sort timestamp: prefer the kickoff time we computed, then
+        # the market's expected expiration / close time, and finally fall back
+        # to the game date at UTC midnight. Used by the earliest/latest sort.
+        if kickoff_dt:
+            sort_ts_dt = kickoff_dt
+        elif exp_dt:
+            sort_ts_dt = exp_dt
+        elif close_dt:
+            sort_ts_dt = close_dt
+        elif game_date:
+            from datetime import datetime as _datetime
+            sort_ts_dt = _datetime(game_date.year, game_date.month, game_date.day, tzinfo=UTC)
+        else:
+            sort_ts_dt = None
         outcomes = []
         for mk in mkts:
             label = str(mk.get("yes_sub_title") or "").strip()
@@ -418,12 +432,12 @@ def get_data():
             display = game_date.strftime("%b %-d")
         else:
             display = ""
-        return sort_dt, game_date, kickoff_dt, display, outcomes
+        return sort_dt, sort_ts_dt, game_date, kickoff_dt, display, outcomes
 
     records = []
     for _, row in df.iterrows():
         try:
-            sort_dt, game_date, kickoff_dt, display_dt, outcomes = extract(row)
+            sort_dt, sort_ts_dt, game_date, kickoff_dt, display_dt, outcomes = extract(row)
             _sport = str(row.get("_sport",""))
             _series = str(row.get("series_ticker","")).upper()
             _soccer_comp = str(row.get("_soccer_comp",""))
@@ -445,6 +459,7 @@ def get_data():
                 "_display_dt": display_dt,
                 "_kickoff_dt": kickoff_dt.isoformat() if kickoff_dt else None,
                 "_sort_dt": sort_dt.isoformat() if sort_dt else None,
+                "_sort_ts": sort_ts_dt.isoformat() if sort_ts_dt else None,
                 "outcomes": outcomes,
             }
             records.append(r)
@@ -584,12 +599,12 @@ def get_events(
 
         results.append(r)
 
-    # Sort
-    def sort_key(r):
-        s = r.get("_sort_dt")
-        return s if s else "9999-99-99"
-
-    results.sort(key=sort_key, reverse=(sort=="latest"))
+    # Sort by precise timestamp (kickoff → expiration → close → game date).
+    # Undated events always go to the end, regardless of direction.
+    dated = [r for r in results if r.get("_sort_ts")]
+    undated = [r for r in results if not r.get("_sort_ts")]
+    dated.sort(key=lambda r: r["_sort_ts"], reverse=(sort == "latest"))
+    results = dated + undated
 
     total = len(results)
     page  = results[offset:offset+limit]
