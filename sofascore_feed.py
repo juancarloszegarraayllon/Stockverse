@@ -348,10 +348,10 @@ def _phrase_in_title(phrase: str, normalized_title: str) -> bool:
 def match_game(title: str, sport: str) -> Optional[Dict[str, Any]]:
     """Return the SofaScore game whose team phrases best match the
     Kalshi title. Score = len(longest home phrase hit) + len(longest
-    away phrase hit). Picking the max score disambiguates cases like
-    "Montevideo City vs Albion" vs a lurking Manchester City /
-    Brighton Albion game — the real match's longer phrases
-    ("montevideo city", "albion") outrank "city" / "albion"."""
+    away phrase hit). Picking the max score disambiguates ambiguous
+    cases; also rejects games where both sides fell back to the
+    same shared word (e.g. Leicester City / Swansea City both hit
+    "city" when the Kalshi title is "Montevideo City vs Albion")."""
     if not title or not sport:
         return None
     t = _normalize(title)
@@ -361,16 +361,24 @@ def match_game(title: str, sport: str) -> Optional[Dict[str, Any]]:
         if g.get("sport") != sport:
             continue
         home_best = 0
+        home_phrase = ""
         for p in g.get("home_phrases", []):
             if _phrase_in_title(p, t) and len(p) > home_best:
                 home_best = len(p)
+                home_phrase = p
         if home_best == 0:
             continue
         away_best = 0
+        away_phrase = ""
         for p in g.get("away_phrases", []):
             if _phrase_in_title(p, t) and len(p) > away_best:
                 away_best = len(p)
+                away_phrase = p
         if away_best == 0:
+            continue
+        # Reject matches where both sides picked the same phrase —
+        # that's the fingerprint of a shared-word false positive.
+        if home_phrase == away_phrase:
             continue
         score = home_best + away_best
         if score > best_score:

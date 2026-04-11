@@ -379,9 +379,9 @@ def _phrase_in_title(phrase: str, normalized_title: str) -> bool:
 def match_game(title: str, sport: str) -> Optional[Dict[str, Any]]:
     """Return the ESPN game whose home and away team phrases best
     match the Kalshi title. Score = len(longest matching home
-    phrase) + len(longest matching away phrase). Picking the max
-    score disambiguates titles where multiple games could nominally
-    match on single common words like "city" or "albion"."""
+    phrase) + len(longest matching away phrase). Also rejects games
+    where both sides collapsed to the same phrase (shared-word false
+    positive like "city" matching Leicester City and Swansea City)."""
     if not title or not sport:
         return None
     t = _normalize(title)
@@ -391,16 +391,22 @@ def match_game(title: str, sport: str) -> Optional[Dict[str, Any]]:
         if g.get("sport") != sport:
             continue
         home_best = 0
+        home_phrase = ""
         for p in g.get("home_phrases", []):
             if _phrase_in_title(p, t) and len(p) > home_best:
                 home_best = len(p)
+                home_phrase = p
         if home_best == 0:
             continue
         away_best = 0
+        away_phrase = ""
         for p in g.get("away_phrases", []):
             if _phrase_in_title(p, t) and len(p) > away_best:
                 away_best = len(p)
+                away_phrase = p
         if away_best == 0:
+            continue
+        if home_phrase == away_phrase:
             continue
         score = home_best + away_best
         if score > best_score:
