@@ -362,8 +362,7 @@ def get_data():
             # exp_dt = game_end time on Kalshi. Subtract duration to get kickoff.
             if exp_dt and abs((exp_dt.date() - game_date).days) <= 2:
                 kickoff_dt = exp_dt - DURATION[sport]
-            import logging as _lg
-            _lg.warning(f"KICK {event_ticker}: sport={sport}, game_date={game_date}, exp_dt={exp_dt}, kickoff_dt={kickoff_dt}")
+
         sort_dt = game_date if game_date else (exp_dt.date() if exp_dt else (close_dt.date() if close_dt else None))
         outcomes = []
         for mk in mkts:
@@ -389,7 +388,7 @@ def get_data():
             yes    = f"{int(round(yf*100))}¢"  if yf is not None else "—"
             no     = f"{int(round(nf*100))}¢"  if nf is not None else "—"
             outcomes.append({"label":label[:35],"chance":chance,"yes":yes,"no":no})
-        # Only show date/time if we have a kickoff time
+        # Show date+time if we have kickoff, otherwise just date
         if kickoff_dt and game_date:
             try:
                 import pytz as _pytz
@@ -401,7 +400,9 @@ def get_data():
                 mon = game_date.strftime("%b")
                 display = f"{mon} {game_date.day}, {hour}:{kt.strftime('%M')}{ampm} {tz_label}"
             except:
-                display = ""
+                display = game_date.strftime("%b %-d") if game_date else ""
+        elif game_date:
+            display = game_date.strftime("%b %-d")
         else:
             display = ""
         return sort_dt, game_date, kickoff_dt, display, outcomes
