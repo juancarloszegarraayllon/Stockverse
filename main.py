@@ -466,6 +466,7 @@ def get_data():
                 "_is_sport": bool(row.get("_is_sport",False)),
                 "_display_dt": display_dt,
                 "_kickoff_dt": kickoff_dt.isoformat() if kickoff_dt else None,
+                "_debug": {"exp": str(exp_dt) if exp_dt else None, "close": str(close_dt) if close_dt else None},
                 "_sort_dt": sort_dt.isoformat() if sort_dt else None,
                 "outcomes": outcomes,
             }
