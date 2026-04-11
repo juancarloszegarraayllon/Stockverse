@@ -1087,6 +1087,70 @@ def sofascore_raw():
     except Exception as e:
         return {"error": str(e)}
 
+@app.get("/api/debug_live")
+def debug_live(title: str, sport: str = "Soccer"):
+    """Debug: runs match_game against ESPN and SofaScore for the
+    given (title, sport) and returns the raw game dict each feed
+    would provide — display_clock, period, captured_at_ms, state,
+    scores, team phrases, etc. Use this to figure out why a specific
+    live card's clock or score looks wrong."""
+    out: Dict[str, Any] = {"title": title, "sport": sport}
+    try:
+        from espn_feed import match_game as em, _normalize as en
+        import time as _t
+        g = em(title, sport) if em else None
+        if g:
+            age_s = None
+            if g.get("captured_at_ms"):
+                age_s = round((_t.time() * 1000 - g["captured_at_ms"]) / 1000, 1)
+            out["espn"] = {
+                "league": g.get("league"),
+                "home": g.get("home_display"),
+                "away": g.get("away_display"),
+                "home_score": g.get("home_score"),
+                "away_score": g.get("away_score"),
+                "state": g.get("state"),
+                "display_clock": g.get("display_clock"),
+                "period": g.get("period"),
+                "clock_running": g.get("clock_running"),
+                "short_detail": g.get("short_detail"),
+                "captured_age_seconds": age_s,
+                "home_phrases": g.get("home_phrases"),
+                "away_phrases": g.get("away_phrases"),
+            }
+        else:
+            out["espn"] = None
+    except Exception as e:
+        out["espn_error"] = f"{type(e).__name__}: {e}"
+    try:
+        from sofascore_feed import match_game as sm
+        import time as _t
+        g = sm(title, sport) if sm else None
+        if g:
+            age_s = None
+            if g.get("captured_at_ms"):
+                age_s = round((_t.time() * 1000 - g["captured_at_ms"]) / 1000, 1)
+            out["sofascore"] = {
+                "league": g.get("league"),
+                "home": g.get("home_display"),
+                "away": g.get("away_display"),
+                "home_score": g.get("home_score"),
+                "away_score": g.get("away_score"),
+                "state": g.get("state"),
+                "display_clock": g.get("display_clock"),
+                "period": g.get("period"),
+                "clock_running": g.get("clock_running"),
+                "short_detail": g.get("short_detail"),
+                "captured_age_seconds": age_s,
+                "home_phrases": g.get("home_phrases"),
+                "away_phrases": g.get("away_phrases"),
+            }
+        else:
+            out["sofascore"] = None
+    except Exception as e:
+        out["sofascore_error"] = f"{type(e).__name__}: {e}"
+    return out
+
 @app.get("/api/debug_sofa")
 def debug_sofa(title: str, sport: str = "Soccer"):
     """Debug: exercises sofascore_feed.match_game for a given title

@@ -269,12 +269,21 @@ async def _fetch_sport(client, slug: str, label: str):
             return [], info
         now_ms = int(time.time() * 1000)
         out = []
+        bad = 0
         for ev in events:
-            parsed = _parse_event(ev, label)
-            if parsed:
-                parsed["captured_at_ms"] = now_ms
-                out.append(parsed)
+            try:
+                parsed = _parse_event(ev, label)
+                if parsed:
+                    parsed["captured_at_ms"] = now_ms
+                    out.append(parsed)
+            except Exception as e:
+                bad += 1
+                if bad == 1:
+                    log.debug("sofascore %s parse err: %s", slug, e)
+                continue
         info["count"] = len(out)
+        if bad:
+            info["bad"] = bad
         return out, info
     except Exception as e:
         info["status"] = f"err:{type(e).__name__}"
