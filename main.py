@@ -512,7 +512,7 @@ def get_data():
     # a matched _live_state for the event — once we have real-time
     # data from a feed, isLive() trusts that directly.
     DURATION = {
-        "Soccer": timedelta(hours=3, minutes=15),
+        "Soccer": timedelta(hours=3),
         "Baseball": timedelta(hours=3, minutes=30),
         "Basketball": timedelta(hours=3),
         "Hockey": timedelta(hours=2, minutes=45),
