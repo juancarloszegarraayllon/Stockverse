@@ -56,6 +56,16 @@ html,body{background:var(--bg);color:var(--text);font-family:Helvetica,Arial,san
 .tennis-row .tn-box{min-width:26px;padding:3px 7px;border:1px solid var(--border);border-radius:4px;background:var(--bg3);text-align:center;font-size:11px;font-weight:700;color:var(--text)}
 .tennis-row .tn-history{display:flex;gap:3px}
 .tennis-row .tn-history .tn-box{background:transparent;color:var(--text-dim);border-color:transparent;padding:3px 4px;min-width:18px}
+/* Tab strip shown at the top of cards with multiple market groups
+   (La Liga moneyline + spread + total + BTTS + 1H collapsed into
+   one card by the backend). Only the active tab's outcome table
+   is visible; switching is pure CSS via .market-group.active. */
+.market-tabs{display:flex;gap:4px;flex-wrap:wrap;margin:8px 0 0;padding:0;border-bottom:1px solid var(--border)}
+.market-tab{padding:5px 10px;background:transparent;border:0;border-bottom:2px solid transparent;color:var(--text-muted);font-family:inherit;font-size:10px;font-weight:700;letter-spacing:0.4px;text-transform:uppercase;cursor:pointer;transition:color 0.12s,border-color 0.12s}
+.market-tab:hover{color:var(--text-dim)}
+.market-tab.active{color:var(--text);border-bottom-color:var(--green)}
+.market-group{display:none}
+.market-group.active{display:block}
 .outcome-header{display:flex;align-items:center;gap:6px;padding:6px 0 2px}
 .outcome-header .outcome-label{flex:1}
 .header-chance{min-width:58px;text-align:center;font-size:8px;font-weight:700;letter-spacing:0.4px;color:var(--text-muted);text-transform:uppercase;flex-shrink:0}
@@ -683,6 +693,45 @@ function buildTennisScore(ev) {
   return '<div class="tennis-score">' + renderRow(1) + renderRow(2) + '</div>';
 }
 
+// Render one outcome table (header row + outcome rows + optional
+// expand button). Shared by both the flat single-market card and
+// each market_group tab inside a multi-market card.
+function buildOutcomeTable(outcomes, groupCode) {
+  var h = "";
+  var total = outcomes.length;
+  if (total === 0) return h;
+  h += "<div class=\"outcome-header\">";
+  h += "<div class=\"outcome-label\"></div>";
+  h += "<div class=\"header-chance\">Probability</div>";
+  h += "<div class=\"header-odds\">";
+  h += "<div class=\"header-odds-box header-yes\">Yes</div>";
+  h += "<div class=\"header-odds-box header-no\">No</div>";
+  h += "</div>";
+  h += "</div>";
+  // Rows beyond the first 5 get "outcome-row-extra" so they're
+  // hidden until the "Show all N outcomes" button is clicked.
+  for (var i = 0; i < total; i++) {
+    var o = outcomes[i];
+    var extraClass = i >= 5 ? " outcome-row-extra" : "";
+    h += "<div class=\"outcome-row" + extraClass + "\"";
+    if (groupCode) h += " data-group=\"" + groupCode + "\"";
+    h += ">";
+    h += "<div class=\"outcome-label\">" + o.label + "</div>";
+    h += "<div class=\"outcome-chance\">" + o.chance + "</div>";
+    h += "<div class=\"outcome-odds\">";
+    h += "<div class=\"odds-box odds-yes\">" + o.yes + "</div>";
+    h += "<div class=\"odds-box odds-no\">" + o.no + "</div>";
+    h += "</div></div>";
+  }
+  if (total > 5) {
+    var hidden = total - 5;
+    h += '<button class="outcome-expand-btn" data-total="' + total + '" onclick="window.toggleCardOutcomes(this)">';
+    h += "Show all " + total + " outcomes (" + hidden + " more)";
+    h += "</button>";
+  }
+  return h;
+}
+
 function buildCard(ev) {
   var sport = ev._sport || "";
   var cat = ev.category || "Other";
@@ -692,6 +741,12 @@ function buildCard(ev) {
   var series = ev.series_ticker || "";
   var url = series ? "https://kalshi.com/markets/" + series.toLowerCase() + "/" + series.toLowerCase().replace("kx", "") + "/" + ticker.toLowerCase() : "";
   var outcomes = ev.outcomes || [];
+  // When the backend has collapsed sibling game markets (La Liga
+  // spread / total / BTTS / 1H) under the moneyline parent, render
+  // the card with a tab strip. Otherwise render a normal flat
+  // outcome table.
+  var groups = ev.market_groups || null;
+  var hasGroups = Array.isArray(groups) && groups.length > 1;
 
   var h = "<div class=\"market-card\" data-event-ticker=\"" + (ticker || "") + "\">";
   var subcat = ev._subcat || "";
@@ -710,40 +765,52 @@ function buildCard(ev) {
   h += "</div>";
   // Tennis scoreboard (2 rows per player) when available.
   h += buildTennisScore(ev);
-  var total = outcomes.length;
-  if (total > 0) {
-    h += "<div class=\"outcome-header\">";
-    h += "<div class=\"outcome-label\"></div>";
-    h += "<div class=\"header-chance\">Probability</div>";
-    h += "<div class=\"header-odds\">";
-    h += "<div class=\"header-odds-box header-yes\">Yes</div>";
-    h += "<div class=\"header-odds-box header-no\">No</div>";
+
+  if (hasGroups) {
+    // Tab strip. First group is active by default (backend orders
+    // them moneyline → spread → total → BTTS → 1H).
+    h += '<div class="market-tabs">';
+    for (var t = 0; t < groups.length; t++) {
+      var g = groups[t];
+      var activeCls = t === 0 ? " active" : "";
+      h += '<button class="market-tab' + activeCls + '" data-group="' + g.type_code + '" onclick="window.switchMarketTab(this)">';
+      h += g.label;
+      h += "</button>";
+    }
     h += "</div>";
-    h += "</div>";
-  }
-  // Render every outcome. Rows beyond the first 5 get an
-  // "outcome-row-extra" class that's hidden by default; a
-  // toggle button at the bottom reveals them when clicked.
-  for (var i = 0; i < total; i++) {
-    var o = outcomes[i];
-    var extraClass = i >= 5 ? " outcome-row-extra" : "";
-    h += "<div class=\"outcome-row" + extraClass + "\">";
-    h += "<div class=\"outcome-label\">" + o.label + "</div>";
-    h += "<div class=\"outcome-chance\">" + o.chance + "</div>";
-    h += "<div class=\"outcome-odds\">";
-    h += "<div class=\"odds-box odds-yes\">" + o.yes + "</div>";
-    h += "<div class=\"odds-box odds-no\">" + o.no + "</div>";
-    h += "</div></div>";
-  }
-  if (total > 5) {
-    var hidden = total - 5;
-    h += '<button class="outcome-expand-btn" data-total="' + total + '" onclick="window.toggleCardOutcomes(this)">';
-    h += "Show all " + total + " outcomes (" + hidden + " more)";
-    h += "</button>";
+    // Render each group's table inside its own wrapper so CSS can
+    // hide inactive ones. All outcomes stay in the DOM so live
+    // refresh updates every tab even when it's not visible.
+    for (var t2 = 0; t2 < groups.length; t2++) {
+      var g2 = groups[t2];
+      var activeCls2 = t2 === 0 ? " active" : "";
+      h += '<div class="market-group' + activeCls2 + '" data-group="' + g2.type_code + '">';
+      h += buildOutcomeTable(g2.outcomes || [], g2.type_code);
+      h += "</div>";
+    }
+  } else {
+    h += buildOutcomeTable(outcomes, "");
   }
   h += "</div>";
   return h;
 }
+
+// Tab click handler: toggle .active on both the clicked tab and
+// its matching .market-group panel within the same card.
+window.switchMarketTab = function(btn) {
+  var card = btn.closest(".market-card");
+  if (!card) return;
+  var code = btn.getAttribute("data-group");
+  if (!code) return;
+  var tabs = card.querySelectorAll(".market-tab");
+  for (var i = 0; i < tabs.length; i++) {
+    tabs[i].classList.toggle("active", tabs[i].getAttribute("data-group") === code);
+  }
+  var panels = card.querySelectorAll(".market-group");
+  for (var j = 0; j < panels.length; j++) {
+    panels[j].classList.toggle("active", panels[j].getAttribute("data-group") === code);
+  }
+};
 
 // Toggle expanded state on a card and update the button label.
 // Called inline from the "Show all N outcomes" button.
@@ -912,16 +979,43 @@ async function refreshVisible() {
       } else if (tscore && !freshTennis) {
         tscore.parentNode.removeChild(tscore);
       }
-      var rows = card.querySelectorAll(".outcome-row");
-      var outs = ev.outcomes || [];
-      for (var j = 0; j < rows.length && j < outs.length; j++) {
-        var row = rows[j];
-        var o = outs[j];
-        var chanceEl = row.querySelector(".outcome-chance");
-        _updateIfChanged(chanceEl, chanceEl, o.chance);
-        var boxes = row.querySelectorAll(".odds-box");
-        _updateIfChanged(boxes[0], boxes[0], o.yes);
-        _updateIfChanged(boxes[1], boxes[1], o.no);
+      // Multi-market cards (tabbed La Liga game cards) carry their
+      // outcomes under ev.market_groups[]. Each panel in the DOM
+      // has data-group=<type_code> matching one of the groups, so
+      // we update per-panel. Single-market cards fall through to
+      // the flat ev.outcomes list and pick up rows by index.
+      var groups = ev.market_groups;
+      if (Array.isArray(groups) && groups.length > 1) {
+        for (var gi = 0; gi < groups.length; gi++) {
+          var gr = groups[gi];
+          var code = gr.type_code || "";
+          if (!code) continue;
+          var panel = card.querySelector('.market-group[data-group="' + code + '"]');
+          if (!panel) continue;
+          var grows = panel.querySelectorAll(".outcome-row");
+          var gouts = gr.outcomes || [];
+          for (var gj = 0; gj < grows.length && gj < gouts.length; gj++) {
+            var grow = grows[gj];
+            var go = gouts[gj];
+            var gChance = grow.querySelector(".outcome-chance");
+            _updateIfChanged(gChance, gChance, go.chance);
+            var gBoxes = grow.querySelectorAll(".odds-box");
+            _updateIfChanged(gBoxes[0], gBoxes[0], go.yes);
+            _updateIfChanged(gBoxes[1], gBoxes[1], go.no);
+          }
+        }
+      } else {
+        var rows = card.querySelectorAll(".outcome-row");
+        var outs = ev.outcomes || [];
+        for (var j = 0; j < rows.length && j < outs.length; j++) {
+          var row = rows[j];
+          var o = outs[j];
+          var chanceEl = row.querySelector(".outcome-chance");
+          _updateIfChanged(chanceEl, chanceEl, o.chance);
+          var boxes = row.querySelectorAll(".odds-box");
+          _updateIfChanged(boxes[0], boxes[0], o.yes);
+          _updateIfChanged(boxes[1], boxes[1], o.no);
+        }
       }
     }
   } catch (e) { /* swallow: next tick will try again */ }

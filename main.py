@@ -250,6 +250,101 @@ for sport, series_list in _SPORT_SERIES.items():
 def get_sport(series_ticker):
     return SERIES_SPORT.get(str(series_ticker).upper(), "")
 
+
+# ── Game-market grouping ──────────────────────────────────────────────────────
+# Kalshi publishes a single soccer game's different market types as
+# separate events that all share the same game-suffix. Example for
+# Sevilla vs Atletico on Apr 11:
+#   KXLALIGAGAME-26APR11SEVATM     (moneyline — parent/primary card)
+#   KXLALIGASPREAD-26APR11SEVATM   (point spread)
+#   KXLALIGATOTAL-26APR11SEVATM    (over/under goals)
+#   KXLALIGABTTS-26APR11SEVATM     (both teams to score)
+#   KXLALIGA1H-26APR11SEVATM       (first-half winner)
+# Kalshi's own UI merges these into one card with tabs. We do the
+# same: the moneyline becomes the parent, the siblings become
+# additional market_groups on that parent, and the sibling events
+# are dropped from the top-level records list so they don't also
+# render as independent cards.
+#
+# First pass: La Liga only. Once we've eyeballed the UX on a real
+# Sevilla vs Atletico card we can extend this map to EPL / UCL /
+# Serie A / Bundesliga / Ligue 1 etc. — the pattern is identical
+# across leagues, only the prefix changes.
+GAME_MARKET_PREFIXES = {
+    # series_ticker prefix → (type_code, display_label, tab priority, is_primary)
+    "KXLALIGAGAME":   ("moneyline", "Winner",     0, True),
+    "KXLALIGASPREAD": ("spread",    "Spread",     1, False),
+    "KXLALIGATOTAL":  ("total",     "Totals",     2, False),
+    "KXLALIGABTTS":   ("btts",      "Both Score", 3, False),
+    "KXLALIGA1H":     ("firsthalf", "1st Half",   4, False),
+}
+
+
+def _game_suffix(event_ticker: str) -> str:
+    """KXLALIGAGAME-26APR11SEVATM → '26APR11SEVATM'.
+    Returns the part after the first '-', which Kalshi uses as the
+    shared per-game identifier across sibling market events."""
+    parts = (event_ticker or "").split("-", 1)
+    return parts[1] if len(parts) == 2 else ""
+
+
+def _group_game_markets(records):
+    """Collapse sibling game-market events into a parent card.
+
+    Walks records once, buckets any record whose series_ticker is in
+    GAME_MARKET_PREFIXES by its game suffix, and for each suffix that
+    has a primary (moneyline) record attaches the siblings as
+    `_market_groups` on the primary. Siblings are dropped from the
+    top-level list so they don't double-render as standalone cards.
+    Orphan siblings (no moneyline parent) are left in place.
+    """
+    by_suffix = {}  # suffix → {type_code: record}
+    for r in records:
+        series = (r.get("series_ticker") or "").upper()
+        mt = GAME_MARKET_PREFIXES.get(series)
+        if not mt:
+            continue
+        suffix = _game_suffix(r.get("event_ticker", ""))
+        if not suffix:
+            continue
+        by_suffix.setdefault(suffix, {})[mt[0]] = r
+
+    to_drop = set()  # event_tickers of siblings to remove from list
+    # Sorted so tab order is stable: Winner → Spread → Totals → BTTS → 1H.
+    ordered = sorted(GAME_MARKET_PREFIXES.items(), key=lambda kv: kv[1][2])
+    for suffix, type_map in by_suffix.items():
+        primary = type_map.get("moneyline")
+        if not primary:
+            # Orphan — no parent GAME event. Leave siblings alone so
+            # they still surface as individual cards.
+            continue
+        groups = []
+        for _series, (type_code, label, _priority, is_primary) in ordered:
+            rec = type_map.get(type_code)
+            if not rec:
+                continue
+            groups.append({
+                "type_code": type_code,
+                "label":     label,
+                # Store raw stored-outcomes here; _format_outcomes is
+                # applied per-request by the /api/events formatter so
+                # live WebSocket prices flow through without needing
+                # to rebuild the get_data() cache.
+                "_outcomes": rec.get("outcomes", []),
+                "event_ticker": rec.get("event_ticker", ""),
+            })
+            if not is_primary:
+                to_drop.add(rec.get("event_ticker"))
+        # Only attach market_groups when there's more than just the
+        # moneyline — otherwise there's nothing to tab between and
+        # the frontend should render the card the normal way.
+        if len(groups) > 1:
+            primary["_market_groups"] = groups
+
+    if not to_drop:
+        return records
+    return [r for r in records if r.get("event_ticker") not in to_drop]
+
 # ── Sport sub-tabs ─────────────────────────────────────────────────────────────
 SPORT_SUBTABS = {
 "Basketball":[("NBA Games",["KXNBAGAME","KXNBASPREAD","KXNBATOTAL","KXNBATEAMTOTAL","KXNBA1HWINNER","KXNBA1HSPREAD","KXNBA1HTOTAL","KXNBA2HWINNER","KXNBA2D","KXNBA3D","KXNBA3PT","KXNBAPTS","KXNBAREB","KXNBAAST","KXNBABLK","KXNBASTL"]),("NBA Season",["KXNBA","KXNBAEAST","KXNBAWEST","KXNBAPLAYOFF","KXNBAPLAYIN","KXNBAATLANTIC","KXNBACENTRAL","KXNBASOUTHEAST","KXNBANORTHWEST","KXNBAPACIFIC","KXNBASOUTHWEST","KXNBAEAST1SEED","KXNBAWEST1SEED","KXTEAMSINNBAF","KXTEAMSINNBAEF","KXTEAMSINNBAWF","KXNBAMATCHUP","KXNBAWINS","KXRECORDNBABEST"]),("NBA Awards",["KXNBAMVP","KXNBAROY","KXNBACOY","KXNBADPOY","KXNBASIXTH","KXNBAMIMP","KXNBACLUTCH","KXNBAFINMVP","KXNBAWFINMVP","KXNBAEFINMVP","KXNBA1STTEAM","KXNBA2NDTEAM","KXNBA3RDTEAM","KXNBA1STTEAMDEF","KXNBA2NDTEAMDEF"]),("NBA Stats",["KXLEADERNBAPTS","KXLEADERNBAREB","KXLEADERNBAAST","KXLEADERNBABLK","KXLEADERNBASTL","KXLEADERNBA3PT"]),("NBA Draft",["KXNBADRAFT1","KXNBADRAFTPICK","KXNBADRAFTTOP","KXNBADRAFTCAT","KXNBADRAFTCOMP","KXNBATOPPICK","KXNBALOTTERYODDS","KXNBATOP5ROTY"]),("NBA Other",["KXNBATEAM","KXNBASEATTLE","KXCITYNBAEXPAND","KXSONICS","KXNEXTTEAMNBA","KXLBJRETIRE","KXSPORTSOWNERLBJ","KXSTEPHDEAL","KXQUADRUPLEDOUBLE","KXSHAI20PTREC","KXNBA2KCOVER"]),("WNBA",["KXWNBADRAFT1","KXWNBADRAFTTOP3","KXWNBADELAY","KXWNBAGAMESPLAYED"]),("NCAAB",["KXMARMAD","KXNCAAMBNEXTCOACH"]),("International",["KXEUROLEAGUEGAME","KXBSLGAME","KXBBLGAME","KXACBGAME","KXISLGAME","KXABAGAME","KXCBAGAME","KXBBSERIEAGAME","KXJBLEAGUEGAME","KXLNBELITEGAME","KXARGLNBGAME","KXVTBGAME"]),],
@@ -752,11 +847,18 @@ def get_data():
     # Free the raw events list explicitly so GC can reclaim the big
     # Kalshi payloads before we return.
     del all_ev
+    # Collapse La Liga game-market siblings (SPREAD / TOTAL / BTTS /
+    # 1H) into the moneyline parent so one Sevilla vs Atletico card
+    # shows all five market types via tabs instead of rendering 5
+    # separate cards. See GAME_MARKET_PREFIXES.
+    before_group = len(records)
+    records = _group_game_markets(records)
+    grouped_into = before_group - len(records)
     sport_count = sum(1 for r in records if r.get("_is_sport"))
     kickoff_count = sum(1 for r in records if r.get("_kickoff_dt"))
     logging.getLogger("oddsiq").info(
-        "get_data: raw=%d records=%d sport=%d kickoff=%d",
-        raw_count, len(records), sport_count, kickoff_count,
+        "get_data: raw=%d records=%d sport=%d kickoff=%d grouped=%d",
+        raw_count, len(records), sport_count, kickoff_count, grouped_into,
     )
     _cache["data"] = records
     _cache["ts"] = now
@@ -994,6 +1096,24 @@ def get_events(
     for r in page:
         rc = dict(r)
         rc["outcomes"] = _format_outcomes(r.get("outcomes", []))
+        # When this record has sibling market groups (La Liga
+        # spread / total / BTTS / 1H collapsed under the moneyline
+        # parent by _group_game_markets), format each group's
+        # outcomes the same way so live WebSocket prices flow into
+        # every tab, not just the default Winner tab.
+        mg = r.get("_market_groups")
+        if mg:
+            rc["market_groups"] = [
+                {
+                    "type_code":    g.get("type_code", ""),
+                    "label":        g.get("label", ""),
+                    "event_ticker": g.get("event_ticker", ""),
+                    "outcomes":     _format_outcomes(g.get("_outcomes", [])),
+                }
+                for g in mg
+            ]
+            # Don't leak the private `_market_groups` key to clients.
+            rc.pop("_market_groups", None)
         sport = r.get("_sport", "")
         title = r.get("title", "")
         g = None
