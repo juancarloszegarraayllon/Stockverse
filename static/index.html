@@ -442,6 +442,14 @@ function appendCards(evs) {
 }
 
 function isLive(ev) {
+  // If ESPN or SofaScore explicitly reported the game as in
+  // progress or finished, trust that directly. This avoids bad
+  // edge cases where our computed kickoff window (derived from
+  // Kalshi's expected_expiration_time minus a per-sport DURATION
+  // estimate) is off by an hour or two and hides a clearly-live
+  // game behind a static kickoff timestamp.
+  if (ev._live_state && ev._live_state.state === "in") return true;
+  if (ev._live_state && ev._live_state.state === "post") return true;
   if (!ev._kickoff_dt || !ev._game_end_dt) return false;
   try {
     var now = Date.now();
