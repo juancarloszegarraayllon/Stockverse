@@ -1024,26 +1024,42 @@ def espn_status():
         return {"error": str(e)}
 
 @app.get("/api/kalshi_event_raw")
-def kalshi_event_raw(ticker: str = "", status: str = "open"):
-    """Debug: fetches a small page of Kalshi events (open by
-    default) and returns the full raw structure of one of them —
-    every field on the event and every field on each of its
-    markets. Used to verify whether Kalshi's public API exposes
-    any live game state we could use directly (score, clock,
-    period, status, sub_title hints, etc.).
+def kalshi_event_raw(ticker: str = "", status: str = "open", prefer: str = "sport"):
+    """Debug: fetches several pages of Kalshi events and returns
+    the full raw structure of one of them — every field on the
+    event and every field on each of its markets. Used to verify
+    whether Kalshi's public API exposes live game state (score,
+    clock, period, status, sub_title hints, etc.).
 
-    If `ticker` is passed, returns that specific event if found
-    within the fetched page; otherwise returns the first event."""
+    Params:
+      - ticker: return this exact event_ticker if found in the
+        fetched pages, otherwise error out.
+      - status: "open" (default) or "closed".
+      - prefer: "sport" (default) returns the first event whose
+        series_ticker matches a known sport; "any" returns the
+        first event regardless.
+    """
     try:
         client = get_client()
-        resp = client.get_events(
-            limit=50,
-            status=status,
-            with_nested_markets=True,
-        ).to_dict()
-        events = resp.get("events", []) or []
+        events: List[Dict[str, Any]] = []
+        cursor = None
+        # Pull multiple pages because the first page is usually
+        # dominated by political / longshot markets; sport events
+        # come later in the unfiltered listing.
+        for _ in range(6):
+            kw = {"limit": 200, "status": status, "with_nested_markets": True}
+            if cursor:
+                kw["cursor"] = cursor
+            resp = client.get_events(**kw).to_dict()
+            events.extend(resp.get("events", []) or [])
+            cursor = resp.get("cursor") or resp.get("next_cursor")
+            if not cursor:
+                break
+            if ticker is None:
+                break
         if not events:
             return {"error": "no events returned", "status": status}
+
         picked = None
         if ticker:
             for ev in events:
@@ -1052,11 +1068,20 @@ def kalshi_event_raw(ticker: str = "", status: str = "open"):
                     break
             if picked is None:
                 return {
-                    "error": f"ticker {ticker!r} not in first 50 {status} events",
-                    "available_tickers": [e.get("event_ticker") for e in events[:15]],
+                    "error": f"ticker {ticker!r} not in first {len(events)} {status} events",
+                    "hint": "call without ?ticker= to get a sample sport event",
                 }
+        elif prefer == "sport":
+            for ev in events:
+                series = str(ev.get("series_ticker") or "").upper()
+                if get_sport(series):
+                    picked = ev
+                    break
+            if picked is None:
+                picked = events[0]
         else:
             picked = events[0]
+
         markets = picked.get("markets") or []
         first_market = markets[0] if markets else {}
         all_market_fields = set()
@@ -1065,6 +1090,8 @@ def kalshi_event_raw(ticker: str = "", status: str = "open"):
                 all_market_fields.update(mk.keys())
         return {
             "event_ticker": picked.get("event_ticker"),
+            "series_ticker": picked.get("series_ticker"),
+            "derived_sport": get_sport(str(picked.get("series_ticker") or "").upper()),
             "event_fields": sorted(list(picked.keys())),
             "event": picked,
             "market_count": len(markets),
