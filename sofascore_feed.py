@@ -181,9 +181,16 @@ def _parse_event(ev: Dict[str, Any], sport_label: str) -> Optional[Dict[str, Any
     tournament = ev.get("tournament") or {}
     league = (tournament.get("name") or "").strip()
 
+    # SofaScore's startTimestamp is the scheduled kickoff in Unix
+    # seconds. Store as epoch ms for main.py to use as an
+    # authoritative kickoff override.
+    start_ts = ev.get("startTimestamp")
+    sched_ms = int(start_ts * 1000) if isinstance(start_ts, (int, float)) else None
+
     g = {
         "sport": sport_label,
         "league": league,
+        "scheduled_kickoff_ms": sched_ms,
         "home_display": home_name,
         "away_display": away_name,
         "home_phrases": _team_phrases(home),

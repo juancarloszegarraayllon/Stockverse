@@ -477,17 +477,19 @@ function liveTimeLabel(ev) {
 }
 
 function buildDateText(ev) {
-  var dt = ev._display_dt || "";
-  if (ev._kickoff_dt && ev._sport) {
+  // Prefer the kickoff timestamp — ESPN/SofaScore override it with
+  // the real scheduled start when they match, so it's authoritative.
+  // _display_dt is only used as a fallback for events with no
+  // kickoff_dt at all (rare, usually non-sport markets).
+  if (ev._kickoff_dt) {
     try {
       var kd = new Date(ev._kickoff_dt);
-      var opts = {hour: "numeric", minute: "2-digit", timeZone: "America/New_York", timeZoneName: "short"};
-      var timeStr = kd.toLocaleTimeString("en-US", opts);
-      if (dt) dt = dt + ", " + timeStr;
-      else dt = kd.toLocaleDateString("en-US", {month:"short", day:"numeric", timeZone:"America/New_York"}) + ", " + timeStr;
+      var dateOpts = {month: "short", day: "numeric", timeZone: "America/New_York"};
+      var timeOpts = {hour: "numeric", minute: "2-digit", timeZone: "America/New_York", timeZoneName: "short"};
+      return kd.toLocaleDateString("en-US", dateOpts) + ", " + kd.toLocaleTimeString("en-US", timeOpts);
     } catch (e) {}
   }
-  return dt;
+  return ev._display_dt || "";
 }
 
 // Score string to display on a live/final badge. The backend builds

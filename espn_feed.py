@@ -331,6 +331,20 @@ def _parse_event(ev: Dict[str, Any], league: str, sport: str) -> Optional[Dict[s
         return None
     home_team = home.get("team") or {}
     away_team = away.get("team") or {}
+    # ESPN's event-level `date` field is the scheduled kickoff time
+    # (ISO 8601, UTC). Parse it into epoch ms so main.py can use it
+    # as an authoritative kickoff override for matched games.
+    sched_ms = None
+    ev_date = ev.get("date")
+    if isinstance(ev_date, str) and ev_date:
+        s = ev_date
+        if s.endswith("Z"):
+            s = s[:-1] + "+00:00"
+        try:
+            from datetime import datetime as _dt
+            sched_ms = int(_dt.fromisoformat(s).timestamp() * 1000)
+        except Exception:
+            pass
     return {
         "sport": sport,
         "league": league,
@@ -348,6 +362,7 @@ def _parse_event(ev: Dict[str, Any], league: str, sport: str) -> Optional[Dict[s
         "short_detail": stype.get("shortDetail", ""),
         "detail": stype.get("detail", ""),
         "description": stype.get("description", ""),
+        "scheduled_kickoff_ms": sched_ms,
     }
 
 

@@ -897,6 +897,21 @@ def get_events(
                 "away_score":     g.get("away_score", ""),
                 "score_display":  _score_display(title, g),
             }
+            # If ESPN or SofaScore gave us the actual scheduled
+            # kickoff time, override our DURATION-based estimate
+            # with it. Kalshi's expected_expiration_time varies per
+            # match, so no fixed DURATION can be universally
+            # accurate — but ESPN's date field and SofaScore's
+            # startTimestamp are authoritative.
+            sched_ms = g.get("scheduled_kickoff_ms")
+            if sched_ms:
+                try:
+                    from datetime import datetime as _dt2
+                    rc["_kickoff_dt"] = _dt2.fromtimestamp(
+                        sched_ms / 1000, tz=timezone.utc
+                    ).isoformat()
+                except Exception:
+                    pass
         formatted.append(rc)
     return {"total": total, "offset": offset, "limit": limit, "events": formatted}
 
