@@ -490,26 +490,33 @@ def _format_outcomes(stored_outcomes):
             if live.get("no_ask")  is not None: na = live["no_ask"]
         # Liquidity check. A market is treated as "dead" (shown as
         # — in all three columns, matching Kalshi's own --% render)
-        # when ANY of:
-        #   - All four sides have zero size (no orders anywhere)
-        #   - Volume is 0 AND open interest is 0 (nobody has ever
-        #     traded this market and nobody holds a position)
-        # The second rule catches futures markets like "Women's CL
-        # Champion" where a lone market-maker ask at 80¢ sits
-        # against an empty bid, producing a fake 40% midprice.
+        # only when the order book is NOT two-sided. Concretely: we
+        # need both a real bid and a real ask for the outcome to be
+        # priceable. Note that a YES bid is the same order as a NO
+        # ask (both are "buy YES / sell NO") so either side counts.
+        #
+        # This rule correctly handles three important cases:
+        #   - Pregame Blackburn (bid=13¢/ask=18¢, vol=0, oi=0) →
+        #     both sides present → LIVE. The old "vol=0 AND oi=0"
+        #     rule wrongly hid these pregame MM quotes.
+        #   - Stale Real Madrid WCL lone 80¢ ask against empty bid
+        #     → bid side empty → DEAD. No fake 40% midprice.
+        #   - Market with last_price > 0 (traded historically) →
+        #     handled below — last_price overrides midprice even
+        #     when the current book has gone one-sided.
         yb_sz = o.get("_yb_sz") or 0
         ya_sz = o.get("_ya_sz") or 0
         nb_sz = o.get("_nb_sz") or 0
         na_sz = o.get("_na_sz") or 0
-        vol   = o.get("_vol")   or 0
-        oi    = o.get("_oi")    or 0
-        dead = (
-            (yb_sz == 0 and ya_sz == 0 and nb_sz == 0 and na_sz == 0)
-            or (vol == 0 and oi == 0)
-        )
-        if dead:
-            chance_c = yes_c = no_c = None
-        else:
+        # YES-buy = NO-sell; YES-sell = NO-buy.
+        bid_side = (yb_sz > 0) or (na_sz > 0)
+        ask_side = (ya_sz > 0) or (nb_sz > 0)
+        two_sided = bid_side and ask_side
+        last = o.get("_last")
+        if live and live.get("last_price") is not None:
+            last = live["last_price"]
+        has_last = last is not None and last > 0
+        if two_sided:
             chance_c, yes_c, no_c = _midprice_and_ask(yb, ya, nb, na)
             # Prefer last-traded price as the "chance" when the
             # market has actually been traded. Kalshi's UI does the
@@ -519,11 +526,18 @@ def _format_outcomes(stored_outcomes):
             # chance should read 84% not 43%. YES/NO price boxes
             # still show the live bid/ask since those are the
             # actual "pay to buy" prices right now.
-            last = o.get("_last")
-            if live and live.get("last_price") is not None:
-                last = live["last_price"]
-            if last is not None and last > 0:
+            if has_last:
                 chance_c = last
+        elif has_last:
+            # One-sided book but we have a historical trade price —
+            # show last_price as the chance (what Kalshi's card
+            # shows). YES/NO cells fall back to whatever quotes
+            # still exist; either may be —.
+            chance_c = last
+            yes_c = ya if ya is not None else yb
+            no_c  = na if na is not None else nb
+        else:
+            chance_c = yes_c = no_c = None
         tmp.append((chance_c, {
             "label":  o.get("label", ""),
             "ticker": tk,
@@ -1403,6 +1417,145 @@ def kalshi_search(q: str = "", limit: int = 20):
             if len(hits) >= limit:
                 break
     return {"q": q, "count": len(hits), "hits": hits}
+
+@app.get("/api/kalshi_data_audit")
+def kalshi_data_audit(
+    sport: str = "",
+    series: str = "",
+    limit: int = 50,
+    suspicious_only: bool = True,
+):
+    """Diagnostic: walk the cached REST snapshot and flag events
+    whose outcomes render blank ("—") in the OddsIQ UI. For each
+    outcome we re-run the exact same dead-market rules as
+    _format_outcomes (two-sided book + last_price override), then
+    classify each dead row as one of:
+      - no_book           → no orders on either side anywhere; truly dead
+      - one_sided_bid     → only bids, no asks (stale/resolved)
+      - one_sided_ask     → only asks, no bids (stale futures market)
+      - suspicious        → one side has orders AND the other side
+                            also has orders but was hidden anyway
+                            (shouldn't happen — would be a bug)
+    Also reports any outcome with last_price>0 that still rendered
+    as —, which flags a fix regression.
+
+    Query args:
+      sport=Soccer         filter to a single sport
+      series=KXEFLCHAMP..  filter to a specific series ticker
+      limit=50             max events to return
+      suspicious_only=1    only return events with at least one dead
+                           outcome (default) — set to 0 to see every
+                           event's outcome health
+
+    Typical usage: hit /api/kalshi_data_audit?sport=Soccer to find
+    every soccer card where one or more rows are blank, so we can
+    tell at a glance whether OddsIQ is hiding data that Kalshi
+    itself shows.
+    """
+    records = get_data()
+    try:
+        from kalshi_ws import LIVE_PRICES
+    except Exception:
+        LIVE_PRICES = {}
+    flagged = []
+    totals = {
+        "events_scanned": 0,
+        "events_with_dead": 0,
+        "events_with_suspicious": 0,
+        "outcomes_scanned": 0,
+        "outcomes_dead": 0,
+        "outcomes_suspicious": 0,
+    }
+    for r in records:
+        if sport and r.get("_sport") != sport:
+            continue
+        if series and r.get("series_ticker") != series:
+            continue
+        totals["events_scanned"] += 1
+        outcomes = r.get("outcomes") or []
+        dead_rows = []
+        suspicious_rows = []
+        for o in outcomes:
+            totals["outcomes_scanned"] += 1
+            tk = o.get("ticker", "")
+            yb = o.get("_yb"); ya = o.get("_ya")
+            nb = o.get("_nb"); na = o.get("_na")
+            live = LIVE_PRICES.get(tk) if tk else None
+            if live:
+                if live.get("yes_bid") is not None: yb = live["yes_bid"]
+                if live.get("yes_ask") is not None: ya = live["yes_ask"]
+                if live.get("no_bid")  is not None: nb = live["no_bid"]
+                if live.get("no_ask")  is not None: na = live["no_ask"]
+            yb_sz = o.get("_yb_sz") or 0
+            ya_sz = o.get("_ya_sz") or 0
+            nb_sz = o.get("_nb_sz") or 0
+            na_sz = o.get("_na_sz") or 0
+            vol   = o.get("_vol")   or 0
+            oi    = o.get("_oi")    or 0
+            bid_side = (yb_sz > 0) or (na_sz > 0)
+            ask_side = (ya_sz > 0) or (nb_sz > 0)
+            last  = o.get("_last")
+            if live and live.get("last_price") is not None:
+                last = live["last_price"]
+            has_last = last is not None and last > 0
+            two_sided = bid_side and ask_side
+            would_render = two_sided or has_last
+            if would_render:
+                continue
+            # Row will render as —. Classify why.
+            if not bid_side and not ask_side:
+                reason = "no_book"
+            elif bid_side and not ask_side:
+                reason = "one_sided_bid"
+            elif ask_side and not bid_side:
+                reason = "one_sided_ask"
+            else:
+                reason = "unknown"
+            row_info = {
+                "ticker":   tk,
+                "label":    o.get("label", ""),
+                "reason":   reason,
+                "yb":       yb,  "ya": ya,  "nb": nb,  "na": na,
+                "yb_sz":    yb_sz, "ya_sz": ya_sz,
+                "nb_sz":    nb_sz, "na_sz": na_sz,
+                "vol":      vol,
+                "oi":       oi,
+                "last":     last,
+            }
+            dead_rows.append(row_info)
+            totals["outcomes_dead"] += 1
+            # Flag anything that "shouldn't" be dead but is — e.g.
+            # has trading history (last_price>0) but no current book
+            # AND our rule hid it. This should never happen under
+            # the current fix (has_last short-circuits above) but
+            # guards against future regressions.
+            if has_last:
+                suspicious_rows.append(row_info)
+                totals["outcomes_suspicious"] += 1
+        if dead_rows:
+            totals["events_with_dead"] += 1
+        if suspicious_rows:
+            totals["events_with_suspicious"] += 1
+        if suspicious_only and not dead_rows:
+            continue
+        if len(flagged) >= limit:
+            continue
+        flagged.append({
+            "event_ticker":  r.get("event_ticker"),
+            "title":         r.get("title"),
+            "series_ticker": r.get("series_ticker"),
+            "sport":         r.get("_sport"),
+            "total_outcomes": len(outcomes),
+            "dead_count":    len(dead_rows),
+            "suspicious_count": len(suspicious_rows),
+            "dead_rows":     dead_rows[:10],  # cap per-event noise
+        })
+    return {
+        "filter": {"sport": sport or None, "series": series or None,
+                   "suspicious_only": suspicious_only, "limit": limit},
+        "totals": totals,
+        "events":  flagged,
+    }
 
 @app.get("/api/espn_probe")
 async def espn_probe(slug: str):
