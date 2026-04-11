@@ -1076,6 +1076,44 @@ def sofascore_raw():
     except Exception as e:
         return {"error": str(e)}
 
+@app.get("/api/sofascore_probe")
+async def sofascore_probe():
+    """Debug: makes a fresh call to SofaScore's live football events
+    endpoint and returns status, headers, and the first chunk of body
+    so we can tell whether Cloudflare / the API is blocking us."""
+    try:
+        import httpx
+        url = "https://api.sofascore.com/api/v1/sport/football/events/live"
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+            "Accept": "application/json, text/plain, */*",
+            "Accept-Language": "en-US,en;q=0.9",
+            "Referer": "https://www.sofascore.com/",
+            "Origin": "https://www.sofascore.com",
+        }
+        async with httpx.AsyncClient(headers=headers, follow_redirects=True) as client:
+            r = await client.get(url, timeout=15.0)
+            out = {
+                "status_code": r.status_code,
+                "final_url": str(r.url),
+                "content_type": r.headers.get("content-type", ""),
+                "server": r.headers.get("server", ""),
+                "cf_ray": r.headers.get("cf-ray", ""),
+            }
+            if "json" in out["content_type"]:
+                try:
+                    body = r.json()
+                    events = body.get("events", []) if isinstance(body, dict) else []
+                    out["event_count"] = len(events) if isinstance(events, list) else None
+                    out["sample_event"] = events[0] if events else None
+                except Exception:
+                    out["body_raw"] = r.text[:1500]
+            else:
+                out["body_raw"] = r.text[:1500]
+            return out
+    except Exception as e:
+        return {"error": f"{type(e).__name__}: {e}"}
+
 @app.get("/api/live_audit")
 def live_audit():
     """Debug endpoint: reports the Live-tab pipeline end-to-end.

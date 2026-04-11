@@ -48,6 +48,9 @@ STATUS = {
     "games": 0,
     "sports": {},   # sport label -> count
     "last_error": None,
+    # Per-sport fetch result for diagnosing why we might be returning
+    # zero games. Shape: {slug: {"status": int|str, "count": int|None}}
+    "per_sport": {},
 }
 
 
@@ -160,16 +163,22 @@ def _parse_event(ev: Dict[str, Any], sport_label: str) -> Optional[Dict[str, Any
 
 
 async def _fetch_sport(client, slug: str, label: str):
+    """Returns (list_of_games, per_sport_status_dict). list_of_games
+    is None if the fetch failed outright; per_sport_status_dict is
+    always populated for diagnostics."""
+    info: Dict[str, Any] = {"status": None, "count": None}
     try:
         url = BASE_URL.format(slug=slug)
         r = await client.get(url, timeout=15.0)
+        info["status"] = r.status_code
         if r.status_code != 200:
             log.debug("sofascore %s: HTTP %d", slug, r.status_code)
-            return None
+            return None, info
         data = r.json() or {}
         events = data.get("events") or []
         if not isinstance(events, list):
-            return []
+            info["count"] = 0
+            return [], info
         now_ms = int(time.time() * 1000)
         out = []
         for ev in events:
@@ -177,10 +186,12 @@ async def _fetch_sport(client, slug: str, label: str):
             if parsed:
                 parsed["captured_at_ms"] = now_ms
                 out.append(parsed)
-        return out
+        info["count"] = len(out)
+        return out, info
     except Exception as e:
+        info["status"] = f"err:{type(e).__name__}"
         log.debug("sofascore %s err: %s", slug, e)
-        return None
+        return None, info
 
 
 async def run_sofascore_feed():
@@ -189,15 +200,20 @@ async def run_sofascore_feed():
         log.warning("httpx not installed — sofascore feed disabled")
         return
     STATUS["running"] = True
-    # SofaScore's API is tolerant of a normal User-Agent; no cookies or
-    # tokens needed. Give them a recognizable UA so they can reach out
-    # if our polling is annoying them.
+    # SofaScore's API is behind Cloudflare and 403s any request that
+    # doesn't look like a browser. Send the same headers the web UI
+    # sends: a real Chrome UA, an Accept header, and a Referer/Origin
+    # that matches their site.
     headers = {
-        "User-Agent": "Mozilla/5.0 (compatible; oddsiq/1.0; +https://oddsiq-production-fca0.up.railway.app)",
+        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+                      "AppleWebKit/537.36 (KHTML, like Gecko) "
+                      "Chrome/122.0.0.0 Safari/537.36",
         "Accept": "application/json, text/plain, */*",
         "Accept-Language": "en-US,en;q=0.9",
+        "Referer": "https://www.sofascore.com/",
+        "Origin": "https://www.sofascore.com",
     }
-    async with httpx.AsyncClient(headers=headers) as client:
+    async with httpx.AsyncClient(headers=headers, follow_redirects=True) as client:
         while True:
             try:
                 tasks = [
@@ -207,18 +223,27 @@ async def run_sofascore_feed():
                 results = await asyncio.gather(*tasks, return_exceptions=True)
                 all_games: List[Dict[str, Any]] = []
                 sport_counts: Dict[str, int] = {}
+                per_sport: Dict[str, Dict[str, Any]] = {}
                 for (slug, label), res in zip(SPORTS, results):
-                    if isinstance(res, Exception) or res is None:
+                    if isinstance(res, Exception):
+                        per_sport[slug] = {"status": f"err:{type(res).__name__}", "count": None}
                         continue
-                    all_games.extend(res)
-                    sport_counts[label] = sport_counts.get(label, 0) + len(res)
+                    if res is None:
+                        per_sport[slug] = {"status": "none", "count": None}
+                        continue
+                    games, info = res
+                    per_sport[slug] = info
+                    if games:
+                        all_games.extend(games)
+                        sport_counts[label] = sport_counts.get(label, 0) + len(games)
                 SOFASCORE_GAMES = all_games
                 STATUS["last_fetch_ts"] = time.time()
                 STATUS["games"] = len(all_games)
                 STATUS["sports"] = sport_counts
+                STATUS["per_sport"] = per_sport
                 STATUS["last_error"] = None
-                log.info("sofascore: %d live games across %d sports",
-                         len(all_games), len(sport_counts))
+                log.info("sofascore: %d live games across %d sports (per_sport=%s)",
+                         len(all_games), len(sport_counts), per_sport)
             except Exception as e:
                 STATUS["last_error"] = f"{type(e).__name__}: {e}"
                 log.error("sofascore poll error: %s", e)
