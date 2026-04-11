@@ -12,8 +12,9 @@ unofficial — if the shape changes, this module logs and keeps going.
 """
 import asyncio
 import logging
+import re
 import time
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 try:
     import httpx
@@ -53,9 +54,16 @@ LEAGUES = [
 ]
 
 ESPN_BASE = "https://site.api.espn.com/apis/site/v2/sports/{slug}/scoreboard"
-POLL_INTERVAL = 20  # seconds between full refresh cycles
+POLL_INTERVAL = 10  # seconds between full refresh cycles
 
 ESPN_GAMES: List[Dict[str, Any]] = []
+
+# Previous observation per game, used to tell whether the clock is
+# actually advancing between fetches. Games whose clock hasn't moved
+# are flagged clock_running=False so the frontend freezes them instead
+# of interpolating forward during timeouts, fouls, commercial breaks,
+# etc. Key is (sport, home_display, away_display).
+_PREV_OBS: Dict[Tuple[str, str, str], Dict[str, Any]] = {}
 
 STATUS = {
     "running": False,
@@ -65,6 +73,57 @@ STATUS = {
     "games": 0,
     "last_error": None,
 }
+
+
+def _parse_clock_secs(s: Optional[str]) -> Optional[int]:
+    """Turn an ESPN clock string ('8:47' or '38'') into total seconds."""
+    if not s:
+        return None
+    s = str(s).strip()
+    m = re.match(r"^(\d+):(\d{1,2})$", s)
+    if m:
+        return int(m.group(1)) * 60 + int(m.group(2))
+    m = re.match(r"^(\d+)'?$", s)
+    if m:
+        return int(m.group(1)) * 60
+    return None
+
+
+def _annotate_clock_running(games: List[Dict[str, Any]]):
+    """Compare each game's clock to the previous observation and set
+    clock_running=True iff the clock actually advanced. Games whose
+    period changed get a reset (assumed running until next fetch)."""
+    global _PREV_OBS
+    next_obs: Dict[Tuple[str, str, str], Dict[str, Any]] = {}
+    for g in games:
+        key = (
+            g.get("sport", ""),
+            g.get("home_display", ""),
+            g.get("away_display", ""),
+        )
+        clock_str = (g.get("display_clock") or "").strip()
+        period = g.get("period", 0)
+        # Default: assume running. The first observation of any game
+        # gets this optimistic default so the clock ticks immediately;
+        # subsequent observations correct it if the clock is stuck.
+        running = True
+        prev = _PREV_OBS.get(key)
+        if prev and prev.get("period") == period:
+            prev_secs = _parse_clock_secs(prev.get("display_clock"))
+            new_secs = _parse_clock_secs(clock_str)
+            if prev_secs is not None and new_secs is not None:
+                diff = new_secs - prev_secs
+                if g.get("sport") == "Soccer":
+                    running = diff > 0
+                else:
+                    running = diff < 0
+        g["clock_running"] = running
+        next_obs[key] = {
+            "display_clock": clock_str,
+            "period": period,
+            "captured_at_ms": g.get("captured_at_ms", 0),
+        }
+    _PREV_OBS = next_obs
 
 
 def _team_phrases(team: Dict[str, Any]) -> List[str]:
@@ -159,6 +218,7 @@ async def run_espn_feed():
                     else:
                         ok += 1
                         all_games.extend(res)
+                _annotate_clock_running(all_games)
                 ESPN_GAMES = all_games
                 STATUS["last_fetch_ts"] = time.time()
                 STATUS["leagues_ok"] = ok

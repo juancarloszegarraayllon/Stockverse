@@ -749,6 +749,7 @@ def get_events(
                         "period":         g.get("period", 0),
                         "league":         g.get("league", ""),
                         "captured_at_ms": g.get("captured_at_ms", 0),
+                        "clock_running":  g.get("clock_running", True),
                     }
         formatted.append(rc)
     return {"total": total, "offset": offset, "limit": limit, "events": formatted}

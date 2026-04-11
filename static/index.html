@@ -423,7 +423,10 @@ function renderTimeSlot(ev) {
     var t = liveTimeLabel(ev);
     var suffix = t ? ' \u00B7 ' + t : '';
     // Stash ESPN state on the badge so the 500ms tick loop can
-    // interpolate the clock between backend refreshes.
+    // interpolate the clock between backend refreshes. clock_running
+    // tells us whether real play is ongoing — when it's false we
+    // freeze the clock instead of counting it down through a
+    // commercial / timeout.
     var attrs = '';
     var live = ev._live_state;
     if (live && live.display_clock && live.period && live.captured_at_ms) {
@@ -431,6 +434,7 @@ function renderTimeSlot(ev) {
       attrs += ' data-live-period="' + live.period + '"';
       attrs += ' data-live-clock-initial="' + String(live.display_clock).replace(/"/g, '') + '"';
       attrs += ' data-live-captured="' + live.captured_at_ms + '"';
+      attrs += ' data-live-running="' + (live.clock_running ? '1' : '0') + '"';
     }
     return '<span class="live-badge"' + attrs + '><span class="live-dot"></span><span class="live-text">LIVE' + suffix + '</span></span>';
   }
@@ -480,6 +484,8 @@ function tickLiveClocks() {
   var now = Date.now();
   for (var i = 0; i < badges.length; i++) {
     var badge = badges[i];
+    var running = badge.getAttribute('data-live-running') !== '0';
+    if (!running) continue;  // paused play — leave whatever text renderTimeSlot wrote
     var sport = badge.getAttribute('data-live-sport');
     var period = parseInt(badge.getAttribute('data-live-period') || '0', 10);
     var initial = badge.getAttribute('data-live-clock-initial');
@@ -489,7 +495,7 @@ function tickLiveClocks() {
     if (baseSecs === null) continue;
     var elapsed = Math.max(0, Math.floor((now - captured) / 1000));
     // Cap drift so a stale capture doesn't run the clock to zero.
-    if (elapsed > 60) elapsed = 60;
+    if (elapsed > 15) elapsed = 15;
     var newSecs;
     if (sport === 'Soccer') {
       newSecs = baseSecs + elapsed;
