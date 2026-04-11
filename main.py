@@ -730,8 +730,25 @@ def get_events(
     return {"total": total, "offset": offset, "limit": limit, "events": formatted}
 
 @app.get("/api/sports")
-def get_sports():
+def get_sports(live: bool = False):
     records = get_data()
+    if live:
+        from datetime import datetime as _dt
+        now_utc = _dt.now(timezone.utc)
+        filtered = []
+        for r in records:
+            kdt = r.get("_kickoff_dt")
+            gdt = r.get("_game_end_dt")
+            if not (kdt and gdt):
+                continue
+            try:
+                k = _dt.fromisoformat(kdt)
+                g = _dt.fromisoformat(gdt)
+                if k <= now_utc < g:
+                    filtered.append(r)
+            except Exception:
+                pass
+        records = filtered
     sport_counts = {}
     soccer_comps = set()
     sport_series = {}  # sport -> set of series tickers present in data

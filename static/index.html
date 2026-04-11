@@ -130,8 +130,21 @@ var state = {
   search: "", dateFilter: "all", dateFrom: "", dateTo: "",
   sort: "earliest", layout: "grid",
   offset: 0, total: 0, loading: false, allLoaded: false,
-  categories: [], sports: [], soccerComps: []
+  categories: [], sports: [], soccerComps: [],
+  liveSports: [], liveSportSubtabs: {}
 };
+
+async function loadLiveSports() {
+  try {
+    var r = await fetch("/api/sports?live=true");
+    var d = await r.json();
+    state.liveSports = d.sports || [];
+    state.liveSportSubtabs = {};
+    for (var i = 0; i < state.liveSports.length; i++) {
+      state.liveSportSubtabs[state.liveSports[i].name] = state.liveSports[i].subtabs || [];
+    }
+  } catch (e) { console.error("loadLiveSports error", e); }
+}
 
 var SPORT_EMOJI = {
   "Soccer": "⚽", "Basketball": "🏀", "Baseball": "⚾", "Football": "🏈",
@@ -211,7 +224,7 @@ function renderCatTabs() {
   }
 }
 
-function selectCat(key) {
+async function selectCat(key) {
   state.category = key;
   state.sport = null;
   state.soccerComp = null;
@@ -220,6 +233,11 @@ function selectCat(key) {
   state.allLoaded = false;
   document.getElementById("search-input").value = "";
   renderCatTabs();
+  if (key === "Live") {
+    // Pull live-only sport counts before rendering the sidebar so it
+    // reflects what's actually happening right now.
+    await loadLiveSports();
+  }
   renderNav();
   if (key === null) {
     document.getElementById("home-screen").style.display = "flex";
@@ -239,18 +257,20 @@ function renderNav() {
   var nav = document.getElementById("nav");
   if (!state.category || state.category === "All" || state.search) { nav.style.display = "none"; return; }
 
-  if (state.category === "Sports") {
+  if (state.category === "Sports" || state.category === "Live") {
+    var sportsList = state.category === "Live" ? (state.liveSports || []) : state.sports;
+    var subtabsMap = state.category === "Live" ? (state.liveSportSubtabs || {}) : state.sportSubtabs;
     nav.style.display = "block";
     nav.innerHTML = "";
     var total = 0;
-    for (var i = 0; i < state.sports.length; i++) total += state.sports[i].count;
+    for (var i = 0; i < sportsList.length; i++) total += sportsList[i].count;
     var allBtn = document.createElement("button");
     allBtn.className = "nav-item" + (!state.sport ? " active" : "");
-    allBtn.textContent = "All sports (" + total + ")";
+    allBtn.textContent = (state.category === "Live" ? "All live" : "All sports") + " (" + total + ")";
     allBtn.addEventListener("click", function() { selectSport(null); });
     nav.appendChild(allBtn);
-    for (var i = 0; i < state.sports.length; i++) {
-      var s = state.sports[i];
+    for (var i = 0; i < sportsList.length; i++) {
+      var s = sportsList[i];
       var isActive = state.sport === s.name;
       var btn = document.createElement("button");
       btn.className = "nav-item" + (isActive ? " active" : "");
@@ -258,7 +278,7 @@ function renderNav() {
       (function(name) { btn.addEventListener("click", function() { selectSport(name); }); })(s.name);
       nav.appendChild(btn);
       if (isActive) {
-        var subtabs = (state.sportSubtabs && state.sportSubtabs[s.name]) || [];
+        var subtabs = (subtabsMap && subtabsMap[s.name]) || [];
         if (subtabs.length > 0) {
           var allComp = document.createElement("button");
           allComp.className = "nav-child" + (!state.soccerComp ? " active" : "");
@@ -304,7 +324,7 @@ function selectSport(name) {
   state.soccerComp = null;
   state.offset = 0;
   state.allLoaded = false;
-  state.category = "Sports";
+  if (state.category !== "Live") state.category = "Sports";
   renderCatTabs();
   document.getElementById("home-screen").style.display = "none";
   document.getElementById("cards-grid").style.display = "grid";
