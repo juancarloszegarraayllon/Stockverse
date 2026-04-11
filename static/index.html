@@ -48,7 +48,7 @@ html,body{background:var(--bg);color:var(--text);font-family:Helvetica,Arial,san
 .card-ticker a{font-size:10px;color:var(--text-muted);text-decoration:none;font-family:monospace}
 .card-ticker a:hover{color:var(--green)}
 .card-ticker span{font-size:10px;color:var(--text-muted);font-family:monospace}
-.outcome-header{display:flex;align-items:center;gap:6px;padding:6px 0 2px;border-top:1px solid var(--border)}
+.outcome-header{display:flex;align-items:center;gap:6px;padding:6px 0 2px}
 .outcome-header .outcome-label{flex:1}
 .header-chance{min-width:58px;text-align:center;font-size:8px;font-weight:700;letter-spacing:0.4px;color:var(--text-muted);text-transform:uppercase;flex-shrink:0}
 .header-odds{display:flex;gap:4px;flex-shrink:0}
@@ -387,6 +387,23 @@ function isLive(ev) {
   } catch (e) { return false; }
 }
 
+// Approximate in-match minute for live soccer events, derived from
+// wall-clock time since kickoff. Kalshi provides the real game clock
+// via a sports feed that we don't have — this is a close-enough
+// estimate. Returns null for other sports or pre-kickoff/full-time.
+function liveTimeLabel(ev) {
+  if (ev._sport !== "Soccer" || !ev._kickoff_dt) return null;
+  try {
+    var k = new Date(ev._kickoff_dt).getTime();
+    var mins = Math.floor((Date.now() - k) / 60000);
+    if (mins < 0) return null;
+    if (mins <= 45) return "1st " + Math.max(1, mins) + "'";
+    if (mins <= 60) return "HT";
+    if (mins <= 105) return "2nd " + (mins - 15) + "'";
+    return null;
+  } catch (e) { return null; }
+}
+
 function buildDateText(ev) {
   var dt = ev._display_dt || "";
   if (ev._kickoff_dt && ev._sport) {
@@ -403,7 +420,9 @@ function buildDateText(ev) {
 
 function renderTimeSlot(ev) {
   if (isLive(ev)) {
-    return '<span class="live-badge"><span class="live-dot"></span>LIVE</span>';
+    var t = liveTimeLabel(ev);
+    var suffix = t ? ' · ' + t : '';
+    return '<span class="live-badge"><span class="live-dot"></span>LIVE' + suffix + '</span>';
   }
   var dt = buildDateText(ev);
   return dt ? '<span class="card-date">' + dt + '</span>' : '';
