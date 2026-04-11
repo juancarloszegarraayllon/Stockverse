@@ -404,9 +404,12 @@ def get_data():
             yes    = f"{int(round(yf*100))}¢"  if yf is not None else "—"
             no     = f"{int(round(nf*100))}¢"  if nf is not None else "—"
             outcomes.append({"label":label[:35],"chance":chance,"yes":yes,"no":no})
-        # Only show date+time for sport events with a valid kickoff
-        # Non-sport events (politics, economics etc.) show no date
-        if kickoff_dt and sport and sport in DURATION:
+        # Show date+time if we have a reliable kickoff/release time
+        # For sports: kickoff_dt calculated from exp_dt - duration
+        # For non-sports: use exp_dt directly if it's within 60 days of today
+        display = ""
+        if kickoff_dt:
+            # Sport event with calculated kickoff
             try:
                 import pytz as _pytz
                 eastern = _pytz.timezone("US/Eastern")
@@ -417,8 +420,22 @@ def get_data():
                 display = f"{kt.strftime('%b')} {kt.day}, {hour}:{kt.strftime('%M')}{ampm} {tz_label}"
             except:
                 display = ""
-        else:
-            display = ""
+        elif exp_dt and not sport:
+            # Non-sport event with a specific expiration date (e.g. CPI release)
+            # Only show if exp_dt is a specific date/time (not years in future)
+            try:
+                from datetime import date as _date2
+                import pytz as _pytz
+                eastern = _pytz.timezone("US/Eastern")
+                days_out = (exp_dt.date() - _date2.today()).days
+                if 0 <= days_out <= 400:  # within ~1 year
+                    kt = exp_dt.astimezone(eastern)
+                    hour = kt.hour % 12 or 12
+                    ampm = "am" if kt.hour < 12 else "pm"
+                    tz_label = kt.strftime("%Z")
+                    display = f"{kt.strftime('%b')} {kt.day}, {hour}:{kt.strftime('%M')}{ampm} {tz_label}"
+            except:
+                display = ""
         return sort_dt, game_date, kickoff_dt, display, outcomes
 
     records = []
