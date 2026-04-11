@@ -624,6 +624,10 @@ def get_sports():
     sports.sort(key=lambda x: list(_SPORT_SERIES.keys()).index(x["name"]) if x["name"] in _SPORT_SERIES else 99)
     return {"sports": sports, "soccer_comps": sorted(soccer_comps)}
 
+@app.get("/api/version")
+def get_version():
+    return {"version": "2.0-kickoff-fixed", "ts": "2026-04-10"}
+
 @app.get("/api/meta")
 def get_meta():
     """Fast endpoint - returns static categories and sports list without waiting for data fetch."""
