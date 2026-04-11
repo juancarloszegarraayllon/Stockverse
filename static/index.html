@@ -345,6 +345,20 @@ function buildCard(ev) {
   var icon = sport ? (SPORT_EMOJI[sport] || CAT_EMOJI[cat] || "") : (CAT_EMOJI[cat] || "");
   var label = sport || cat;
   var dt = ev._display_dt || "";
+  // If we have kickoff time, show it alongside the date
+  if (ev._kickoff_dt && ev._sport) {
+    try {
+      var kd = new Date(ev._kickoff_dt);
+      var opts = {hour: "numeric", minute: "2-digit", timeZone: "America/New_York", timeZoneName: "short"};
+      var timeStr = kd.toLocaleTimeString("en-US", opts);
+      // Build full display: use _display_dt for date, add time
+      if (dt) {
+        dt = dt + ", " + timeStr;
+      } else {
+        dt = kd.toLocaleDateString("en-US", {month:"short", day:"numeric", timeZone:"America/New_York"}) + ", " + timeStr;
+      }
+    } catch(e) {}
+  }
   var ticker = ev.event_ticker || "";
   var series = ev.series_ticker || "";
   var url = series ? "https://kalshi.com/markets/" + series.toLowerCase() + "/" + series.toLowerCase().replace("kx", "") + "/" + ticker.toLowerCase() : "";
