@@ -48,21 +48,20 @@ html,body{background:var(--bg);color:var(--text);font-family:Helvetica,Arial,san
 .card-ticker a{font-size:10px;color:var(--text-muted);text-decoration:none;font-family:monospace}
 .card-ticker a:hover{color:var(--green)}
 .card-ticker span{font-size:10px;color:var(--text-muted);font-family:monospace}
+.outcome-header{display:flex;align-items:center;gap:6px;padding:6px 0 2px;border-top:1px solid var(--border)}
+.outcome-header .outcome-label{flex:1}
+.header-chance{min-width:58px;text-align:center;font-size:8px;font-weight:700;letter-spacing:0.4px;color:var(--text-muted);text-transform:uppercase;flex-shrink:0}
+.header-odds{display:flex;gap:4px;flex-shrink:0}
+.header-odds-box{min-width:36px;padding:0 8px;font-size:8px;font-weight:700;letter-spacing:0.5px;text-align:center;text-transform:uppercase}
+.header-yes{color:var(--green-dim)}
+.header-no{color:var(--red)}
 .outcome-row{display:flex;align-items:center;gap:6px;padding:4px 0;border-top:1px solid var(--border)}
 .outcome-label{flex:1;font-size:11px;color:var(--text-dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.outcome-chance{display:flex;flex-direction:column;align-items:center;min-width:58px;flex-shrink:0;border-radius:4px}
-.outcome-chance .chance-label{font-size:8px;font-weight:700;letter-spacing:0.4px;color:var(--text-muted);text-transform:uppercase;line-height:1}
-.outcome-chance .chance-value{font-size:11px;color:var(--text-dim);line-height:1.3}
+.outcome-chance{min-width:58px;text-align:center;font-size:11px;color:var(--text-dim);flex-shrink:0;border-radius:4px}
 .outcome-odds{display:flex;gap:4px;flex-shrink:0}
-.odds-box{display:flex;flex-direction:column;align-items:center;padding:3px 6px;border-radius:4px;min-width:36px}
-.odds-yes{background:#001a00;border:1px solid #003300}
-.odds-no{background:#1a0000;border:1px solid #330000}
-.odds-label{font-size:8px;font-weight:700;letter-spacing:0.5px}
-.odds-yes .odds-label{color:var(--green-dim)}
-.odds-no .odds-label{color:var(--red)}
-.odds-price{font-size:11px;font-weight:700}
-.odds-yes .odds-price{color:var(--green)}
-.odds-no .odds-price{color:var(--red)}
+.odds-box{padding:4px 8px;border-radius:4px;min-width:36px;text-align:center;font-size:11px;font-weight:700}
+.odds-yes{background:#001a00;border:1px solid #003300;color:var(--green)}
+.odds-no{background:#1a0000;border:1px solid #330000;color:var(--red)}
 #home-screen{display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:60vh;gap:12px}
 #home-screen h2{font-size:1.4rem;color:var(--green);font-weight:700}
 #home-screen p{font-size:14px;color:var(--text-muted)}
@@ -436,14 +435,24 @@ function buildCard(ev) {
   else h += "<span>" + ticker + "</span>";
   h += "</div>";
   var max = Math.min(outcomes.length, 5);
+  if (max > 0) {
+    h += "<div class=\"outcome-header\">";
+    h += "<div class=\"outcome-label\"></div>";
+    h += "<div class=\"header-chance\">Probability</div>";
+    h += "<div class=\"header-odds\">";
+    h += "<div class=\"header-odds-box header-yes\">Yes</div>";
+    h += "<div class=\"header-odds-box header-no\">No</div>";
+    h += "</div>";
+    h += "</div>";
+  }
   for (var i = 0; i < max; i++) {
     var o = outcomes[i];
     h += "<div class=\"outcome-row\">";
     h += "<div class=\"outcome-label\">" + o.label + "</div>";
-    h += "<div class=\"outcome-chance\"><div class=\"chance-label\">PROBABILITY</div><div class=\"chance-value\">" + o.chance + "</div></div>";
+    h += "<div class=\"outcome-chance\">" + o.chance + "</div>";
     h += "<div class=\"outcome-odds\">";
-    h += "<div class=\"odds-box odds-yes\"><div class=\"odds-label\">YES</div><div class=\"odds-price\">" + o.yes + "</div></div>";
-    h += "<div class=\"odds-box odds-no\"><div class=\"odds-label\">NO</div><div class=\"odds-price\">" + o.no + "</div></div>";
+    h += "<div class=\"odds-box odds-yes\">" + o.yes + "</div>";
+    h += "<div class=\"odds-box odds-no\">" + o.no + "</div>";
     h += "</div></div>";
   }
   h += "</div>";
@@ -589,12 +598,10 @@ async function refreshVisible() {
         var row = rows[j];
         var o = outs[j];
         var chanceEl = row.querySelector(".outcome-chance");
-        var chanceValEl = row.querySelector(".chance-value");
-        _updateIfChanged(chanceValEl, chanceEl, o.chance);
+        _updateIfChanged(chanceEl, chanceEl, o.chance);
         var boxes = row.querySelectorAll(".odds-box");
-        var priceEls = row.querySelectorAll(".odds-price");
-        _updateIfChanged(priceEls[0], boxes[0], o.yes);
-        _updateIfChanged(priceEls[1], boxes[1], o.no);
+        _updateIfChanged(boxes[0], boxes[0], o.yes);
+        _updateIfChanged(boxes[1], boxes[1], o.no);
       }
     }
   } catch (e) { /* swallow: next tick will try again */ }
