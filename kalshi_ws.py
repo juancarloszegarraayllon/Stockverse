@@ -131,6 +131,14 @@ def _extract_update(msg):
                 pass
     if not fields:
         return None
+    # The Kalshi "ticker" channel only sends yes-side prices. Derive
+    # the NO side so live updates stay consistent on both boxes:
+    #   no_ask = 100 - yes_bid   (best NO ask mirrors best YES bid)
+    #   no_bid = 100 - yes_ask   (best NO bid mirrors best YES ask)
+    if "yes_bid" in fields and "no_ask" not in fields:
+        fields["no_ask"] = 100 - fields["yes_bid"]
+    if "yes_ask" in fields and "no_bid" not in fields:
+        fields["no_bid"] = 100 - fields["yes_ask"]
     fields["ts_ms"] = int(time.time() * 1000)
     return tk, fields
 
