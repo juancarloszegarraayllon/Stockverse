@@ -1023,6 +1023,30 @@ def espn_status():
     except Exception as e:
         return {"error": str(e)}
 
+@app.get("/api/kalshi_event_raw")
+def kalshi_event_raw(ticker: str):
+    """Debug: fetches a single Kalshi event by event_ticker and
+    returns its complete raw structure (every field on the event
+    plus every field on its first market). Use this to verify
+    whether Kalshi's API exposes anything we could use as a live
+    game state — score, clock, period, status, etc."""
+    try:
+        client = get_client()
+        resp = client.get_event(event_ticker=ticker, with_nested_markets=True).to_dict()
+        ev = resp.get("event") or resp
+        out: Dict[str, Any] = {
+            "event_fields": sorted(list((ev or {}).keys())) if isinstance(ev, dict) else None,
+            "event": ev,
+        }
+        markets = (ev or {}).get("markets") or []
+        if markets and isinstance(markets, list):
+            first = markets[0] or {}
+            out["first_market_fields"] = sorted(list(first.keys()))
+            out["first_market"] = first
+        return out
+    except Exception as e:
+        return {"error": f"{type(e).__name__}: {e}"}
+
 @app.get("/api/espn_probe")
 async def espn_probe(slug: str):
     """Debug: make a raw call to ESPN's scoreboard endpoint for the
