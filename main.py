@@ -1337,36 +1337,37 @@ def debug_team_search(q: str, sport: str = "Soccer"):
         return {"error": f"{type(e).__name__}: {e}"}
 
 @app.get("/api/debug_sofa_search")
-def debug_sofa_search(q: str, sport: str = ""):
+def debug_sofa_search(q: str = "", sport: str = ""):
     """Same as debug_team_search but against SOFASCORE_GAMES. Useful
     for figuring out whether SofaScore carries a specific match when
-    ESPN doesn't."""
+    ESPN doesn't. If `q` is empty, returns the first 20 games for
+    the sport filter (or all sports if no filter)."""
     try:
         from sofascore_feed import SOFASCORE_GAMES, _normalize
-        needle = _normalize(q)
-        if not needle:
-            return {"q": q, "sport": sport, "hits": []}
+        needle = _normalize(q) if q else ""
         hits = []
         for g in SOFASCORE_GAMES:
             if sport and g.get("sport") != sport:
                 continue
-            home_display_n = _normalize(g.get("home_display", ""))
-            away_display_n = _normalize(g.get("away_display", ""))
-            phrases = (g.get("home_phrases", []) or []) + (g.get("away_phrases", []) or [])
-            if (needle in home_display_n or needle in away_display_n
-                    or any(needle in p for p in phrases)):
-                hits.append({
-                    "sport": g.get("sport"),
-                    "league": g.get("league"),
-                    "home": g.get("home_display"),
-                    "away": g.get("away_display"),
-                    "home_phrases": g.get("home_phrases"),
-                    "away_phrases": g.get("away_phrases"),
-                    "state": g.get("state"),
-                    "home_score": g.get("home_score"),
-                    "away_score": g.get("away_score"),
-                    "short_detail": g.get("short_detail"),
-                })
+            if needle:
+                home_display_n = _normalize(g.get("home_display", ""))
+                away_display_n = _normalize(g.get("away_display", ""))
+                phrases = (g.get("home_phrases", []) or []) + (g.get("away_phrases", []) or [])
+                if not (needle in home_display_n or needle in away_display_n
+                        or any(needle in p for p in phrases)):
+                    continue
+            hits.append({
+                "sport": g.get("sport"),
+                "league": g.get("league"),
+                "home": g.get("home_display"),
+                "away": g.get("away_display"),
+                "home_phrases": g.get("home_phrases"),
+                "away_phrases": g.get("away_phrases"),
+                "state": g.get("state"),
+                "home_score": g.get("home_score"),
+                "away_score": g.get("away_score"),
+                "short_detail": g.get("short_detail"),
+            })
             if len(hits) >= 20:
                 break
         return {"q": q, "sport": sport, "count": len(hits), "hits": hits}
@@ -1492,13 +1493,14 @@ def debug_sofa(title: str, sport: str = "Soccer"):
         return {"error": f"{type(e).__name__}: {e}"}
 
 @app.get("/api/sofascore_probe")
-async def sofascore_probe():
-    """Debug: makes a fresh call to SofaScore's live football events
-    endpoint and returns status, headers, and the first chunk of body
-    so we can tell whether Cloudflare / the API is blocking us."""
+async def sofascore_probe(sport: str = "football"):
+    """Debug: makes a fresh call to SofaScore's live events endpoint
+    for a given sport (football/basketball/tennis/ice-hockey/...)
+    and returns status, headers, and either the parsed event count
+    + sample event or the first chunk of body."""
     try:
         import httpx
-        url = "https://api.sofascore.com/api/v1/sport/football/events/live"
+        url = f"https://api.sofascore.com/api/v1/sport/{sport}/events/live"
         headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
             "Accept": "application/json, text/plain, */*",
