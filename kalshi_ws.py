@@ -1,7 +1,7 @@
 """Kalshi WebSocket client that keeps LIVE_PRICES up-to-date.
 
 Runs as an asyncio background task inside the FastAPI process. It
-connects to Kalshi's v2 WebSocket feed, subscribes to the ticker_v2
+connects to Kalshi's v2 WebSocket feed, subscribes to the "ticker"
 channel for every market ticker we know about (refreshed as the REST
 snapshot rebuilds), and writes bid/ask updates into the module-level
 LIVE_PRICES dict.
@@ -123,7 +123,7 @@ async def _subscribe_batch(ws, market_tickers, start_id=1):
             "id": sub_id,
             "cmd": "subscribe",
             "params": {
-                "channels": ["ticker_v2"],
+                "channels": ["ticker"],
                 "market_tickers": batch,
             },
         }))
