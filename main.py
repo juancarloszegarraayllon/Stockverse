@@ -395,8 +395,8 @@ def get_data():
             no     = f"{int(round(nf*100))}¢"  if nf is not None else "—"
             outcomes.append({"label":label[:35],"chance":chance,"yes":yes,"no":no})
 
-        # Build display string
-        if kickoff_dt and game_date:
+        # Build display string - use Eastern time for both date and display
+        if kickoff_dt:
             try:
                 import pytz as _ptz
                 _east = _ptz.timezone("US/Eastern")
@@ -404,7 +404,8 @@ def get_data():
                 h = kt.hour % 12 or 12
                 ap = "am" if kt.hour < 12 else "pm"
                 tz = kt.strftime("%Z")
-                display = f"{game_date.strftime('%b')} {game_date.day}, {h}:{kt.strftime('%M')}{ap} {tz}"
+                # Use Eastern date for display (not UTC game_date)
+                display = f"{kt.strftime('%b')} {kt.day}, {h}:{kt.strftime('%M')}{ap} {tz}"
             except:
                 display = game_date.strftime("%b %-d") if game_date else ""
         elif game_date:
