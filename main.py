@@ -1092,6 +1092,42 @@ def sofascore_raw():
     except Exception as e:
         return {"error": str(e)}
 
+@app.get("/api/debug_team_search")
+def debug_team_search(q: str, sport: str = "Soccer"):
+    """Debug: substring-search ESPN_GAMES for any game whose home or
+    away team display name / phrase contains `q` (case-insensitive,
+    accent-insensitive). Useful for figuring out whether ESPN has a
+    given team at all, and under what exact name + which league."""
+    try:
+        from espn_feed import ESPN_GAMES, _normalize
+        needle = _normalize(q)
+        if not needle:
+            return {"q": q, "sport": sport, "hits": []}
+        hits = []
+        for g in ESPN_GAMES:
+            if sport and g.get("sport") != sport:
+                continue
+            phrases = (g.get("home_phrases", []) or []) + (g.get("away_phrases", []) or [])
+            home_hit = needle in _normalize(g.get("home_display", ""))
+            away_hit = needle in _normalize(g.get("away_display", ""))
+            phrase_hit = any(needle in p for p in phrases)
+            if home_hit or away_hit or phrase_hit:
+                hits.append({
+                    "league": g.get("league"),
+                    "home": g.get("home_display"),
+                    "away": g.get("away_display"),
+                    "home_phrases": g.get("home_phrases"),
+                    "away_phrases": g.get("away_phrases"),
+                    "state": g.get("state"),
+                    "home_score": g.get("home_score"),
+                    "away_score": g.get("away_score"),
+                })
+            if len(hits) >= 20:
+                break
+        return {"q": q, "sport": sport, "count": len(hits), "hits": hits}
+    except Exception as e:
+        return {"error": f"{type(e).__name__}: {e}"}
+
 @app.get("/api/debug_live")
 def debug_live(title: str, sport: str = "Soccer"):
     """Debug: runs match_game against ESPN and SofaScore for the
