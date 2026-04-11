@@ -50,7 +50,9 @@ html,body{background:var(--bg);color:var(--text);font-family:Helvetica,Arial,san
 .card-ticker span{font-size:10px;color:var(--text-muted);font-family:monospace}
 .outcome-row{display:flex;align-items:center;gap:6px;padding:4px 0;border-top:1px solid var(--border)}
 .outcome-label{flex:1;font-size:11px;color:var(--text-dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.outcome-chance{font-size:11px;color:var(--text-dim);width:32px;text-align:right;flex-shrink:0}
+.outcome-chance{display:flex;flex-direction:column;align-items:center;min-width:58px;flex-shrink:0;border-radius:4px}
+.outcome-chance .chance-label{font-size:8px;font-weight:700;letter-spacing:0.4px;color:var(--text-muted);text-transform:uppercase;line-height:1}
+.outcome-chance .chance-value{font-size:11px;color:var(--text-dim);line-height:1.3}
 .outcome-odds{display:flex;gap:4px;flex-shrink:0}
 .odds-box{display:flex;flex-direction:column;align-items:center;padding:3px 6px;border-radius:4px;min-width:36px}
 .odds-yes{background:#001a00;border:1px solid #003300}
@@ -438,7 +440,7 @@ function buildCard(ev) {
     var o = outcomes[i];
     h += "<div class=\"outcome-row\">";
     h += "<div class=\"outcome-label\">" + o.label + "</div>";
-    h += "<div class=\"outcome-chance\">" + o.chance + "</div>";
+    h += "<div class=\"outcome-chance\"><div class=\"chance-label\">PROBABILITY</div><div class=\"chance-value\">" + o.chance + "</div></div>";
     h += "<div class=\"outcome-odds\">";
     h += "<div class=\"odds-box odds-yes\"><div class=\"odds-label\">YES</div><div class=\"odds-price\">" + o.yes + "</div></div>";
     h += "<div class=\"odds-box odds-no\"><div class=\"odds-label\">NO</div><div class=\"odds-price\">" + o.no + "</div></div>";
@@ -587,7 +589,8 @@ async function refreshVisible() {
         var row = rows[j];
         var o = outs[j];
         var chanceEl = row.querySelector(".outcome-chance");
-        _updateIfChanged(chanceEl, chanceEl, o.chance);
+        var chanceValEl = row.querySelector(".chance-value");
+        _updateIfChanged(chanceValEl, chanceEl, o.chance);
         var boxes = row.querySelectorAll(".odds-box");
         var priceEls = row.querySelectorAll(".odds-price");
         _updateIfChanged(priceEls[0], boxes[0], o.yes);
