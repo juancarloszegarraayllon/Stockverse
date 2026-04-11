@@ -1373,26 +1373,22 @@ def kalshi_event_raw(ticker: str = "", status: str = "", prefer: str = "sport"):
 
 @app.get("/api/kalshi_search")
 def kalshi_search(q: str = "", limit: int = 20):
-    """Debug: search Kalshi events (both open and closed) for any
-    whose title or event_ticker contains `q` (case-insensitive).
-    Returns the event_ticker + title for matches so you can copy
-    a ticker into /api/kalshi_event_raw without guessing. Searches
-    the already-cached REST snapshot first to avoid hammering
-    Kalshi's API with fresh pagination calls on every search."""
+    """Debug: search the cached Kalshi REST snapshot for any event
+    whose title, sub_title, or event_ticker contains `q` (case-
+    insensitive). Triggers a cache rebuild if none exists, so
+    calling this right after /api/refresh will block briefly and
+    then return populated results instead of 0."""
     if not q:
         return {"error": "q required"}
     needle = q.lower()
+    records = get_data()
     hits = []
-    # Serve from the cached snapshot if we have one. The cached
-    # records don't carry the full Kalshi event dict, only the
-    # fields we need — but event_ticker + title are enough for
-    # search/discovery.
-    records = _cache.get("data") or []
     seen_tickers = set()
     for r in records:
         t = (r.get("title") or "").lower()
+        st = (r.get("sub_title") or "").lower() if r.get("sub_title") else ""
         tk = (r.get("event_ticker") or "").lower()
-        if needle in t or needle in tk:
+        if needle in t or needle in st or needle in tk:
             et = r.get("event_ticker")
             if et in seen_tickers:
                 continue
@@ -1402,7 +1398,7 @@ def kalshi_search(q: str = "", limit: int = 20):
                 "title":        r.get("title"),
                 "series_ticker": r.get("series_ticker"),
                 "category":     r.get("category"),
-                "source":       "cache",
+                "outcome_count": len(r.get("outcomes") or []),
             })
             if len(hits) >= limit:
                 break
