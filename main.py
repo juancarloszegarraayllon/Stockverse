@@ -488,14 +488,25 @@ def _format_outcomes(stored_outcomes):
             if live.get("yes_ask") is not None: ya = live["yes_ask"]
             if live.get("no_bid")  is not None: nb = live["no_bid"]
             if live.get("no_ask")  is not None: na = live["no_ask"]
-        # Liquidity check: if neither YES side has real orders AND
-        # neither NO side has real orders, the market is dead and
-        # Kalshi shows "--%". Treat it the same way.
+        # Liquidity check. A market is treated as "dead" (shown as
+        # — in all three columns, matching Kalshi's own --% render)
+        # when ANY of:
+        #   - All four sides have zero size (no orders anywhere)
+        #   - Volume is 0 AND open interest is 0 (nobody has ever
+        #     traded this market and nobody holds a position)
+        # The second rule catches futures markets like "Women's CL
+        # Champion" where a lone market-maker ask at 80¢ sits
+        # against an empty bid, producing a fake 40% midprice.
         yb_sz = o.get("_yb_sz") or 0
         ya_sz = o.get("_ya_sz") or 0
         nb_sz = o.get("_nb_sz") or 0
         na_sz = o.get("_na_sz") or 0
-        dead = (yb_sz == 0 and ya_sz == 0 and nb_sz == 0 and na_sz == 0)
+        vol   = o.get("_vol")   or 0
+        oi    = o.get("_oi")    or 0
+        dead = (
+            (yb_sz == 0 and ya_sz == 0 and nb_sz == 0 and na_sz == 0)
+            or (vol == 0 and oi == 0)
+        )
         if dead:
             chance_c = yes_c = no_c = None
         else:
@@ -622,6 +633,8 @@ def get_data():
             ya_size = _sz("yes_ask_size_fp")
             nb_size = _sz("no_bid_size_fp")
             na_size = _sz("no_ask_size_fp")
+            volume = _sz("volume_fp")
+            open_interest = _sz("open_interest_fp")
             # Store raw cents + market ticker. The chance/yes/no display
             # strings are computed per-request by _format_outcomes() so
             # live WebSocket updates flow through without rebuilding the
@@ -632,6 +645,8 @@ def get_data():
                 "_yb": yb, "_ya": ya, "_nb": nb, "_na": na,
                 "_yb_sz": yb_size, "_ya_sz": ya_size,
                 "_nb_sz": nb_size, "_na_sz": na_size,
+                "_vol": volume,
+                "_oi":  open_interest,
             })
         # Show date+time if we have kickoff, otherwise just date
         if kickoff_dt and game_date:
