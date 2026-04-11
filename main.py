@@ -801,6 +801,16 @@ def ws_status():
     except Exception as e:
         return {"status": None, "error": str(e)}
 
+@app.get("/api/ws_raw")
+def ws_raw():
+    """Debug endpoint: returns the last ~30 raw messages received from
+    the Kalshi WebSocket, so we can inspect the exact schema."""
+    try:
+        from kalshi_ws import RAW_SAMPLES
+        return {"samples": list(RAW_SAMPLES)}
+    except Exception as e:
+        return {"error": str(e)}
+
 # ── Serve frontend ─────────────────────────────────────────────────────────────
 import os as _os
 

@@ -16,6 +16,7 @@ import json
 import logging
 import os
 import time
+from collections import deque
 from datetime import datetime, timezone
 
 try:
@@ -51,6 +52,10 @@ STATUS = {
     "updates": 0,
     "last_error": None,
 }
+
+# Ring buffer of the last N raw messages we received, for debugging the
+# Kalshi WS message schema. Exposed via /api/ws_raw.
+RAW_SAMPLES = deque(maxlen=30)
 
 
 def _load_private_key():
@@ -204,7 +209,11 @@ async def run_ws_client(get_tickers):
                         try:
                             msg = json.loads(raw)
                         except Exception:
+                            RAW_SAMPLES.append({"_unparsed": str(raw)[:500]})
                             continue
+                        # Keep a rolling sample of what Kalshi actually
+                        # sends so /api/ws_raw can show us the shape.
+                        RAW_SAMPLES.append(msg)
                         parsed = _extract_update(msg)
                         if parsed:
                             tk, upd = parsed
