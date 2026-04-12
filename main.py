@@ -940,21 +940,26 @@ def get_data():
         if mg is None and _fm_cache:
             mg = _fm_cache(_ti, _sp)
         if mg and mg.get("state") == "in":
-            # Date guard: reject matches where the ESPN game's
-            # scheduled start is >18h from the Kalshi event's
-            # kickoff. Prevents "Chelsea vs Man City (today)"
-            # from marking "Chelsea vs Man Utd (next week)" live.
-            sched_ms = mg.get("scheduled_kickoff_ms")
-            kdt_str = r.get("_kickoff_dt") or r.get("_sort_ts")
-            if sched_ms and kdt_str:
-                try:
-                    from datetime import datetime as _dtc
-                    espn_dt = _dtc.fromtimestamp(sched_ms / 1000, tz=timezone.utc)
-                    kalshi_dt = _dtc.fromisoformat(kdt_str)
-                    if abs((espn_dt - kalshi_dt).total_seconds()) > 18 * 3600:
-                        continue  # wrong day's game
-                except Exception:
-                    pass
+            # Date guard: reject matches where ESPN's scheduled
+            # kickoff is >18h from Kalshi's estimated kickoff.
+            # Prevents "Chelsea vs Man City (today)" from marking
+            # "Chelsea vs Man Utd (next week)" live. BUT: skip the
+            # guard when state="in" — if a game is actively in
+            # progress right now, trust it unconditionally. This
+            # handles rescheduled games where Kalshi's ticker date
+            # is wrong but ESPN confirms it's live.
+            if mg.get("state") != "in":
+                sched_ms = mg.get("scheduled_kickoff_ms")
+                kdt_str = r.get("_kickoff_dt") or r.get("_sort_ts")
+                if sched_ms and kdt_str:
+                    try:
+                        from datetime import datetime as _dtc
+                        espn_dt = _dtc.fromtimestamp(sched_ms / 1000, tz=timezone.utc)
+                        kalshi_dt = _dtc.fromisoformat(kdt_str)
+                        if abs((espn_dt - kalshi_dt).total_seconds()) > 18 * 3600:
+                            continue  # wrong day's game
+                    except Exception:
+                        pass
             r["_is_live"] = True
             live_count += 1
     # Store ungrouped records (for "All Markets" view) — _is_live
@@ -1339,7 +1344,13 @@ def get_events(
         # Kalshi event's estimated kickoff. If they're more than
         # 18 hours apart, this is a different day's game; drop the
         # match so the wrong event doesn't show live state / scores.
-        if g and g.get("scheduled_kickoff_ms"):
+        # Date guard: reject ESPN matches where dates differ by >18h
+        # UNLESS the game is state="in" (actively in progress).
+        # A game that's live right now can't be a false match for
+        # a different day — trust it for scores and live state.
+        # This handles rescheduled games where Kalshi's ticker date
+        # is stale but ESPN confirms the game is happening now.
+        if g and g.get("state") != "in" and g.get("scheduled_kickoff_ms"):
             kdt_str = r.get("_kickoff_dt") or r.get("_sort_ts")
             if kdt_str:
                 try:
