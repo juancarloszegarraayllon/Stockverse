@@ -1277,6 +1277,16 @@ def get_events(
 
     formatted = []
     for r in page:
+        # Defense-in-depth: in Game View, skip any record whose
+        # series_ticker is a non-primary sibling type (SPREAD/TOTAL/
+        # BTTS/1H). These should have been removed by
+        # _group_game_markets, but can leak through if the parent
+        # GAME event wasn't fetched in the same pagination cycle.
+        if view != "all":
+            series_up = (r.get("series_ticker") or "").upper()
+            mt = GAME_MARKET_PREFIXES.get(series_up)
+            if mt and not mt[3]:  # mt[3] = is_primary
+                continue
         rc = dict(r)
         rc["outcomes"] = _format_outcomes(r.get("outcomes", []))
         # When this record has sibling market groups (La Liga
