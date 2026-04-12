@@ -281,6 +281,7 @@ _SIBLING_SUFFIXES = [
     ("F5",        "f5",        "First 5",   10),
     ("F5SPREAD",  "f5spread",  "F5 Spread", 11),
     ("F5TOTAL",   "f5total",   "F5 Totals", 12),
+    ("SETWINNER", "setwinner", "Set Winner", 13),
 ]
 
 # Build map automatically from _SPORT_SERIES.
@@ -288,16 +289,26 @@ _all_series = set()
 for _sl in _SPORT_SERIES.values():
     _all_series.update(s.upper() for s in _sl)
 GAME_MARKET_PREFIXES = {}
+# Detect both "GAME" and "MATCH" as primary parents.
+# Soccer/NBA/MLB/NHL use *GAME, Tennis uses *MATCH.
 for _s in sorted(_all_series):
-    if _s.endswith("GAME"):
-        _prefix = _s[:-4]  # strip "GAME"
-        if not _prefix:
-            continue
-        GAME_MARKET_PREFIXES[_s] = ("moneyline", "Winner", 0, True)
-        for _suffix, _tc, _lbl, _pri in _SIBLING_SUFFIXES:
-            _sibling = _prefix + _suffix
-            if _sibling in _all_series:
-                GAME_MARKET_PREFIXES[_sibling] = (_tc, _lbl, _pri, False)
+    for _primary_suffix, _strip_len in [("GAME", 4), ("MATCH", 5)]:
+        if _s.endswith(_primary_suffix):
+            _prefix = _s[:-_strip_len]
+            if not _prefix:
+                continue
+            GAME_MARKET_PREFIXES[_s] = ("moneyline", "Winner", 0, True)
+            for _suffix, _tc, _lbl, _pri in _SIBLING_SUFFIXES:
+                _sibling = _prefix + _suffix
+                if _sibling in _all_series:
+                    GAME_MARKET_PREFIXES[_sibling] = (_tc, _lbl, _pri, False)
+            break  # don't check MATCH if GAME already matched
+
+# Series whose event tickers have a trailing set/map number
+# (e.g. KXATPSETWINNER-26APR12BUSMOU-1). The "-1" must be
+# stripped so the suffix matches the parent (26APR12BUSMOU).
+_SUFFIXED_SERIES = {s for s in GAME_MARKET_PREFIXES
+                    if s.endswith("SETWINNER")}
 
 
 def _game_suffix(event_ticker: str) -> str:
@@ -327,7 +338,22 @@ def _group_game_markets(records):
         suffix = _game_suffix(r.get("event_ticker", ""))
         if not suffix:
             continue
-        by_suffix.setdefault(suffix, {})[mt[0]] = r
+        # For series like KXATPSETWINNER, strip the trailing set/map
+        # number ("-1", "-2") so the suffix matches the parent match.
+        # KXATPSETWINNER-26APR12BUSMOU-1 → suffix "26APR12BUSMOU"
+        if series in _SUFFIXED_SERIES:
+            import re as _re
+            # Extract the set/map number for a unique type_code
+            # (setwinner_1, setwinner_2, etc.)
+            num_match = _re.search(r'-(\d+)$', suffix)
+            suffix = _re.sub(r'-\d+$', '', suffix)
+            if num_match:
+                tc = mt[0] + "_" + num_match.group(1)
+            else:
+                tc = mt[0]
+            by_suffix.setdefault(suffix, {})[tc] = r
+        else:
+            by_suffix.setdefault(suffix, {})[mt[0]] = r
 
     to_drop = set()  # event_tickers of siblings to remove from list
     for suffix, type_map in by_suffix.items():
