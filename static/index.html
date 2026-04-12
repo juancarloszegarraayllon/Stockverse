@@ -423,7 +423,7 @@ function renderNav() {
       var lcActive = state._liveCat === lcat.name;
       var lcBtn = document.createElement("button");
       lcBtn.className = "nav-item" + (lcActive ? " active" : "");
-      lcBtn.textContent = (CAT_EMOJI[lcat.name] || "") + " " + lcat.name + " (" + lcat.count + ")";
+      lcBtn.textContent = lcat.name + " (" + lcat.count + ")";
       (function(catName) {
         lcBtn.addEventListener("click", function() {
           if (state._liveCat === catName) {
