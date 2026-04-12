@@ -965,11 +965,13 @@ def get_events(
             pass  # when searching, show all categories
         elif category and category != "All":
             if category == "Live":
-                # Keep only sport events whose estimated kickoff
-                # window covers now. The window is padded by 1.5h
-                # on each side to absorb scheduling drift (Kalshi's
-                # expiration estimate vs actual kickoff) and
-                # overtime / extra time.
+                # Keep only sport events currently in progress.
+                # Uses the estimated kickoff window from Kalshi's
+                # expiration time minus DURATION, with a small 15m
+                # buffer for scheduling drift. The frontend's
+                # isLive() trusts ESPN _live_state for LIVE badges,
+                # so this filter just needs to be inclusive enough
+                # to not miss truly live games.
                 kdt = r.get("_kickoff_dt")
                 gdt = r.get("_game_end_dt")
                 if not (kdt and gdt):
@@ -977,7 +979,7 @@ def get_events(
                 try:
                     k = _dt.fromisoformat(kdt)
                     g = _dt.fromisoformat(gdt)
-                    _buf = timedelta(hours=1, minutes=30)
+                    _buf = timedelta(minutes=15)
                     if not ((k - _buf) <= now_utc < (g + _buf)):
                         continue
                 except Exception:
@@ -1296,7 +1298,7 @@ def get_sports(live: bool = False):
             try:
                 k = _dt.fromisoformat(kdt)
                 g = _dt.fromisoformat(gdt)
-                _buf = timedelta(hours=1, minutes=30)
+                _buf = timedelta(minutes=15)
                 if (k - _buf) <= now_utc < (g + _buf):
                     filtered.append(r)
             except Exception:
