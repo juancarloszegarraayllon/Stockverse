@@ -140,10 +140,11 @@ html,body{background:var(--bg);color:var(--text);font-family:Helvetica,Arial,san
   #header{padding:8px 12px 0}
   #logo{font-size:1.2rem;order:1;flex:0 0 auto}
   #controls{gap:6px;padding-bottom:8px}
-  /* Row 1: Logo + Date + Sort. Row 2: full-width search. */
-  /* Hide both control groups (Market View + Grid/List) on phone
-     to save space — default Game View + Grid is fine for mobile. */
-  .control-group{display:none}
+  /* Row 1: Logo + Date + Sort + compact toggles. Row 2: search. */
+  /* Hide labels on phone, just show the button pairs. */
+  .control-group{display:flex;order:2}
+  .control-label{display:none}
+  .pair-btn{padding:4px 7px;font-size:10px}
   #date-sel{order:2;flex:0 1 auto;min-width:0;font-size:12px;padding:7px 8px}
   #sort-sel{order:3;flex:0 1 auto;min-width:0;font-size:12px;padding:7px 8px}
   #search-input{order:4;flex:1 1 100%;min-width:0;font-size:13px;padding:7px 12px}
