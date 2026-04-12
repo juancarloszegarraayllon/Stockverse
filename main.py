@@ -847,7 +847,7 @@ def get_data():
             display = game_date.strftime("%b %-d")
         else:
             display = ""
-        return sort_dt, sort_ts_dt, game_date, kickoff_dt, exp_dt, display, outcomes
+        return sort_dt, sort_ts_dt, game_date, kickoff_dt, exp_dt, close_dt, display, outcomes
 
     records = []
     for ev in all_ev:
@@ -873,7 +873,7 @@ def get_data():
             ev["_soccer_comp"] = _soccer_comp
             ev["markets"] = mkts
 
-            sort_dt, sort_ts_dt, game_date, kickoff_dt, game_end_dt, display_dt, outcomes = extract(ev)
+            sort_dt, sort_ts_dt, game_date, kickoff_dt, game_end_dt, close_dt, display_dt, outcomes = extract(ev)
 
             if _sport == "Soccer" and _soccer_comp and _soccer_comp not in ("Other", ""):
                 _subcat = _soccer_comp
@@ -894,6 +894,8 @@ def get_data():
                 "_display_dt": display_dt,
                 "_kickoff_dt": kickoff_dt.isoformat() if kickoff_dt else None,
                 "_game_end_dt": game_end_dt.isoformat() if (kickoff_dt and game_end_dt) else None,
+                "_close_dt": close_dt.isoformat() if close_dt else None,
+                "_exp_dt": game_end_dt.isoformat() if game_end_dt else None,
                 "_sort_ts": sort_ts_dt.isoformat() if sort_ts_dt else None,
                 "outcomes": outcomes,
             }
@@ -965,25 +967,51 @@ def get_events(
             pass  # when searching, show all categories
         elif category and category != "All":
             if category == "Live":
-                # Keep only sport events currently in progress.
-                # Uses the estimated kickoff window from Kalshi's
-                # expiration time minus DURATION, with a small 15m
-                # buffer for scheduling drift. The frontend's
-                # isLive() trusts ESPN _live_state for LIVE badges,
-                # so this filter just needs to be inclusive enough
-                # to not miss truly live games.
+                # Keep events currently in progress. For sport
+                # events, use the kickoff/end window (±15m buffer).
+                # For non-sport events (crypto, politics, etc.),
+                # consider them "live" when the market's close_time
+                # has passed (trading ended) but exp_dt hasn't
+                # (resolution pending), OR when close_dt is within
+                # the next 3h (market is open and resolving soon).
                 kdt = r.get("_kickoff_dt")
                 gdt = r.get("_game_end_dt")
-                if not (kdt and gdt):
-                    continue
-                try:
-                    k = _dt.fromisoformat(kdt)
-                    g = _dt.fromisoformat(gdt)
-                    _buf = timedelta(minutes=15)
-                    if not ((k - _buf) <= now_utc < (g + _buf)):
+                if kdt and gdt:
+                    # Sport event — kickoff/end window
+                    try:
+                        k = _dt.fromisoformat(kdt)
+                        g = _dt.fromisoformat(gdt)
+                        _buf = timedelta(minutes=15)
+                        if not ((k - _buf) <= now_utc < (g + _buf)):
+                            continue
+                    except Exception:
                         continue
-                except Exception:
-                    continue
+                else:
+                    # Non-sport event — use close/exp times
+                    cdt = r.get("_close_dt")
+                    edt = r.get("_exp_dt")
+                    if not edt:
+                        continue
+                    try:
+                        e = _dt.fromisoformat(edt)
+                        if now_utc >= e:
+                            continue  # already expired
+                        if cdt:
+                            c = _dt.fromisoformat(cdt)
+                            # Market closed, waiting for resolution
+                            if c <= now_utc < e:
+                                pass  # live — include
+                            # Market open but closes within 3h
+                            elif now_utc < c and (c - now_utc).total_seconds() < 3 * 3600:
+                                pass  # live — include
+                            else:
+                                continue
+                        else:
+                            # No close_dt, just check exp within 3h
+                            if (e - now_utc).total_seconds() > 3 * 3600:
+                                continue
+                    except Exception:
+                        continue
             elif category == "Sports":
                 if not r["_is_sport"]: continue
             else:
@@ -1293,16 +1321,35 @@ def get_sports(live: bool = False):
         for r in records:
             kdt = r.get("_kickoff_dt")
             gdt = r.get("_game_end_dt")
-            if not (kdt and gdt):
-                continue
-            try:
-                k = _dt.fromisoformat(kdt)
-                g = _dt.fromisoformat(gdt)
-                _buf = timedelta(minutes=15)
-                if (k - _buf) <= now_utc < (g + _buf):
-                    filtered.append(r)
-            except Exception:
-                pass
+            if kdt and gdt:
+                try:
+                    k = _dt.fromisoformat(kdt)
+                    g = _dt.fromisoformat(gdt)
+                    _buf = timedelta(minutes=15)
+                    if (k - _buf) <= now_utc < (g + _buf):
+                        filtered.append(r)
+                except Exception:
+                    pass
+            else:
+                edt = r.get("_exp_dt")
+                cdt = r.get("_close_dt")
+                if not edt:
+                    continue
+                try:
+                    e = _dt.fromisoformat(edt)
+                    if now_utc >= e:
+                        continue
+                    if cdt:
+                        c = _dt.fromisoformat(cdt)
+                        if c <= now_utc < e:
+                            filtered.append(r)
+                        elif now_utc < c and (c - now_utc).total_seconds() < 3 * 3600:
+                            filtered.append(r)
+                    else:
+                        if (e - now_utc).total_seconds() <= 3 * 3600:
+                            filtered.append(r)
+                except Exception:
+                    pass
         records = filtered
     sport_counts = {}
     soccer_comps = set()
