@@ -1254,7 +1254,10 @@ def get_events(
                 try:
                     k = _dt.fromisoformat(kdt)
                     g = _dt.fromisoformat(gdt)
-                    if k <= now_utc < g:
+                    # 2h buffer for long-running matches (tennis
+                    # 3-setters, soccer extra time, overtime, etc.)
+                    buf = timedelta(hours=2)
+                    if k <= now_utc < (g + buf):
                         return 0  # in kickoff window
                 except Exception:
                     pass
