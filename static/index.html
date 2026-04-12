@@ -218,7 +218,7 @@ var state = {
   sort: "earliest", layout: "grid",
   offset: 0, total: 0, loading: false, allLoaded: false,
   categories: [], sports: [], soccerComps: [],
-  liveSports: [], liveSportSubtabs: {}
+  liveSports: [], liveSportSubtabs: {}, liveCategories: []
 };
 
 async function loadLiveSports() {
@@ -226,6 +226,7 @@ async function loadLiveSports() {
     var r = await fetch("/api/sports?live=true");
     var d = await r.json();
     state.liveSports = d.sports || [];
+    state.liveCategories = d.live_categories || [];
     state.liveSportSubtabs = {};
     for (var i = 0; i < state.liveSports.length; i++) {
       state.liveSportSubtabs[state.liveSports[i].name] = state.liveSports[i].subtabs || [];
@@ -315,6 +316,7 @@ async function selectCat(key) {
   state.category = key;
   state.sport = null;
   state.soccerComp = null;
+  state._liveCat = null;
   state.search = "";
   state.offset = 0;
   state.allLoaded = false;
@@ -347,14 +349,16 @@ function renderNav() {
   if (state.category === "Sports" || state.category === "Live") {
     var sportsList = state.category === "Live" ? (state.liveSports || []) : state.sports;
     var subtabsMap = state.category === "Live" ? (state.liveSportSubtabs || {}) : state.sportSubtabs;
+    var liveCats = state.category === "Live" ? (state.liveCategories || []) : [];
     nav.style.display = "block";
     nav.innerHTML = "";
     var total = 0;
     for (var i = 0; i < sportsList.length; i++) total += sportsList[i].count;
+    for (var lc = 0; lc < liveCats.length; lc++) total += liveCats[lc].count;
     var allBtn = document.createElement("button");
-    allBtn.className = "nav-item" + (!state.sport ? " active" : "");
+    allBtn.className = "nav-item" + (!state.sport && !state._liveCat ? " active" : "");
     allBtn.textContent = (state.category === "Live" ? "All live" : "All sports") + " (" + total + ")";
-    allBtn.addEventListener("click", function() { selectSport(null); });
+    allBtn.addEventListener("click", function() { state._liveCat = null; selectSport(null); });
     nav.appendChild(allBtn);
     for (var i = 0; i < sportsList.length; i++) {
       var s = sportsList[i];
@@ -382,6 +386,31 @@ function renderNav() {
           }
         }
       }
+    }
+    // Non-sport categories in the Live sidebar (Crypto, Climate, etc.)
+    for (var lci = 0; lci < liveCats.length; lci++) {
+      var lcat = liveCats[lci];
+      var lcActive = state._liveCat === lcat.name;
+      var lcBtn = document.createElement("button");
+      lcBtn.className = "nav-item" + (lcActive ? " active" : "");
+      lcBtn.textContent = (CAT_EMOJI[lcat.name] || "") + " " + lcat.name + " (" + lcat.count + ")";
+      (function(catName) {
+        lcBtn.addEventListener("click", function() {
+          if (state._liveCat === catName) {
+            state._liveCat = null;
+          } else {
+            state._liveCat = catName;
+            state.sport = null;
+            state.soccerComp = null;
+          }
+          state.offset = 0;
+          state.allLoaded = false;
+          document.getElementById("cards-grid").innerHTML = "";
+          renderNav();
+          loadMore();
+        });
+      })(lcat.name);
+      nav.appendChild(lcBtn);
     }
   } else {
     var subtabs = (state.catSubtabs && state.catSubtabs[state.category]) || [];
@@ -439,6 +468,7 @@ async function loadMore() {
   if (state.category && state.category !== "All") url += "&category=" + encodeURIComponent(state.category);
   if (state.sport) url += "&sport=" + encodeURIComponent(state.sport);
   if (state.soccerComp) url += "&soccer_comp=" + encodeURIComponent(state.soccerComp);
+  if (state._liveCat) url += "&live_cat=" + encodeURIComponent(state._liveCat);
   if (state.search) url += "&search=" + encodeURIComponent(state.search);
   try {
     var r = await fetch(url);
@@ -966,6 +996,7 @@ async function refreshVisible() {
   if (state.category && state.category !== "All") url += "&category=" + encodeURIComponent(state.category);
   if (state.sport) url += "&sport=" + encodeURIComponent(state.sport);
   if (state.soccerComp) url += "&soccer_comp=" + encodeURIComponent(state.soccerComp);
+  if (state._liveCat) url += "&live_cat=" + encodeURIComponent(state._liveCat);
   if (state.search) url += "&search=" + encodeURIComponent(state.search);
   try {
     var r = await fetch(url);

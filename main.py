@@ -980,6 +980,7 @@ def get_events(
     category: Optional[str] = None,
     sport: Optional[str] = None,
     soccer_comp: Optional[str] = None,
+    live_cat: Optional[str] = None,
     search: Optional[str] = None,
     date_filter: Optional[str] = "all",
     sort: Optional[str] = "earliest",
@@ -1118,6 +1119,15 @@ def get_events(
                 title_lower = r["title"].lower()
                 if not any(kw in title_lower for kw in keywords):
                     continue
+
+        # Live category filter (Crypto, Climate, etc. in Live sidebar)
+        if live_cat:
+            if r.get("_is_sport"):
+                continue  # non-sport filter active, skip sports
+            c = r.get("category", "Other")
+            disp = CAT_DISPLAY.get(c, c)
+            if disp != live_cat:
+                continue
 
         # Search — match all whitespace-separated tokens in any order
         # against title or event_ticker (case-insensitive).
@@ -1406,7 +1416,24 @@ def get_sports(live: bool = False):
         })
 
     sports.sort(key=lambda x: list(_SPORT_SERIES.keys()).index(x["name"]) if x["name"] in _SPORT_SERIES else 99)
-    return {"sports": sports, "soccer_comps": sorted(soccer_comps)}
+    # When live=true, also count non-sport categories (Crypto,
+    # Climate, etc.) so the Live sidebar can show them too.
+    live_cats = []
+    if live:
+        cat_counts = {}
+        for r in records:
+            if r.get("_is_sport"):
+                continue
+            c = r.get("category", "Other")
+            disp = CAT_DISPLAY.get(c, c)
+            cat_counts[disp] = cat_counts.get(disp, 0) + 1
+        for c in TOP_CATS:
+            if c == "Sports":
+                continue
+            cnt = cat_counts.get(c, 0)
+            if cnt > 0:
+                live_cats.append({"name": c, "count": cnt})
+    return {"sports": sports, "soccer_comps": sorted(soccer_comps), "live_categories": live_cats}
 
 @app.get("/api/meta")
 def get_meta():
