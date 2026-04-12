@@ -1012,12 +1012,12 @@ def get_events(
                     continue  # sport but NOT confirmed live — skip
                 else:
                     # Non-sport event (crypto, politics, etc.).
-                    # "Live" means the outcome is actively being
-                    # determined right now:
-                    #   - Market closed, awaiting resolution
-                    #     (close_dt <= now < exp_dt)
-                    #   - Market closes within 30 min (imminent)
-                    cdt = r.get("_close_dt")
+                    # "Live" = outcome actively being determined and
+                    # resolves soon. Include if exp_dt is within the
+                    # next 6h and hasn't settled yet. This matches
+                    # Kalshi's behavior for BTC daily / weather /
+                    # politics markets that trade all day and resolve
+                    # at a specific time.
                     edt = r.get("_exp_dt")
                     if not edt:
                         continue
@@ -1025,17 +1025,8 @@ def get_events(
                         e = _dt.fromisoformat(edt)
                         if now_utc >= e:
                             continue  # already settled
-                        if cdt:
-                            c = _dt.fromisoformat(cdt)
-                            if c <= now_utc < e:
-                                pass  # in resolution — live
-                            elif now_utc < c and (c - now_utc).total_seconds() < 1800:
-                                pass  # closes within 30min — live
-                            else:
-                                continue
-                        else:
-                            if (e - now_utc).total_seconds() > 1800:
-                                continue
+                        if (e - now_utc).total_seconds() > 6 * 3600:
+                            continue  # resolves in >6h, not live yet
                     except Exception:
                         continue
             elif category == "Sports":
@@ -1351,22 +1342,15 @@ def get_sports(live: bool = False):
                 continue  # sport but not confirmed live
             else:
                 edt = r.get("_exp_dt")
-                cdt = r.get("_close_dt")
                 if not edt:
                     continue
                 try:
                     e = _dt.fromisoformat(edt)
                     if now_utc >= e:
                         continue
-                    if cdt:
-                        c = _dt.fromisoformat(cdt)
-                        if c <= now_utc < e:
-                            filtered.append(r)
-                        elif now_utc < c and (c - now_utc).total_seconds() < 1800:
-                            filtered.append(r)
-                    else:
-                        if (e - now_utc).total_seconds() <= 1800:
-                            filtered.append(r)
+                    if (e - now_utc).total_seconds() > 6 * 3600:
+                        continue
+                    filtered.append(r)
                 except Exception:
                     pass
         records = filtered
