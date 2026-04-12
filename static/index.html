@@ -762,17 +762,34 @@ function buildScoreMap(ev) {
   var hs = ls.home_score, as_ = ls.away_score;
   if (hs === "" || hs === undefined || as_ === "" || as_ === undefined) return null;
   if (ls.state !== "in" && ls.state !== "post") return null;
-  var map = {};
-  // Map by abbreviation (e.g. "COM" → "0", "INT" → "2")
-  if (ls.home_abbr) map[ls.home_abbr.toLowerCase()] = String(hs);
-  if (ls.away_abbr) map[ls.away_abbr.toLowerCase()] = String(as_);
-  return map;
+  // Build arrays of lowercase keywords for each side — abbreviation
+  // + each word of the display name (e.g. ["mnc","manchester","city"])
+  function keywords(abbr, display) {
+    var kw = [];
+    if (abbr) kw.push(abbr.toLowerCase());
+    if (display) {
+      var words = display.toLowerCase().split(/\s+/);
+      for (var i = 0; i < words.length; i++) {
+        if (words[i].length >= 3) kw.push(words[i]);
+      }
+    }
+    return kw;
+  }
+  return {
+    home: { score: String(hs), keys: keywords(ls.home_abbr, ls.home_display) },
+    away: { score: String(as_), keys: keywords(ls.away_abbr, ls.away_display) }
+  };
 }
 function matchScore(label, scoreMap) {
   if (!scoreMap) return "";
   var ll = label.toLowerCase();
-  for (var key in scoreMap) {
-    if (ll.indexOf(key) >= 0) return scoreMap[key];
+  // Check home keywords then away keywords
+  var sides = [scoreMap.home, scoreMap.away];
+  for (var s = 0; s < sides.length; s++) {
+    var keys = sides[s].keys;
+    for (var k = 0; k < keys.length; k++) {
+      if (ll.indexOf(keys[k]) >= 0) return sides[s].score;
+    }
   }
   return "";
 }

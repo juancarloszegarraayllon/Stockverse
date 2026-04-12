@@ -1312,6 +1312,8 @@ def get_events(
                 "clock_running":  g.get("clock_running", True),
                 "home_abbr":      g.get("home_abbr", ""),
                 "away_abbr":      g.get("away_abbr", ""),
+                "home_display":   g.get("home_display", ""),
+                "away_display":   g.get("away_display", ""),
                 "home_score":     g.get("home_score", ""),
                 "away_score":     g.get("away_score", ""),
                 "score_display":  _score_display(title, g),
