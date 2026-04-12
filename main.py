@@ -987,7 +987,12 @@ def get_events(
                     except Exception:
                         continue
                 else:
-                    # Non-sport event — use close/exp times
+                    # Non-sport event (crypto, politics, etc.).
+                    # "Live" means the outcome is actively being
+                    # determined right now:
+                    #   - Market closed, awaiting resolution
+                    #     (close_dt <= now < exp_dt)
+                    #   - Market closes within 30 min (imminent)
                     cdt = r.get("_close_dt")
                     edt = r.get("_exp_dt")
                     if not edt:
@@ -995,20 +1000,17 @@ def get_events(
                     try:
                         e = _dt.fromisoformat(edt)
                         if now_utc >= e:
-                            continue  # already expired
+                            continue  # already settled
                         if cdt:
                             c = _dt.fromisoformat(cdt)
-                            # Market closed, waiting for resolution
                             if c <= now_utc < e:
-                                pass  # live — include
-                            # Market open but closes within 3h
-                            elif now_utc < c and (c - now_utc).total_seconds() < 3 * 3600:
-                                pass  # live — include
+                                pass  # in resolution — live
+                            elif now_utc < c and (c - now_utc).total_seconds() < 1800:
+                                pass  # closes within 30min — live
                             else:
                                 continue
                         else:
-                            # No close_dt, just check exp within 3h
-                            if (e - now_utc).total_seconds() > 3 * 3600:
+                            if (e - now_utc).total_seconds() > 1800:
                                 continue
                     except Exception:
                         continue
@@ -1343,10 +1345,10 @@ def get_sports(live: bool = False):
                         c = _dt.fromisoformat(cdt)
                         if c <= now_utc < e:
                             filtered.append(r)
-                        elif now_utc < c and (c - now_utc).total_seconds() < 3 * 3600:
+                        elif now_utc < c and (c - now_utc).total_seconds() < 1800:
                             filtered.append(r)
                     else:
-                        if (e - now_utc).total_seconds() <= 3 * 3600:
+                        if (e - now_utc).total_seconds() <= 1800:
                             filtered.append(r)
                 except Exception:
                     pass
