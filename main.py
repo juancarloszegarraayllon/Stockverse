@@ -330,19 +330,31 @@ def _group_game_markets(records):
         by_suffix.setdefault(suffix, {})[mt[0]] = r
 
     to_drop = set()  # event_tickers of siblings to remove from list
-    # Sorted so tab order is stable: Winner → Spread → Totals → BTTS → 1H.
-    ordered = sorted(GAME_MARKET_PREFIXES.items(), key=lambda kv: kv[1][2])
     for suffix, type_map in by_suffix.items():
         primary = type_map.get("moneyline")
         if not primary:
             # Orphan — no parent GAME event. Leave siblings alone so
             # they still surface as individual cards.
             continue
+        # Iterate only the type_codes present for THIS game, sorted
+        # by their tab priority. (The old code iterated all 77
+        # entries in GAME_MARKET_PREFIXES, causing duplicate tabs
+        # because many entries share the same type_code — e.g.
+        # every league's GAME prefix maps to "moneyline".)
+        def _prio(tc):
+            rec = type_map[tc]
+            mt = GAME_MARKET_PREFIXES.get(
+                (rec.get("series_ticker") or "").upper(), ("", "", 99, False)
+            )
+            return mt[2]  # tab priority
         groups = []
-        for _series, (type_code, fallback_label, _priority, is_primary) in ordered:
-            rec = type_map.get(type_code)
-            if not rec:
+        for type_code in sorted(type_map.keys(), key=_prio):
+            rec = type_map[type_code]
+            series_up = (rec.get("series_ticker") or "").upper()
+            mt = GAME_MARKET_PREFIXES.get(series_up)
+            if not mt:
                 continue
+            _tc, fallback_label, _priority, is_primary = mt
             # Use Kalshi's own label from the event title so the tab
             # strip matches what Kalshi shows. Sibling titles look
             # like "Washington at Pittsburgh: Puck Line" — everything
