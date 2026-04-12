@@ -914,11 +914,46 @@ def get_data():
     before_group = len(records)
     records = _group_game_markets(records)
     grouped_into = before_group - len(records)
+    # Pre-compute which sport events are confirmed live by ESPN /
+    # SofaScore / SportsDB. This runs once per cache rebuild (~30min)
+    # so the per-request Live filter can just check a flag instead of
+    # running expensive match_game calls on every request. Non-sport
+    # events are handled separately via close_dt/exp_dt in the filter.
+    try:
+        from espn_feed import match_game as _em_cache
+    except Exception:
+        _em_cache = None
+    try:
+        from sportsdb_feed import match_game as _sm_cache
+    except Exception:
+        _sm_cache = None
+    try:
+        from sofascore_feed import match_game as _fm_cache
+    except Exception:
+        _fm_cache = None
+    live_count = 0
+    for r in records:
+        if not r.get("_is_sport"):
+            continue
+        _sp = r.get("_sport", "")
+        _ti = r.get("title", "")
+        if not (_sp and _ti):
+            continue
+        mg = None
+        if _em_cache:
+            mg = _em_cache(_ti, _sp)
+        if mg is None and _sm_cache:
+            mg = _sm_cache(_ti, _sp)
+        if mg is None and _fm_cache:
+            mg = _fm_cache(_ti, _sp)
+        if mg and mg.get("state") == "in":
+            r["_is_live"] = True
+            live_count += 1
     sport_count = sum(1 for r in records if r.get("_is_sport"))
     kickoff_count = sum(1 for r in records if r.get("_kickoff_dt"))
     logging.getLogger("oddsiq").info(
-        "get_data: raw=%d records=%d sport=%d kickoff=%d grouped=%d",
-        raw_count, len(records), sport_count, kickoff_count, grouped_into,
+        "get_data: raw=%d records=%d sport=%d kickoff=%d grouped=%d live=%d",
+        raw_count, len(records), sport_count, kickoff_count, grouped_into, live_count,
     )
     _cache["data"] = records
     _cache["ts"] = now
@@ -967,25 +1002,14 @@ def get_events(
             pass  # when searching, show all categories
         elif category and category != "All":
             if category == "Live":
-                # Keep events currently in progress. For sport
-                # events, use the kickoff/end window (±15m buffer).
-                # For non-sport events (crypto, politics, etc.),
-                # consider them "live" when the market's close_time
-                # has passed (trading ended) but exp_dt hasn't
-                # (resolution pending), OR when close_dt is within
-                # the next 3h (market is open and resolving soon).
-                kdt = r.get("_kickoff_dt")
-                gdt = r.get("_game_end_dt")
-                if kdt and gdt:
-                    # Sport event — kickoff/end window
-                    try:
-                        k = _dt.fromisoformat(kdt)
-                        g = _dt.fromisoformat(gdt)
-                        _buf = timedelta(minutes=15)
-                        if not ((k - _buf) <= now_utc < (g + _buf)):
-                            continue
-                    except Exception:
-                        continue
+                # Sport events: trust the _is_live flag pre-computed
+                # during cache build from ESPN/SofaScore feeds (runs
+                # once per 30min rebuild, not per request).
+                # Non-sport events: check close/exp time window.
+                if r.get("_is_live"):
+                    pass  # confirmed live by ESPN/SofaScore
+                elif r.get("_is_sport"):
+                    continue  # sport but NOT confirmed live — skip
                 else:
                     # Non-sport event (crypto, politics, etc.).
                     # "Live" means the outcome is actively being
@@ -1321,17 +1345,10 @@ def get_sports(live: bool = False):
         now_utc = _dt.now(timezone.utc)
         filtered = []
         for r in records:
-            kdt = r.get("_kickoff_dt")
-            gdt = r.get("_game_end_dt")
-            if kdt and gdt:
-                try:
-                    k = _dt.fromisoformat(kdt)
-                    g = _dt.fromisoformat(gdt)
-                    _buf = timedelta(minutes=15)
-                    if (k - _buf) <= now_utc < (g + _buf):
-                        filtered.append(r)
-                except Exception:
-                    pass
+            if r.get("_is_live"):
+                filtered.append(r)
+            elif r.get("_is_sport"):
+                continue  # sport but not confirmed live
             else:
                 edt = r.get("_exp_dt")
                 cdt = r.get("_close_dt")
