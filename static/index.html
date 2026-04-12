@@ -767,9 +767,9 @@ function buildScoreMap(ev) {
   // + each word of the display name (e.g. ["mnc","manchester","city"])
   function keywords(abbr, display) {
     var kw = [];
-    if (abbr) kw.push(abbr.toLowerCase());
+    if (abbr) kw.push(stripAccents(abbr));
     if (display) {
-      var words = display.toLowerCase().split(/\s+/);
+      var words = stripAccents(display).split(/\s+/);
       for (var i = 0; i < words.length; i++) {
         if (words[i].length >= 3) kw.push(words[i]);
       }
@@ -781,15 +781,19 @@ function buildScoreMap(ev) {
     away: { score: String(as_), keys: keywords(ls.away_abbr, ls.away_display) }
   };
 }
+// Strip accents/diacritics for fuzzy team name matching
+// ("Tucumán" → "tucuman", "Grêmio" → "gremio")
+function stripAccents(s) {
+  return s.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+}
 function matchScore(label, scoreMap) {
   if (!scoreMap) return "";
-  var ll = label.toLowerCase();
-  // Check home keywords then away keywords
+  var ll = stripAccents(label);
   var sides = [scoreMap.home, scoreMap.away];
   for (var s = 0; s < sides.length; s++) {
     var keys = sides[s].keys;
     for (var k = 0; k < keys.length; k++) {
-      if (ll.indexOf(keys[k]) >= 0) return sides[s].score;
+      if (ll.indexOf(stripAccents(keys[k])) >= 0) return sides[s].score;
     }
   }
   return "";
