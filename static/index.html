@@ -123,11 +123,13 @@ html,body{background:var(--bg);color:var(--text);font-family:Helvetica,Arial,san
   #controls{flex-wrap:wrap;gap:8px}
   #logo{font-size:1.4rem;order:1}
   .control-group{order:2}
+  .control-label{font-size:8px}
+  .pair-btn{padding:4px 8px;font-size:10px}
   #search-input{order:3;flex:1 1 100%;min-width:0}
   #date-sel{order:4}
   #sort-sel{order:5}
   #custom-dates{order:6;flex:1 1 100%}
-  #main{margin-top:150px}
+  #main{margin-top:155px}
   #nav{top:150px;height:calc(100vh - 150px);width:170px;min-width:170px}
   #content{padding:14px}
   #cards-grid{grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:12px}
@@ -139,7 +141,9 @@ html,body{background:var(--bg);color:var(--text);font-family:Helvetica,Arial,san
   #logo{font-size:1.2rem;order:1;flex:0 0 auto}
   #controls{gap:6px;padding-bottom:8px}
   /* Row 1: Logo + Date + Sort. Row 2: full-width search. */
-  .control-group:last-child{display:none}
+  /* Hide both control groups (Market View + Grid/List) on phone
+     to save space — default Game View + Grid is fine for mobile. */
+  .control-group{display:none}
   #date-sel{order:2;flex:0 1 auto;min-width:0;font-size:12px;padding:7px 8px}
   #sort-sel{order:3;flex:0 1 auto;min-width:0;font-size:12px;padding:7px 8px}
   #search-input{order:4;flex:1 1 100%;min-width:0;font-size:13px;padding:7px 12px}
