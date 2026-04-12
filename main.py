@@ -1247,7 +1247,7 @@ def get_events(
         # parent by _group_game_markets), format each group's
         # outcomes the same way so live WebSocket prices flow into
         # every tab, not just the default Winner tab.
-        mg = r.get("_market_groups")
+        mg = r.get("_market_groups") if view != "all" else None
         if mg:
             rc["market_groups"] = [
                 {
