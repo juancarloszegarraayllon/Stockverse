@@ -48,7 +48,7 @@ html,body{background:var(--bg);color:var(--text);font-family:Helvetica,Arial,san
 .subcat-pill{font-size:11px;color:#888;letter-spacing:0.3px}
 .sub-pill{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.4px;color:#888;border-left:1px solid #333;padding-left:6px}
 .card-date{font-size:11px;color:var(--text-muted);white-space:nowrap}
-.card-icon{font-size:20px}
+.cat-icon{font-size:14px;line-height:1}
 .card-title{font-size:13px;font-weight:600;line-height:1.4;color:var(--text)}
 .card-ticker a{font-size:10px;color:var(--text-muted);text-decoration:none;font-family:monospace}
 .card-ticker a:hover{color:var(--green)}
@@ -858,12 +858,12 @@ function buildCard(ev) {
   var subcat = ev._subcat || "";
   h += "<div class=\"card-top\">";
   h += "<div style=\"display:flex;gap:6px;align-items:center;flex-wrap:wrap\">";
+  if (icon) h += "<span class=\"cat-icon\">" + icon + "</span>";
   h += "<span class=\"cat-pill\">" + label + "</span>";
   if (subcat) h += "<span class=\"sub-pill\">" + subcat + "</span>";
   h += "</div>";
   h += '<span class="card-time-slot">' + renderTimeSlot(ev) + '</span>';
   h += "</div>";
-  if (icon) h += "<div class=\"card-icon\">" + icon + "</div>";
   h += "<div class=\"card-title\">" + ev.title + "</div>";
   h += "<div class=\"card-ticker\">";
   if (url) h += "<a href=\"" + url + "\" target=\"_blank\">" + ticker + "</a>";
