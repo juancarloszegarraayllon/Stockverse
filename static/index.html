@@ -85,8 +85,8 @@ html,body{background:var(--bg);color:var(--text);font-family:Helvetica,Arial,san
 .outcome-expand-btn{margin-top:6px;padding:6px 10px;background:transparent;border:1px solid var(--border);border-radius:5px;color:var(--text-dim);font-family:inherit;font-size:11px;cursor:pointer;width:100%;text-align:center;transition:color 0.15s,border-color 0.15s}
 .outcome-expand-btn:hover{color:var(--text);border-color:var(--text-muted)}
 .outcome-label{flex:1;font-size:11px;color:var(--text-dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.outcome-score{min-width:24px;text-align:center;font-size:13px;font-weight:700;color:var(--text);flex-shrink:0}
-.header-score{min-width:24px;text-align:center;font-size:8px;font-weight:700;letter-spacing:0.4px;color:var(--text-muted);text-transform:uppercase;flex-shrink:0}
+.outcome-score{width:32px;text-align:center;font-size:13px;font-weight:700;color:var(--text);flex-shrink:0}
+.header-score{width:32px;text-align:center;font-size:8px;font-weight:700;letter-spacing:0.4px;color:var(--text-muted);text-transform:uppercase;flex-shrink:0}
 .outcome-chance{min-width:58px;text-align:center;font-size:11px;color:var(--text-dim);flex-shrink:0;border-radius:4px}
 .outcome-odds{display:flex;gap:4px;flex-shrink:0}
 .odds-box{padding:4px 8px;border-radius:4px;min-width:36px;text-align:center;font-size:11px;font-weight:700}
@@ -1160,6 +1160,9 @@ async function refreshVisible() {
       } else if (tscore && !freshTennis) {
         tscore.parentNode.removeChild(tscore);
       }
+      // Rebuild scoreMap from fresh _live_state so score column
+      // updates when goals are scored (not just on full page load).
+      var freshScoreMap = buildScoreMap(ev);
       // Multi-market cards (tabbed La Liga game cards) carry their
       // outcomes under ev.market_groups[]. Each panel in the DOM
       // has data-group=<type_code> matching one of the groups, so
@@ -1178,6 +1181,8 @@ async function refreshVisible() {
           for (var gj = 0; gj < grows.length && gj < gouts.length; gj++) {
             var grow = grows[gj];
             var go = gouts[gj];
+            var gScoreEl = grow.querySelector(".outcome-score");
+            if (gScoreEl && freshScoreMap) gScoreEl.textContent = matchScore(go.label, freshScoreMap);
             var gChance = grow.querySelector(".outcome-chance");
             _updateIfChanged(gChance, gChance, go.chance);
             var gBoxes = grow.querySelectorAll(".odds-box");
@@ -1191,6 +1196,8 @@ async function refreshVisible() {
         for (var j = 0; j < rows.length && j < outs.length; j++) {
           var row = rows[j];
           var o = outs[j];
+          var scoreEl = row.querySelector(".outcome-score");
+          if (scoreEl && freshScoreMap) scoreEl.textContent = matchScore(o.label, freshScoreMap);
           var chanceEl = row.querySelector(".outcome-chance");
           _updateIfChanged(chanceEl, chanceEl, o.chance);
           var boxes = row.querySelectorAll(".odds-box");
