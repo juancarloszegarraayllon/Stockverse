@@ -779,9 +779,16 @@ function buildScoreMap(ev) {
     }
     return kw;
   }
+  // Merge ESPN keywords + Kalshi title keywords so outcome labels
+  // match even when Kalshi uses a different name than ESPN
+  // (e.g. "Junin" in Kalshi vs "Sarmiento" in ESPN).
+  var hk = keywords(ls.home_abbr, ls.home_display);
+  var ak = keywords(ls.away_abbr, ls.away_display);
+  if (ls.title_home) hk = hk.concat(keywords("", ls.title_home));
+  if (ls.title_away) ak = ak.concat(keywords("", ls.title_away));
   return {
-    home: { score: String(hs), keys: keywords(ls.home_abbr, ls.home_display) },
-    away: { score: String(as_), keys: keywords(ls.away_abbr, ls.away_display) }
+    home: { score: String(hs), keys: hk },
+    away: { score: String(as_), keys: ak }
   };
 }
 // Strip accents/diacritics for fuzzy team name matching

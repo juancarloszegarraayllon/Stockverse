@@ -1497,7 +1497,24 @@ def get_events(
                 "home_score":     g.get("home_score", ""),
                 "away_score":     g.get("away_score", ""),
                 "score_display":  _score_display(title, g),
+                # Title-derived team names so the frontend can match
+                # outcome labels even when Kalshi uses a different name
+                # than ESPN (e.g. "Junin" vs "Sarmiento de Junín").
+                "title_home":     "",
+                "title_away":     "",
             }
+            # Parse team names from the Kalshi title ("A vs B")
+            # and assign to title_home / title_away using flip.
+            import re as _re
+            _parts = _re.split(r'\s+(?:vs\.?|v|at)\s+', title, maxsplit=1, flags=_re.IGNORECASE)
+            if len(_parts) == 2:
+                _flip = _needs_flip(title, g)
+                if _flip:
+                    rc["_live_state"]["title_home"] = _parts[1].strip()
+                    rc["_live_state"]["title_away"] = _parts[0].strip()
+                else:
+                    rc["_live_state"]["title_home"] = _parts[0].strip()
+                    rc["_live_state"]["title_away"] = _parts[1].strip()
             # Tennis: attach structured per-player data so the
             # frontend can render a vertical 2-row scoreboard
             # instead of the single-line breakdown. Flip sides
