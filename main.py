@@ -986,7 +986,7 @@ def get_data():
 
             r = {
                 "event_ticker": str(ev.get("event_ticker", "")),
-                "title": str(ev.get("title", ""))[:90],
+                "title": str(ev.get("title", ""))[:200],
                 "category": category,
                 "series_ticker": str(series_ticker_raw),
                 "_sport": _sport,
