@@ -74,9 +74,9 @@ html,body{background:var(--bg);color:var(--text);font-family:Helvetica,Arial,san
 .market-group.active{display:block}
 .outcome-header{display:flex;align-items:center;gap:6px;padding:6px 0 2px}
 .outcome-header .outcome-label{flex:1}
-.header-chance{min-width:58px;text-align:center;font-size:8px;font-weight:700;letter-spacing:0.4px;color:var(--text-muted);text-transform:uppercase;flex-shrink:0}
+.header-chance{flex:0 0 58px;text-align:center;font-size:8px;font-weight:700;letter-spacing:0.4px;color:var(--text-muted);text-transform:uppercase}
 .header-odds{display:flex;gap:4px;flex-shrink:0}
-.header-odds-box{min-width:36px;padding:0 8px;font-size:8px;font-weight:700;letter-spacing:0.5px;text-align:center;text-transform:uppercase}
+.header-odds-box{width:44px;padding:0;font-size:8px;font-weight:700;letter-spacing:0.5px;text-align:center;text-transform:uppercase}
 .header-yes{color:var(--green-dim)}
 .header-no{color:var(--red)}
 .outcome-row{display:flex;align-items:center;gap:6px;padding:4px 0;border-top:1px solid var(--border)}
@@ -172,8 +172,8 @@ html,body{background:var(--bg);color:var(--text);font-family:Helvetica,Arial,san
   .outcome-label{font-size:11px}
   .outcome-chance{flex:0 0 52px;font-size:11px}
   .odds-box{padding:4px 0;width:38px;font-size:11px}
-  .header-chance{min-width:52px}
-  .header-odds-box{padding:0 6px;min-width:34px}
+  .header-chance{flex:0 0 52px}
+  .header-odds-box{padding:0;width:38px}
   .live-badge{font-size:10px;letter-spacing:0.5px}
   .final-badge{font-size:10px;letter-spacing:0.5px}
   #home-screen{padding:0 20px;text-align:center}
@@ -187,8 +187,8 @@ html,body{background:var(--bg);color:var(--text);font-family:Helvetica,Arial,san
   .cat-tab{padding:7px 10px;font-size:12px}
   .outcome-chance{flex:0 0 46px}
   .odds-box{width:34px;padding:4px 0}
-  .header-chance{min-width:46px}
-  .header-odds-box{min-width:30px;padding:0 4px}
+  .header-chance{flex:0 0 46px}
+  .header-odds-box{width:34px;padding:0}
 }
 </style>
 </head>
