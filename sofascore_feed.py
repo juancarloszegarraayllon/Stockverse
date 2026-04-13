@@ -293,14 +293,32 @@ def _parse_event(ev: Dict[str, Any], sport_label: str) -> Optional[Dict[str, Any
             ap_pt2 = away_score_obj.get("point")
             g["tennis_home_point"] = "" if hp_pt2 in (None,) else str(hp_pt2)
             g["tennis_away_point"] = "" if ap_pt2 in (None,) else str(ap_pt2)
-            # Serving indicator: SofaScore sometimes exposes this
-            # via ev["serving"] / ev["firstToServe"]; capture if
-            # present. "home" / "away" / "".
+            # Serving indicator: SofaScore exposes this via several
+            # possible fields depending on the endpoint version.
+            g["tennis_server"] = ""
+            # Try direct "serving" field (string: "home" / "away")
             serving = ev.get("serving")
             if serving in ("home", "away"):
                 g["tennis_server"] = serving
-            else:
-                g["tennis_server"] = ""
+            # Try boolean field
+            elif ev.get("homeTeamServing") is True:
+                g["tennis_server"] = "home"
+            elif ev.get("homeTeamServing") is False:
+                g["tennis_server"] = "away"
+            # Try firstToServe (1=home, 2=away) + game parity
+            elif ev.get("firstToServe") in (1, 2):
+                fts = ev["firstToServe"]
+                # Total games played in current set determines who
+                # serves (alternates each game).
+                total_games = 0
+                if set_scores:
+                    last = set_scores[-1]
+                    total_games = (last.get("home") or 0) + (last.get("away") or 0)
+                # Even total games → first server; odd → other
+                if total_games % 2 == 0:
+                    g["tennis_server"] = "home" if fts == 1 else "away"
+                else:
+                    g["tennis_server"] = "away" if fts == 1 else "home"
         except Exception:
             pass
     return g
