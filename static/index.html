@@ -192,7 +192,7 @@ html,body{background:var(--bg);color:var(--text);font-family:Helvetica,Arial,san
 }
 /* ── Screener ─────────────────────────────────────────────── */
 #screener{display:flex;gap:16px;padding:12px 16px}
-#screener-filters{flex:0 0 220px;background:var(--bg2);border-radius:8px;padding:14px;border:1px solid var(--border);position:sticky;top:12px;align-self:flex-start;max-height:calc(100vh - 80px);overflow-y:auto}
+#screener-filters{flex:0 0 220px;background:var(--bg2);border-radius:8px;padding:14px;border:1px solid var(--border);position:sticky;top:110px;align-self:flex-start;max-height:calc(100vh - 130px);overflow-y:auto}
 #screener-filters h3{margin:0 0 12px;font-size:13px;color:var(--text);letter-spacing:0.5px;text-transform:uppercase}
 .sf-group{margin-bottom:12px}
 .sf-group label{display:block;font-size:10px;color:var(--text-muted);margin-bottom:4px;text-transform:uppercase;letter-spacing:0.3px}
@@ -207,12 +207,14 @@ html,body{background:var(--bg);color:var(--text);font-family:Helvetica,Arial,san
 #screener-table-wrap{flex:1;min-width:0;overflow-x:auto}
 #screener-count{font-size:11px;color:var(--text-muted);margin-bottom:8px}
 #screener-table{width:100%;border-collapse:collapse;font-size:11px}
-#screener-table th{position:sticky;top:0;background:var(--bg);padding:10px 6px;text-align:center;font-size:12px;text-transform:uppercase;letter-spacing:0.4px;color:var(--text-muted);border-bottom:2px solid var(--green-line);cursor:pointer;white-space:nowrap;user-select:none}
+#screener-table th{position:sticky;top:108px;background:var(--bg);padding:10px 6px;text-align:center;font-size:12px;text-transform:uppercase;letter-spacing:0.4px;color:var(--text-muted);border-bottom:2px solid var(--green-line);cursor:pointer;white-space:nowrap;user-select:none;z-index:10}
 #screener-table th:hover{color:var(--green)}
 #screener-table th .sort-arrow{font-size:10px;margin-left:2px;color:var(--green)}
 #screener-table td{padding:7px 6px;border-bottom:1px solid var(--border);color:var(--text-dim);white-space:nowrap;text-align:center}
 #screener-table tr:hover td{background:rgba(255,255,255,0.02)}
 #screener-table .s-title{min-width:200px;color:var(--text);white-space:normal;word-break:break-word;text-align:left}
+#screener-table .s-link{color:var(--text-muted);text-decoration:none;margin-left:6px;font-size:11px;opacity:0.6;transition:opacity 0.15s,color 0.15s}
+#screener-table .s-link:hover{color:var(--green);opacity:1}
 #screener-table .s-label{min-width:120px;white-space:normal;word-break:break-word;text-align:left}
 #screener-table .s-live{color:var(--green);font-weight:700;font-size:9px}
 #screener-table .s-num{text-align:right;font-variant-numeric:tabular-nums}
@@ -1316,7 +1318,10 @@ setInterval(refreshVisible, 5000);
 var screenerState = { sort: "volume_24h", dir: "desc", offset: 0, total: 0 };
 var SCREENER_COLS = [
   { key: "is_live",    label: "",          cls: "s-live",  w: 30 },
-  { key: "title",      label: "Event",     cls: "s-title", w: null },
+  { key: "title",      label: "Event",     cls: "s-title", w: null, fmt: function(v, row) {
+      var link = row && row.url ? ' <a class="s-link" href="' + row.url + '" target="_blank" rel="noopener" title="Open on Kalshi" onclick="event.stopPropagation()">↗</a>' : '';
+      return (v || '') + link;
+    }},
   { key: "label",      label: "Outcome",   cls: "s-label", w: null },
   { key: "prob",       label: "Prob",      cls: "s-num",   w: 50,  fmt: function(v) { return v != null ? v + "%" : "—"; } },
   { key: "yes",        label: "Yes",       cls: "s-yes",   w: 50,  fmt: function(v) { return v != null ? v + "¢" : "—"; } },
@@ -1433,7 +1438,7 @@ async function screenerLoad(append) {
         if (c.key === "is_live") {
           td.innerHTML = val ? "●" : "";
         } else if (c.fmt) {
-          td.innerHTML = c.fmt(val);
+          td.innerHTML = c.fmt(val, m);
         } else {
           td.textContent = val != null ? val : "";
         }

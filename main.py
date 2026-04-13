@@ -1572,6 +1572,14 @@ def get_events(
     return {"total": total, "offset": offset, "limit": limit, "events": formatted}
 
 
+def _kalshi_url(series_ticker: str, event_ticker: str) -> str:
+    """Build canonical Kalshi event URL."""
+    if not series_ticker or not event_ticker:
+        return ""
+    s = series_ticker.lower()
+    return f"https://kalshi.com/markets/{s}/{s.replace('kx', '')}/{event_ticker.lower()}"
+
+
 @app.get("/api/screener")
 async def get_screener(
     category: Optional[str] = None,
@@ -1662,6 +1670,7 @@ async def get_screener(
                 "ticker": tk,
                 "title": title,
                 "label": o.get("label", ""),
+                "url": _kalshi_url(r.get("series_ticker", ""), event_ticker),
                 "category": cat,
                 "sport": sp,
                 "subcat": subcat,
