@@ -1023,11 +1023,7 @@ def get_data():
     try:
         import asyncio
         from db import sync_events_to_db
-        loop = asyncio.get_event_loop()
-        if loop.is_running():
-            asyncio.ensure_future(sync_events_to_db(ungrouped))
-        else:
-            loop.run_until_complete(sync_events_to_db(ungrouped))
+        asyncio.run(sync_events_to_db(ungrouped))
     except Exception as e:
         logging.getLogger("oddsiq").warning("db write-through skipped: %s", e)
     return grouped
