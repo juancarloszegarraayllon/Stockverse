@@ -291,6 +291,11 @@ def _team_phrases(team: Dict[str, Any]) -> List[str]:
         v = team.get(key)
         if not v:
             continue
+        # Strip parentheses so "Sarmiento (Junín)" → "Sarmiento Junín"
+        # and both words become matchable phrases.
+        v = v.replace("(", "").replace(")", "")
+        if not v:
+            continue
         for variant in _phrase_variants(v):
             if len(variant) >= 3:
                 phrases.add(variant)
