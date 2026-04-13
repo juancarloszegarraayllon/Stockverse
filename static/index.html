@@ -191,7 +191,7 @@ html,body{background:var(--bg);color:var(--text);font-family:Helvetica,Arial,san
   .header-odds-box{width:34px;padding:0}
 }
 /* ── Screener ─────────────────────────────────────────────── */
-#screener{display:flex;gap:16px;padding:12px 16px;max-width:1400px;margin:0 auto}
+#screener{display:flex;gap:16px;padding:12px 16px}
 #screener-filters{flex:0 0 220px;background:var(--bg2);border-radius:8px;padding:14px;border:1px solid var(--border);position:sticky;top:12px;align-self:flex-start;max-height:calc(100vh - 80px);overflow-y:auto}
 #screener-filters h3{margin:0 0 12px;font-size:13px;color:var(--text);letter-spacing:0.5px;text-transform:uppercase}
 .sf-group{margin-bottom:12px}
@@ -1117,6 +1117,9 @@ document.getElementById("search-input").addEventListener("input", function(e) {
       // Search cleared - go back to home
       state.category = null;
     }
+    // Switch out of screener view if active
+    document.getElementById("screener").style.display = "none";
+    document.getElementById("content").style.display = "";
     renderCatTabs();
     renderNav();
     if (state.search) {
