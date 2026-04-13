@@ -29,6 +29,12 @@ def _all_market_tickers():
 async def startup_event():
     global _cache
     _cache = {"data": None, "ts": 0}
+    # Initialize database tables (no-op if DATABASE_URL is not set).
+    try:
+        from db import init_db
+        await init_db()
+    except Exception as e:
+        logging.getLogger("oddsiq").warning("db init skipped: %s", e)
     # Build the REST snapshot eagerly in a thread so the WS client has
     # tickers to subscribe to without waiting for a first user request.
     threading.Thread(target=get_data, daemon=True).start()
