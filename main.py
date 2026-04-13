@@ -909,6 +909,9 @@ def get_data():
             na_size = _sz("no_ask_size_fp")
             volume = _sz("volume_fp")
             open_interest = _sz("open_interest_fp")
+            volume_24h = _sz("volume_24h_fp")
+            liquidity = _sz("liquidity_dollars")
+            prev_price = _cents_from(mk, "previous_price_dollars", None)
             # Store raw cents + market ticker. The chance/yes/no display
             # strings are computed per-request by _format_outcomes() so
             # live WebSocket updates flow through without rebuilding the
@@ -922,6 +925,12 @@ def get_data():
                 "_vol":  volume,
                 "_oi":   open_interest,
                 "_last": last_price,
+                "_vol24h": volume_24h,
+                "_liq": liquidity,
+                "_prev": prev_price,
+                "_rules": str(mk.get("rules_primary") or "")[:300],
+                "_open_time": str(mk.get("open_time") or ""),
+                "_market_close": str(mk.get("close_time") or ""),
             })
         # Show date+time if we have kickoff, otherwise just date
         if kickoff_dt and game_date:
@@ -1561,6 +1570,132 @@ def get_events(
                     pass
         formatted.append(rc)
     return {"total": total, "offset": offset, "limit": limit, "events": formatted}
+
+
+@app.get("/api/screener")
+async def get_screener(
+    category: Optional[str] = None,
+    sport: Optional[str] = None,
+    status: Optional[str] = "active",      # active, live, all
+    min_prob: Optional[int] = None,         # 0-100
+    max_prob: Optional[int] = None,         # 0-100
+    min_volume: Optional[float] = None,
+    min_oi: Optional[float] = None,
+    min_vol24h: Optional[float] = None,
+    sort_by: Optional[str] = "volume_24h",  # prob, volume, volume_24h, oi, spread, change, liquidity
+    sort_dir: Optional[str] = "desc",       # asc, desc
+    offset: int = 0,
+    limit: int = 100,
+    search: Optional[str] = None,
+):
+    """Flat market-level screener. Returns individual outcomes with
+    full Kalshi data fields for filtering and sorting."""
+    get_data()
+    from kalshi_ws import LIVE_PRICES
+    records = _cache.get("data_all") or _cache.get("data") or []
+    rows = []
+    for r in records:
+        cat = r.get("category", "")
+        sp = r.get("_sport", "")
+        is_live = r.get("_is_live", False)
+        title = r.get("title", "")
+        event_ticker = r.get("event_ticker", "")
+        subcat = r.get("_subcat", "")
+        exp_dt = r.get("_exp_dt") or r.get("_close_dt") or ""
+        kickoff_dt = r.get("_kickoff_dt") or ""
+
+        if category and category != "All" and cat != category:
+            continue
+        if sport and sp != sport:
+            continue
+        if status == "live" and not is_live:
+            continue
+
+        for o in r.get("outcomes", []) or r.get("_outcomes", []):
+            tk = o.get("ticker", "")
+            # Overlay live WS prices if available
+            lp = LIVE_PRICES.get(tk) or {}
+            yb = lp.get("yes_bid") if lp.get("yes_bid") is not None else o.get("_yb")
+            ya = lp.get("yes_ask") if lp.get("yes_ask") is not None else o.get("_ya")
+            nb = lp.get("no_bid") if lp.get("no_bid") is not None else o.get("_nb")
+            na = lp.get("no_ask") if lp.get("no_ask") is not None else o.get("_na")
+            last = lp.get("last_price") if lp.get("last_price") is not None else o.get("_last")
+            vol = o.get("_vol", 0) or 0
+            vol24 = o.get("_vol24h", 0) or 0
+            oi = o.get("_oi", 0) or 0
+            liq = o.get("_liq", 0) or 0
+            prev = o.get("_prev")
+
+            # Compute derived fields
+            if yb is not None and ya is not None and yb > 0 and ya > 0:
+                prob = round((yb + ya) / 2)
+                spread = round(ya - yb)
+            elif last is not None and last > 0:
+                prob = round(last)
+                spread = None
+            else:
+                prob = None
+                spread = None
+            if last is not None and prev is not None and prev > 0:
+                change = round(last - prev)
+            else:
+                change = None
+
+            # Apply filters
+            if min_prob is not None and (prob is None or prob < min_prob):
+                continue
+            if max_prob is not None and (prob is None or prob > max_prob):
+                continue
+            if min_volume is not None and vol < min_volume:
+                continue
+            if min_oi is not None and oi < min_oi:
+                continue
+            if min_vol24h is not None and vol24 < min_vol24h:
+                continue
+            if search:
+                sq = search.lower()
+                if sq not in title.lower() and sq not in o.get("label", "").lower():
+                    continue
+
+            rows.append({
+                "event_ticker": event_ticker,
+                "ticker": tk,
+                "title": title,
+                "label": o.get("label", ""),
+                "category": cat,
+                "sport": sp,
+                "subcat": subcat,
+                "is_live": is_live,
+                "prob": prob,
+                "yes": round(yb) if yb is not None else None,
+                "no": round(na) if na is not None else None,
+                "spread": spread,
+                "volume": round(vol),
+                "volume_24h": round(vol24),
+                "open_interest": round(oi),
+                "liquidity": round(liq * 100) / 100,
+                "change": change,
+                "last_price": round(last) if last is not None else None,
+                "expires": exp_dt,
+                "kickoff": kickoff_dt,
+                "rules": o.get("_rules", ""),
+            })
+
+    # Sort
+    desc = sort_dir == "desc"
+    sort_key = {
+        "prob": "prob", "volume": "volume", "volume_24h": "volume_24h",
+        "oi": "open_interest", "spread": "spread", "change": "change",
+        "liquidity": "liquidity", "yes": "yes", "no": "no",
+        "last_price": "last_price",
+    }.get(sort_by, "volume_24h")
+    rows.sort(key=lambda x: (x.get(sort_key) is None, x.get(sort_key) or 0),
+              reverse=desc)
+
+    total = len(rows)
+    page = rows[offset:offset + limit]
+    return {"total": total, "offset": offset, "limit": limit, "markets": page}
+
 
 @app.get("/api/sports")
 def get_sports(live: bool = False):

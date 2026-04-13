@@ -190,6 +190,40 @@ html,body{background:var(--bg);color:var(--text);font-family:Helvetica,Arial,san
   .header-chance{flex:0 0 46px}
   .header-odds-box{width:34px;padding:0}
 }
+/* ── Screener ─────────────────────────────────────────────── */
+#screener{display:flex;gap:16px;padding:12px 16px;max-width:1400px;margin:0 auto}
+#screener-filters{flex:0 0 220px;background:var(--bg2);border-radius:8px;padding:14px;border:1px solid var(--border);position:sticky;top:12px;align-self:flex-start;max-height:calc(100vh - 80px);overflow-y:auto}
+#screener-filters h3{margin:0 0 12px;font-size:13px;color:var(--text);letter-spacing:0.5px;text-transform:uppercase}
+.sf-group{margin-bottom:12px}
+.sf-group label{display:block;font-size:10px;color:var(--text-muted);margin-bottom:4px;text-transform:uppercase;letter-spacing:0.3px}
+.sf-group select,.sf-group input{width:100%;padding:6px 8px;background:var(--bg);border:1px solid var(--border);border-radius:4px;color:var(--text);font-size:12px;font-family:inherit;box-sizing:border-box}
+.sf-range{display:flex;align-items:center;gap:6px}
+.sf-range input{width:45%}
+.sf-range span{color:var(--text-muted);font-size:11px}
+.sf-btn{width:100%;padding:8px;margin-top:6px;border:1px solid var(--green);background:transparent;color:var(--green);border-radius:5px;font-size:12px;cursor:pointer;font-family:inherit;transition:background 0.15s}
+.sf-btn:hover{background:rgba(0,255,100,0.08)}
+.sf-btn-dim{border-color:var(--border);color:var(--text-muted)}
+.sf-btn-dim:hover{color:var(--text);border-color:var(--text-muted);background:transparent}
+#screener-table-wrap{flex:1;min-width:0;overflow-x:auto}
+#screener-count{font-size:11px;color:var(--text-muted);margin-bottom:8px}
+#screener-table{width:100%;border-collapse:collapse;font-size:11px}
+#screener-table th{position:sticky;top:0;background:var(--bg);padding:8px 6px;text-align:left;font-size:10px;text-transform:uppercase;letter-spacing:0.3px;color:var(--text-muted);border-bottom:1px solid var(--green-line);cursor:pointer;white-space:nowrap;user-select:none}
+#screener-table th:hover{color:var(--green)}
+#screener-table th .sort-arrow{font-size:9px;margin-left:2px;color:var(--green)}
+#screener-table td{padding:6px;border-bottom:1px solid var(--border);color:var(--text-dim);white-space:nowrap}
+#screener-table tr:hover td{background:rgba(255,255,255,0.02)}
+#screener-table .s-title{max-width:200px;overflow:hidden;text-overflow:ellipsis;color:var(--text)}
+#screener-table .s-label{max-width:140px;overflow:hidden;text-overflow:ellipsis}
+#screener-table .s-live{color:var(--green);font-weight:700;font-size:9px}
+#screener-table .s-num{text-align:right;font-variant-numeric:tabular-nums}
+#screener-table .s-pos{color:#4caf50}
+#screener-table .s-neg{color:#f44336}
+#screener-table .s-yes{background:rgba(0,200,83,0.12);color:#4caf50;padding:3px 6px;border-radius:3px;font-weight:700;text-align:center}
+#screener-table .s-no{background:rgba(244,67,54,0.12);color:#f44336;padding:3px 6px;border-radius:3px;font-weight:700;text-align:center}
+@media(max-width:768px){
+  #screener{flex-direction:column}
+  #screener-filters{flex:none;position:static;max-height:none}
+}
 </style>
 </head>
 <body>
@@ -240,6 +274,62 @@ html,body{background:var(--bg);color:var(--text);font-family:Helvetica,Arial,san
     <div id="loader"><div class="spinner"></div></div>
     <div id="count-bar"></div>
     <div id="sentinel"></div>
+  </div>
+  <div id="screener" style="display:none">
+    <div id="screener-filters">
+      <h3>Filters</h3>
+      <div class="sf-group">
+        <label>Category</label>
+        <select id="sf-category"><option value="">All</option></select>
+      </div>
+      <div class="sf-group">
+        <label>Sport</label>
+        <select id="sf-sport"><option value="">All</option></select>
+      </div>
+      <div class="sf-group">
+        <label>Status</label>
+        <select id="sf-status">
+          <option value="active">Active</option>
+          <option value="live">Live Only</option>
+          <option value="all">All</option>
+        </select>
+      </div>
+      <div class="sf-group">
+        <label>Probability</label>
+        <div class="sf-range">
+          <input type="number" id="sf-min-prob" placeholder="Min %" min="0" max="100">
+          <span>–</span>
+          <input type="number" id="sf-max-prob" placeholder="Max %" min="0" max="100">
+        </div>
+      </div>
+      <div class="sf-group">
+        <label>Min 24h Volume</label>
+        <input type="number" id="sf-min-vol24h" placeholder="e.g. 10" min="0">
+      </div>
+      <div class="sf-group">
+        <label>Min Open Interest</label>
+        <input type="number" id="sf-min-oi" placeholder="e.g. 50" min="0">
+      </div>
+      <div class="sf-group">
+        <label>Min Total Volume</label>
+        <input type="number" id="sf-min-volume" placeholder="e.g. 100" min="0">
+      </div>
+      <div class="sf-group">
+        <label>Search</label>
+        <input type="text" id="sf-search" placeholder="Event or outcome...">
+      </div>
+      <button id="sf-apply" class="sf-btn">Apply Filters</button>
+      <button id="sf-reset" class="sf-btn sf-btn-dim">Reset</button>
+    </div>
+    <div id="screener-table-wrap">
+      <div id="screener-count"></div>
+      <table id="screener-table">
+        <thead><tr id="screener-header"></tr></thead>
+        <tbody id="screener-body"></tbody>
+      </table>
+      <div id="screener-loader" style="display:none"><div class="spinner"></div></div>
+      <button id="screener-more" style="display:none" class="sf-btn">Load More</button>
+    </div>
   </div>
 </div>
 <script>
@@ -322,8 +412,8 @@ function renderCatTabs() {
   var el = document.getElementById("cat-tabs");
   el.innerHTML = "";
 
-  var allKeys = [null, "All", "Live"];
-  var allLabels = ["", "All", "Live"];
+  var allKeys = [null, "All", "Live", "Screener"];
+  var allLabels = ["", "All", "Live", "Screener"];
   for (var i = 0; i < state.categories.length; i++) {
     allKeys.push(state.categories[i].name);
     allLabels.push(state.categories[i].name);
@@ -359,6 +449,15 @@ async function selectCat(key) {
     await loadLiveSports();
   }
   renderNav();
+  // Hide/show views based on selected tab
+  var isScreener = key === "Screener";
+  document.getElementById("content").style.display = isScreener ? "none" : "";
+  document.getElementById("screener").style.display = isScreener ? "flex" : "none";
+  if (isScreener) {
+    document.getElementById("nav").style.display = "none";
+    screenerInit();
+    return;
+  }
   if (key === null) {
     document.getElementById("home-screen").style.display = "flex";
     document.getElementById("cards-grid").style.display = "none";
@@ -1209,6 +1308,177 @@ async function refreshVisible() {
   } catch (e) { /* swallow: next tick will try again */ }
 }
 setInterval(refreshVisible, 5000);
+
+// ── Screener ──────────────────────────────────────────────────────
+var screenerState = { sort: "volume_24h", dir: "desc", offset: 0, total: 0 };
+var SCREENER_COLS = [
+  { key: "is_live",    label: "",          cls: "s-live",  w: 30 },
+  { key: "title",      label: "Event",     cls: "s-title", w: null },
+  { key: "label",      label: "Outcome",   cls: "s-label", w: null },
+  { key: "prob",       label: "Prob",      cls: "s-num",   w: 50,  fmt: function(v) { return v != null ? v + "%" : "—"; } },
+  { key: "yes",        label: "Yes",       cls: "s-yes",   w: 50,  fmt: function(v) { return v != null ? v + "¢" : "—"; } },
+  { key: "no",         label: "No",        cls: "s-no",    w: 50,  fmt: function(v) { return v != null ? v + "¢" : "—"; } },
+  { key: "spread",     label: "Spread",    cls: "s-num",   w: 50,  fmt: function(v) { return v != null ? v + "¢" : "—"; } },
+  { key: "change",     label: "Chg",       cls: "s-num",   w: 44,  fmt: function(v) {
+      if (v == null) return "—";
+      var c = v > 0 ? "s-pos" : v < 0 ? "s-neg" : "";
+      return '<span class="' + c + '">' + (v > 0 ? "+" : "") + v + "</span>";
+    }},
+  { key: "volume_24h", label: "Vol 24h",   cls: "s-num",   w: 60,  fmt: function(v) { return v != null ? v.toLocaleString() : "—"; } },
+  { key: "volume",     label: "Volume",    cls: "s-num",   w: 70,  fmt: function(v) { return v != null ? v.toLocaleString() : "—"; } },
+  { key: "open_interest", label: "OI",     cls: "s-num",   w: 55,  fmt: function(v) { return v != null ? v.toLocaleString() : "—"; } },
+  { key: "liquidity",  label: "Liq $",     cls: "s-num",   w: 55,  fmt: function(v) { return v != null ? "$" + v.toFixed(0) : "—"; } },
+  { key: "expires",    label: "Expires",   cls: "",         w: 80,  fmt: function(v) {
+      if (!v) return "—";
+      try { var d = new Date(v); return d.toLocaleDateString("en-US", {month:"short",day:"numeric"}); } catch(e) { return "—"; }
+    }},
+];
+function screenerInit() {
+  // Populate category/sport dropdowns from cached state
+  var catSel = document.getElementById("sf-category");
+  if (catSel.options.length <= 1) {
+    for (var i = 0; i < state.categories.length; i++) {
+      var o = document.createElement("option");
+      o.value = state.categories[i].name;
+      o.textContent = state.categories[i].name;
+      catSel.appendChild(o);
+    }
+  }
+  var sportSel = document.getElementById("sf-sport");
+  if (sportSel.options.length <= 1 && state.sports.length) {
+    for (var i = 0; i < state.sports.length; i++) {
+      var o = document.createElement("option");
+      o.value = state.sports[i].name;
+      o.textContent = state.sports[i].name;
+      sportSel.appendChild(o);
+    }
+  }
+  screenerRenderHeader();
+  screenerState.offset = 0;
+  screenerLoad();
+}
+function screenerRenderHeader() {
+  var tr = document.getElementById("screener-header");
+  tr.innerHTML = "";
+  for (var i = 0; i < SCREENER_COLS.length; i++) {
+    var c = SCREENER_COLS[i];
+    var th = document.createElement("th");
+    if (c.w) th.style.width = c.w + "px";
+    var arrow = "";
+    if (screenerState.sort === c.key) {
+      arrow = ' <span class="sort-arrow">' + (screenerState.dir === "desc" ? "▼" : "▲") + "</span>";
+    }
+    th.innerHTML = c.label + arrow;
+    (function(col) {
+      th.addEventListener("click", function() {
+        if (screenerState.sort === col.key) {
+          screenerState.dir = screenerState.dir === "desc" ? "asc" : "desc";
+        } else {
+          screenerState.sort = col.key;
+          screenerState.dir = "desc";
+        }
+        screenerState.offset = 0;
+        screenerRenderHeader();
+        screenerLoad();
+      });
+    })(c);
+    tr.appendChild(th);
+  }
+}
+async function screenerLoad(append) {
+  if (!append) {
+    document.getElementById("screener-body").innerHTML = "";
+    screenerState.offset = 0;
+  }
+  document.getElementById("screener-loader").style.display = "";
+  var url = "/api/screener?sort_by=" + screenerState.sort + "&sort_dir=" + screenerState.dir
+    + "&offset=" + screenerState.offset + "&limit=100";
+  var cat = document.getElementById("sf-category").value;
+  var sport = document.getElementById("sf-sport").value;
+  var status = document.getElementById("sf-status").value;
+  var minProb = document.getElementById("sf-min-prob").value;
+  var maxProb = document.getElementById("sf-max-prob").value;
+  var minVol24 = document.getElementById("sf-min-vol24h").value;
+  var minOi = document.getElementById("sf-min-oi").value;
+  var minVol = document.getElementById("sf-min-volume").value;
+  var search = document.getElementById("sf-search").value;
+  if (cat) url += "&category=" + encodeURIComponent(cat);
+  if (sport) url += "&sport=" + encodeURIComponent(sport);
+  if (status) url += "&status=" + encodeURIComponent(status);
+  if (minProb) url += "&min_prob=" + minProb;
+  if (maxProb) url += "&max_prob=" + maxProb;
+  if (minVol24) url += "&min_vol24h=" + minVol24;
+  if (minOi) url += "&min_oi=" + minOi;
+  if (minVol) url += "&min_volume=" + minVol;
+  if (search) url += "&search=" + encodeURIComponent(search);
+  try {
+    var r = await fetch(url);
+    var d = await r.json();
+    screenerState.total = d.total || 0;
+    screenerState.offset += (d.markets || []).length;
+    document.getElementById("screener-count").textContent =
+      d.total.toLocaleString() + " markets found";
+    var tbody = document.getElementById("screener-body");
+    for (var i = 0; i < (d.markets || []).length; i++) {
+      var m = d.markets[i];
+      var tr = document.createElement("tr");
+      for (var j = 0; j < SCREENER_COLS.length; j++) {
+        var c = SCREENER_COLS[j];
+        var td = document.createElement("td");
+        if (c.cls) td.className = c.cls;
+        var val = m[c.key];
+        if (c.key === "is_live") {
+          td.innerHTML = val ? "●" : "";
+        } else if (c.fmt) {
+          td.innerHTML = c.fmt(val);
+        } else {
+          td.textContent = val != null ? val : "";
+        }
+        tr.appendChild(td);
+      }
+      // Click row to navigate to event
+      (function(evt) {
+        tr.style.cursor = "pointer";
+        tr.addEventListener("click", function() {
+          // Find the category and switch to it
+          selectCat("All");
+          setTimeout(function() {
+            document.getElementById("search-input").value = evt;
+            state.search = evt;
+            state.offset = 0;
+            state.allLoaded = false;
+            document.getElementById("cards-grid").innerHTML = "";
+            loadMore();
+          }, 100);
+        });
+      })(m.title);
+      tbody.appendChild(tr);
+    }
+    var more = document.getElementById("screener-more");
+    more.style.display = screenerState.offset < screenerState.total ? "" : "none";
+  } catch (e) { console.error("screener error", e); }
+  document.getElementById("screener-loader").style.display = "none";
+}
+document.getElementById("sf-apply").addEventListener("click", function() {
+  screenerState.offset = 0;
+  screenerLoad();
+});
+document.getElementById("sf-reset").addEventListener("click", function() {
+  document.getElementById("sf-category").value = "";
+  document.getElementById("sf-sport").value = "";
+  document.getElementById("sf-status").value = "active";
+  document.getElementById("sf-min-prob").value = "";
+  document.getElementById("sf-max-prob").value = "";
+  document.getElementById("sf-min-vol24h").value = "";
+  document.getElementById("sf-min-oi").value = "";
+  document.getElementById("sf-min-volume").value = "";
+  document.getElementById("sf-search").value = "";
+  screenerState.offset = 0;
+  screenerLoad();
+});
+document.getElementById("screener-more").addEventListener("click", function() {
+  screenerLoad(true);
+});
 
 boot();
 </script>
