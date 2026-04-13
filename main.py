@@ -2097,20 +2097,22 @@ async def espn_probe(slug: str):
                 ev = events[0]
                 out["sample_event_id"] = ev.get("id")
                 out["sample_event_name"] = ev.get("name") or ev.get("shortName")
-                status = (ev.get("status") or {}).get("type", {})
-                out["sample_state"] = status.get("state")
-                out["sample_detail"] = status.get("shortDetail")
+                # Full status object — includes clock, period,
+                # displayClock, and any addedTime/stoppage fields
+                out["sample_status"] = ev.get("status")
                 comps = (ev.get("competitions") or [{}])[0]
                 cps = comps.get("competitors") or []
                 out["sample_competitor_count"] = len(cps)
-                if cps:
-                    out["sample_competitor_0"] = {
-                        "id": cps[0].get("id"),
-                        "type": cps[0].get("type"),
-                        "team": (cps[0].get("team") or {}).get("displayName"),
-                        "athlete": (cps[0].get("athlete") or {}).get("displayName"),
-                        "score": cps[0].get("score"),
+                for i, cp in enumerate(cps[:2]):
+                    out[f"competitor_{i}"] = {
+                        "id": cp.get("id"),
+                        "homeAway": cp.get("homeAway"),
+                        "team": (cp.get("team") or {}).get("displayName"),
+                        "score": cp.get("score"),
+                        "statistics": cp.get("statistics"),
                     }
+                # Include situation object (may contain clock details)
+                out["situation"] = comps.get("situation")
             return out
     except Exception as e:
         return {"error": f"{type(e).__name__}: {e}"}
