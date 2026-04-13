@@ -73,27 +73,52 @@ app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], all
 
 async def _score_flush_loop():
     """Every 30s, snapshot the in-memory game lists from ESPN,
-    SportsDB, and SofaScore into the game_scores table."""
+    SportsDB, and SofaScore into the game_scores table, then
+    seed any newly-seen teams into the entities/aliases tables."""
     _log = logging.getLogger("score_flush")
     await asyncio.sleep(15)  # let feeds warm up before first flush
+    _seed_counter = 0  # only seed entities every 5th cycle (~2.5 min)
     while True:
         try:
             from db import sync_scores_to_db
+            espn_snap = sportsdb_snap = sofascore_snap = []
             try:
                 from espn_feed import ESPN_GAMES
-                await sync_scores_to_db("espn", list(ESPN_GAMES))
+                espn_snap = list(ESPN_GAMES)
+                await sync_scores_to_db("espn", espn_snap)
             except Exception as e:
                 _log.error("espn score flush: %s", e)
             try:
                 from sportsdb_feed import SPORTSDB_GAMES
-                await sync_scores_to_db("sportsdb", list(SPORTSDB_GAMES))
+                sportsdb_snap = list(SPORTSDB_GAMES)
+                await sync_scores_to_db("sportsdb", sportsdb_snap)
             except Exception as e:
                 _log.error("sportsdb score flush: %s", e)
             try:
                 from sofascore_feed import SOFASCORE_GAMES
-                await sync_scores_to_db("sofascore", list(SOFASCORE_GAMES))
+                sofascore_snap = list(SOFASCORE_GAMES)
+                await sync_scores_to_db("sofascore", sofascore_snap)
             except Exception as e:
                 _log.error("sofascore score flush: %s", e)
+
+            # Phase 5: seed entities every 5th cycle (~2.5 min)
+            _seed_counter += 1
+            if _seed_counter >= 5:
+                _seed_counter = 0
+                try:
+                    from entity_seeder import extract_teams
+                    from db import upsert_entities
+                    all_teams = []
+                    if espn_snap:
+                        all_teams.extend(extract_teams(espn_snap, "espn"))
+                    if sportsdb_snap:
+                        all_teams.extend(extract_teams(sportsdb_snap, "sportsdb"))
+                    if sofascore_snap:
+                        all_teams.extend(extract_teams(sofascore_snap, "sofascore"))
+                    if all_teams:
+                        await upsert_entities(all_teams)
+                except Exception as e:
+                    _log.error("entity seed: %s", e)
         except Exception as e:
             _log.error("score flush loop error: %s", e)
         await asyncio.sleep(30)

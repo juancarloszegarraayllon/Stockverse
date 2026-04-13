@@ -251,3 +251,75 @@ async def batch_insert_prices(rows):
         log.info("price flush: %d rows inserted", len(rows))
     except Exception as e:
         log.error("price flush failed: %s", e)
+
+
+async def upsert_entities(teams):
+    """Upsert teams into the entities + entity_aliases tables.
+
+    `teams` is a list of dicts from entity_seeder.extract_teams():
+      canonical_name, entity_type, sport, league, aliases [...]
+
+    Uses ON CONFLICT DO NOTHING for entities (keyed on canonical_name)
+    and ON CONFLICT DO NOTHING for aliases (keyed on alias+source),
+    so this is safe to call repeatedly with the same data.
+    """
+    if not DATABASE_URL or async_session is None or not teams:
+        return
+    try:
+        from models import Entity, EntityAlias
+        from sqlalchemy.dialects.postgresql import insert as pg_insert
+        from sqlalchemy import select
+
+        new_entities = 0
+        new_aliases = 0
+
+        async with async_session() as session:
+            async with session.begin():
+                for t in teams:
+                    canon = t.get("canonical_name", "")
+                    if not canon:
+                        continue
+
+                    # Upsert entity (DO NOTHING on conflict — first
+                    # writer wins the canonical name).
+                    stmt = pg_insert(Entity).values(
+                        canonical_name=canon,
+                        entity_type=t.get("entity_type", "team"),
+                        sport=t.get("sport"),
+                        league=t.get("league"),
+                    ).on_conflict_do_nothing(
+                        index_elements=["canonical_name"],
+                    )
+                    result = await session.execute(stmt)
+                    if result.rowcount > 0:
+                        new_entities += 1
+
+                    # Fetch the entity id (may have been created earlier).
+                    row = await session.execute(
+                        select(Entity.id).where(
+                            Entity.canonical_name == canon
+                        )
+                    )
+                    entity_id = row.scalar_one_or_none()
+                    if entity_id is None:
+                        continue
+
+                    # Upsert aliases
+                    for a in t.get("aliases", []):
+                        alias_stmt = pg_insert(EntityAlias).values(
+                            entity_id=entity_id,
+                            alias=a["alias"],
+                            source=a["source"],
+                            normalized=a["normalized"],
+                        ).on_conflict_do_nothing(
+                            constraint="uq_alias_source",
+                        )
+                        r = await session.execute(alias_stmt)
+                        if r.rowcount > 0:
+                            new_aliases += 1
+
+        if new_entities or new_aliases:
+            log.info("entity seed: %d new entities, %d new aliases",
+                     new_entities, new_aliases)
+    except Exception as e:
+        log.error("entity seed failed: %s", e)
