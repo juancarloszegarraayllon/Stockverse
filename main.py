@@ -1494,8 +1494,8 @@ def get_events(
                 "away_abbr":      g.get("away_abbr", ""),
                 "home_display":   g.get("home_display", ""),
                 "away_display":   g.get("away_display", ""),
-                "home_score":     g.get("home_score", ""),
-                "away_score":     g.get("away_score", ""),
+                "home_score":     g.get("home_score", "") or ("0" if g.get("state") == "in" else ""),
+                "away_score":     g.get("away_score", "") or ("0" if g.get("state") == "in" else ""),
                 "score_display":  _score_display(title, g),
                 # Title-derived team names so the frontend can match
                 # outcome labels even when Kalshi uses a different name

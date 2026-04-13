@@ -764,6 +764,8 @@ function buildScoreMap(ev) {
   if (!ev || !ev._live_state) return null;
   var ls = ev._live_state;
   var hs = ls.home_score, as_ = ls.away_score;
+  // ESPN omits scores for some 0-0 games; default to "0" when live
+  if (ls.state === "in") { hs = hs || "0"; as_ = as_ || "0"; }
   if (hs === "" || hs === undefined || as_ === "" || as_ === undefined) return null;
   if (ls.state !== "in" && ls.state !== "post") return null;
   // Build arrays of lowercase keywords for each side — abbreviation
