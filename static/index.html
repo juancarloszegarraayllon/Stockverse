@@ -226,6 +226,8 @@ html,body{overscroll-behavior:none}
 #screener-table .s-title{min-width:200px;color:var(--text);white-space:normal;word-break:break-word;text-align:left}
 #screener-table .s-link{color:var(--text-muted);text-decoration:none;margin-left:6px;font-size:11px;opacity:0.6;transition:opacity 0.15s,color 0.15s}
 #screener-table .s-link:hover{color:var(--green);opacity:1}
+#screener-table .s-ticker-link{color:var(--text-dim);text-decoration:none;transition:color 0.15s}
+#screener-table .s-ticker-link:hover{color:var(--green);text-decoration:underline}
 #screener-table .s-label{min-width:120px;white-space:normal;word-break:break-word;text-align:left}
 #screener-table .s-live{color:var(--green);font-weight:700;font-size:9px}
 #screener-table .s-num{text-align:right;font-variant-numeric:tabular-nums}
@@ -1337,24 +1339,32 @@ setInterval(refreshVisible, 5000);
 // ── Screener ──────────────────────────────────────────────────────
 var screenerState = { sort: "volume_24h", dir: "desc", offset: 0, total: 0 };
 var SCREENER_COLS = [
-  { key: "title",              label: "Event",             cls: "s-title", w: null, fmt: function(v, row) {
-      var link = row && row.url ? ' <a class="s-link" href="' + row.url + '" target="_blank" rel="noopener" title="Open on Kalshi" onclick="event.stopPropagation()">↗</a>' : '';
-      return (v || '') + link;
+  { key: "title",              label: "Event",             cls: "s-title", w: null },
+  { key: "event_ticker",       label: "Ticker",            cls: "s-label", w: null, fmt: function(v, row) {
+      if (!v) return "";
+      if (row && row.url) {
+        return '<a class="s-ticker-link" href="' + row.url + '" target="_blank" rel="noopener" onclick="event.stopPropagation()">' + v + '</a>';
+      }
+      return v;
     }},
-  { key: "event_ticker",       label: "Ticker",            cls: "s-label", w: null },
   { key: "last_price_dollars", label: "Probability",       cls: "s-num", w: 80,  fmt: function(v) { return v != null ? (v * 100).toFixed(0) + "%" : "—"; } },
   { key: "yes_ask_dollars",    label: "Yes Ask",           cls: "s-yes", w: 70,  fmt: function(v) { return v != null ? "$" + v.toFixed(2) : "—"; } },
   { key: "yes_bid_dollars",    label: "Yes Bid",           cls: "s-yes", w: 70,  fmt: function(v) { return v != null ? "$" + v.toFixed(2) : "—"; } },
+  { key: "yes_spread",         label: "Yes Spread",        cls: "s-num", w: 70,  fmt: function(v, row) {
+      if (row && row.yes_ask_dollars != null && row.yes_bid_dollars != null) {
+        return "$" + (row.yes_ask_dollars - row.yes_bid_dollars).toFixed(2);
+      }
+      return "—";
+    }},
   { key: "no_ask_dollars",     label: "No Ask",            cls: "s-no",  w: 70,  fmt: function(v) { return v != null ? "$" + v.toFixed(2) : "—"; } },
   { key: "no_bid_dollars",     label: "No Bid",            cls: "s-no",  w: 70,  fmt: function(v) { return v != null ? "$" + v.toFixed(2) : "—"; } },
-  { key: "price_ranges",       label: "Price Ranges",      cls: "s-num", w: 100, fmt: function(v) {
-      if (!Array.isArray(v) || !v.length) return "—";
-      var r = v[0];
-      if (!r) return "—";
-      var s = r.start, e = r.end, step = r.step;
-      return "$" + parseFloat(s).toFixed(2) + "–$" + parseFloat(e).toFixed(2);
+  { key: "no_spread",          label: "No Spread",         cls: "s-num", w: 70,  fmt: function(v, row) {
+      if (row && row.no_ask_dollars != null && row.no_bid_dollars != null) {
+        return "$" + (row.no_ask_dollars - row.no_bid_dollars).toFixed(2);
+      }
+      return "—";
     }},
-  { key: "volume",             label: "Open/High/Low",     cls: "s-num", w: 90,  fmt: function(v) { return v != null ? v.toLocaleString() : "—"; } },
+  { key: "volume",             label: "Volume",            cls: "s-num", w: 90,  fmt: function(v) { return v != null ? v.toLocaleString() : "—"; } },
   { key: "volume_24h",         label: "Volume Last 24h",   cls: "s-num", w: 90,  fmt: function(v) { return v != null ? v.toLocaleString() : "—"; } },
   { key: "open_interest",      label: "Open Interest",     cls: "s-num", w: 90,  fmt: function(v) { return v != null ? v.toLocaleString() : "—"; } },
   { key: "expiration_time",    label: "Expiration Time",   cls: "",      w: 100, fmt: function(v) {
