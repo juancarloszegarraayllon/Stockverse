@@ -1953,7 +1953,27 @@ def kalshi_event_raw(ticker: str = "", status: str = "", prefer: str = "sport"):
         picked = None
         statuses_to_try = [status] if status else ["open", "closed"]
         all_seen = 0
+        # Fast path: if we have a specific ticker, try Kalshi's direct
+        # event lookup endpoint first. Works for any event Kalshi knows
+        # about, regardless of pagination depth or unusual status.
+        if ticker:
+            try:
+                resp = client.get_event(event_ticker=ticker).to_dict()
+                ev_direct = resp.get("event")
+                if isinstance(ev_direct, dict) and ev_direct.get("event_ticker") == ticker:
+                    # Kalshi's single-event endpoint returns markets
+                    # under resp["markets"] not nested in the event.
+                    mk = resp.get("markets")
+                    if isinstance(mk, list):
+                        ev_direct = dict(ev_direct)
+                        ev_direct["markets"] = mk
+                    picked = ev_direct
+            except Exception:
+                # Fall through to pagination-based search below.
+                pass
         for s in statuses_to_try:
+            if picked:
+                break
             events: List[Dict[str, Any]] = []
             cursor = None
             max_pages = 15 if ticker else 6
