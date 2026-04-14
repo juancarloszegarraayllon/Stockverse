@@ -8,8 +8,8 @@
 *{box-sizing:border-box;margin:0;padding:0}
 :root{--bg:#000;--bg2:#0a0a0a;--bg3:#111;--border:#1a1a1a;--green:#00ff00;--green-dim:#00aa00;--green-line:#0a3f0a;--green-bg:#001500;--red:#ff3333;--text:#fff;--text-dim:#888;--text-muted:#444}
 html,body{background:var(--bg);color:var(--text);font-family:Helvetica,Arial,sans-serif}
-#header{position:fixed;top:0;left:0;right:0;z-index:100;background:rgba(0,0,0,0.97);border-bottom:1px solid var(--border);padding:12px 24px 0;-webkit-transform:translate3d(0,0,0);transform:translate3d(0,0,0);will-change:transform;-webkit-backface-visibility:hidden;backface-visibility:hidden}
-html,body{overscroll-behavior-y:none}
+#header{position:fixed;top:0;left:0;right:0;z-index:100;background:#000;border-bottom:1px solid var(--border);padding:12px 24px 0;-webkit-transform:translate3d(0,0,0);transform:translate3d(0,0,0);will-change:transform;-webkit-backface-visibility:hidden;backface-visibility:hidden;touch-action:manipulation;isolation:isolate}
+html,body{overscroll-behavior:none;-webkit-overflow-scrolling:touch}
 #logo{font-size:1.6rem;font-weight:900;color:var(--green);white-space:nowrap;flex-shrink:0}
 #controls{display:flex;gap:12px;align-items:center;padding-bottom:12px}
 #search-input{flex:1;min-width:0;background:var(--bg2);border:1px solid var(--border);color:var(--text);padding:8px 14px;border-radius:6px;font-size:13px;outline:none;font-family:inherit}
@@ -194,7 +194,8 @@ html,body{overscroll-behavior-y:none}
 /* ── Screener ─────────────────────────────────────────────── */
 /* v2: bounded scroll container so sticky thead sticks reliably */
 #screener{display:flex;gap:16px;padding:12px 16px}
-#screener-filters{flex:0 0 220px;background:var(--bg2);border-radius:8px;padding:14px;border:1px solid var(--border);position:sticky;top:110px;align-self:flex-start;max-height:calc(100vh - 130px);overflow-y:auto}
+#screener-filters{flex:0 0 220px;background:var(--bg2);border-radius:8px;padding:14px;border:1px solid var(--border);position:sticky;top:110px;align-self:flex-start;max-height:calc(100vh - 130px);overflow-y:auto;scrollbar-width:none}
+#screener-filters::-webkit-scrollbar{display:none}
 #screener-filters h3{margin:0 0 12px;font-size:13px;color:var(--text);letter-spacing:0.5px;text-transform:uppercase}
 .sf-group{margin-bottom:12px}
 .sf-group label{display:block;font-size:10px;color:var(--text-muted);margin-bottom:4px;text-transform:uppercase;letter-spacing:0.3px}
