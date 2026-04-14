@@ -10,7 +10,7 @@
 html,body{background:var(--bg);color:var(--text);font-family:Helvetica,Arial,sans-serif}
 :root{--header-h:110px}
 #header{position:fixed;top:0;left:0;right:0;z-index:100;background:#000;border-bottom:1px solid var(--border);padding:12px 24px 0}
-html,body{overscroll-behavior:none;overflow-x:hidden}
+html,body{overscroll-behavior:none}
 @media (max-width:900px){:root{--header-h:100px}}
 @media (max-width:600px){:root{--header-h:90px}}
 #logo{font-size:1.6rem;font-weight:900;color:var(--green);white-space:nowrap;flex-shrink:0}
@@ -210,8 +210,7 @@ html,body{overscroll-behavior:none;overflow-x:hidden}
 .sf-btn:hover{background:rgba(0,255,100,0.08)}
 .sf-btn-dim{border-color:var(--border);color:var(--text-muted)}
 .sf-btn-dim:hover{color:var(--text);border-color:var(--text-muted);background:transparent}
-#screener-table-wrap{flex:1;min-width:0;overflow-x:auto;scrollbar-width:none}
-#screener-table-wrap::-webkit-scrollbar{display:none}
+#screener-table-wrap{flex:1;min-width:0}
 #screener-count{font-size:11px;color:var(--text-muted);margin:8px 0;text-align:left;padding:6px 4px;border-top:1px solid var(--border);border-bottom:1px solid var(--border)}
 #screener-table{width:100%;border-collapse:separate;border-spacing:0;font-size:11px}
 #screener-table thead th{position:sticky;top:var(--header-h);background:#000;padding:10px 6px;text-align:center;font-size:12px;text-transform:uppercase;letter-spacing:0.4px;color:var(--text-muted);border-bottom:2px solid var(--green-line);cursor:pointer;white-space:nowrap;user-select:none;z-index:20}
