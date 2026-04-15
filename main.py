@@ -2192,8 +2192,23 @@ async def get_event_prices(ticker: str, hours: int = 24, max_points: int = 120):
             "market_tickers": market_tickers,
         }
     except Exception as e:
-        logging.getLogger("oddsiq").warning("prices query failed: %s", e)
-        return {"series": [], "error": str(e)}
+        msg = str(e)
+        # Recognize transient Postgres states so the frontend can
+        # show a "try again in a moment" hint instead of a scary
+        # stack trace. Railway's starter Postgres occasionally
+        # restarts and goes into recovery mode for 30-90 seconds.
+        transient = any(token in msg for token in (
+            "CannotConnectNowError", "recovery mode",
+            "starting up", "ServerDisconnectedError",
+            "TimeoutError",
+        ))
+        if not transient:
+            logging.getLogger("oddsiq").warning("prices query failed: %s", e)
+        return {
+            "series": [],
+            "error": msg,
+            "transient": transient,
+        }
 
 
 @app.get("/api/debug_prices")

@@ -2396,7 +2396,18 @@ async function hydratePriceCharts() {
         // Different empty-state copy depending on why we got no
         // series — easier to diagnose from a glance at the page.
         var msg;
-        if (d.note) {
+        if (d.transient) {
+          // Postgres is restarting / in recovery — not a bug,
+          // just retry in a moment. Auto-retry once after 30s.
+          msg = "Price history is momentarily unavailable (database "
+              + "is restarting). Retrying in 30 seconds…";
+          setTimeout(function(elRef) {
+            return function() {
+              elRef.removeAttribute("data-hydrated");
+              hydratePriceCharts();
+            };
+          }(el), 30000);
+        } else if (d.note) {
           msg = d.note;
         } else if (d.error) {
           msg = "Failed to load price history: " + d.error;
