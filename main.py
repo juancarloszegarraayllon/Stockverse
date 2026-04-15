@@ -1,6 +1,7 @@
 from fastapi import FastAPI, Query
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, FileResponse, Response
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 import os, time, tempfile, functools, asyncio, threading, logging
 from datetime import date, timedelta, timezone
 from typing import Optional
@@ -72,6 +73,11 @@ async def startup_event():
     # Phase 4: periodically flush live scores from all feeds to the DB.
     asyncio.create_task(_score_flush_loop())
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
+# Gzip compression on responses >= 500 bytes. Screener + events JSON
+# responses are typically 20-200KB uncompressed, usually 3-5x smaller
+# once gzipped. Huge bandwidth savings for paginated card loads and
+# the screener table.
+app.add_middleware(GZipMiddleware, minimum_size=500)
 
 
 async def _score_flush_loop():
@@ -806,18 +812,72 @@ def _format_outcomes(stored_outcomes):
 
 
 # ── Cache with TTL ─────────────────────────────────────────────────────────────
+# Stale-while-revalidate strategy:
+#   - Cache valid for CACHE_TTL seconds → return as-is.
+#   - Cache within (CACHE_TTL, CACHE_STALE_TTL) → return stale data
+#     immediately AND kick off a background rebuild so the next
+#     caller gets fresh data.
+#   - Cache older than CACHE_STALE_TTL (or never built) → block the
+#     caller on a synchronous rebuild. This only happens on the very
+#     first request after container startup.
 _cache = {"data": None, "ts": 0}  # cache cleared on startup
-CACHE_TTL = 1800
+CACHE_TTL = 1800           # 30 min — fresh
+CACHE_STALE_TTL = 7200     # 2 h   — hard expiry, beyond this we block
+_rebuild_lock = threading.Lock()
+_rebuilding = {"active": False}
+
+
+def _rebuild_cache_async():
+    """Kick off a non-blocking cache rebuild if one isn't already
+    in progress. Uses a lock so concurrent stale requests don't each
+    fire their own rebuild."""
+    if _rebuilding["active"]:
+        return
+    if not _rebuild_lock.acquire(blocking=False):
+        return
+    def _worker():
+        try:
+            _rebuilding["active"] = True
+            _build_cache()
+        except Exception as e:
+            logging.getLogger("oddsiq").error("cache rebuild failed: %s", e)
+        finally:
+            _rebuilding["active"] = False
+            try:
+                _rebuild_lock.release()
+            except RuntimeError:
+                pass
+    threading.Thread(target=_worker, daemon=True).start()
+
 
 def get_data():
     global _cache
     now = time.time()
-    if _cache["data"] is not None and now - _cache["ts"] < CACHE_TTL:
+    age = now - _cache.get("ts", 0)
+    have_cache = _cache.get("data") is not None
+    # Hot cache — return immediately.
+    if have_cache and age < CACHE_TTL:
         return _cache["data"]
+    # Warm (stale) cache — serve stale, rebuild in the background.
+    # Users never wait for the 20-40s Kalshi fetch during normal use.
+    if have_cache and age < CACHE_STALE_TTL:
+        _rebuild_cache_async()
+        return _cache["data"]
+    # Cold or too stale — block on a full rebuild.
+    _build_cache()
+    return _cache.get("data") or []
+
+
+def _build_cache():
+    """Synchronously rebuild the in-memory snapshot from Kalshi.
+    Previously the body of get_data(); extracted so it can be
+    invoked either inline (cold cache) or from a background thread
+    (stale-while-revalidate)."""
+    global _cache
 
     all_ev = paginate(with_markets=True, max_pages=50)
     if not all_ev:
-        return []
+        return
 
     # Rough "exp_dt − kickoff" window per sport. Kalshi's
     # expected_expiration_time is set to the final-whistle + some
@@ -1093,7 +1153,7 @@ def get_data():
     )
     _cache["data"] = grouped
     _cache["data_all"] = ungrouped
-    _cache["ts"] = now
+    _cache["ts"] = time.time()
     # Write-through: upsert events/markets to PostgreSQL in the
     # background. Uses the ungrouped list so every event (including
     # siblings) gets a row. Non-blocking — if it fails, the
@@ -1104,7 +1164,6 @@ def get_data():
         asyncio.run(sync_events_to_db(ungrouped))
     except Exception as e:
         logging.getLogger("oddsiq").warning("db write-through skipped: %s", e)
-    return grouped
 
 # ── API routes ─────────────────────────────────────────────────────────────────
 @app.get("/api/events")
@@ -3216,10 +3275,30 @@ def memory_status():
 # ── Serve frontend ─────────────────────────────────────────────────────────────
 import os as _os
 
-@app.get("/", response_class=HTMLResponse)  
+@app.get("/", response_class=HTMLResponse)
 def root():
     p = _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), "static", "index.html")
     if _os.path.exists(p):
-        with open(p, "r") as f:
-            return f.read()
-    return "<h1>static/index.html not found</h1><p>Make sure index.html is in the static/ folder</p>"
+        # FileResponse sets Last-Modified + ETag automatically, so
+        # returning visitors get a cheap 304 when the file hasn't
+        # changed. Keep max-age short so users always pick up the
+        # latest deploy within a minute.
+        return FileResponse(
+            p,
+            media_type="text/html; charset=utf-8",
+            headers={"Cache-Control": "public, max-age=60, must-revalidate"},
+        )
+    return HTMLResponse("<h1>static/index.html not found</h1><p>Make sure index.html is in the static/ folder</p>")
+
+
+@app.get("/healthz")
+def healthz():
+    """Cheap liveness probe. Used by keep-warm pingers (Railway
+    cron, UptimeRobot) to prevent the container from parking
+    between user visits, and by monitoring to detect outages.
+    Returns 200 with a compact payload — no DB or Kalshi calls."""
+    return {
+        "ok": True,
+        "cache_age_s": int(time.time() - _cache.get("ts", 0)) if _cache.get("ts") else None,
+        "cache_ready": _cache.get("data") is not None,
+    }

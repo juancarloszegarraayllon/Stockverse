@@ -488,25 +488,54 @@ async function boot() {
     // live subtab, and search are all URL-encoded.
     await restoreFromUrl(location.search);
 
-    // Step 2: Load real counts in background
-    var r1 = await fetch("/api/categories");
-    var d1 = await r1.json();
-    state.categories = d1.categories || [];
-    var r2 = await fetch("/api/sports");
-    var d2 = await r2.json();
-    state.sports = d2.sports || [];
-    state.soccerComps = d2.soccer_comps || [];
-    state.sportSubtabs = {};
-    state.catSubtabs = {};
-    for (var i = 0; i < state.sports.length; i++) {
-      state.sportSubtabs[state.sports[i].name] = state.sports[i].subtabs || [];
+    // Step 2: Load real counts — but ONLY if the user has actually
+    // landed on (or deep-linked into) a category. On the home screen
+    // there's nothing to populate counts for yet, so skipping this
+    // keeps cold-start render instant. loadRealCounts() is invoked
+    // lazily from selectCat() the first time a category is picked.
+    if (state.category) {
+      await loadRealCounts();
     }
-    for (var i = 0; i < state.categories.length; i++) {
-      state.catSubtabs[state.categories[i].name] = state.categories[i].subtabs || [];
-    }
-    renderCatTabs();
-    if (state.category) renderNav();
   } catch(ex) { console.error("boot error", ex); }
+}
+
+// Pulls real category + sport counts from the backend. These calls
+// hit get_data() which on a cold container waits for the full Kalshi
+// snapshot — ~20-40s on the very first request. Deferred until we
+// know the user cares about counts (i.e., they've picked a category
+// or deep-linked into one).
+var _countsLoaded = false;
+var _countsLoading = null;
+async function loadRealCounts() {
+  if (_countsLoaded) return;
+  if (_countsLoading) return _countsLoading;
+  _countsLoading = (async function() {
+    try {
+      var r1 = await fetch("/api/categories");
+      var d1 = await r1.json();
+      state.categories = d1.categories || state.categories;
+      var r2 = await fetch("/api/sports");
+      var d2 = await r2.json();
+      state.sports = d2.sports || state.sports;
+      state.soccerComps = d2.soccer_comps || state.soccerComps;
+      state.sportSubtabs = {};
+      state.catSubtabs = {};
+      for (var i = 0; i < state.sports.length; i++) {
+        state.sportSubtabs[state.sports[i].name] = state.sports[i].subtabs || [];
+      }
+      for (var j = 0; j < state.categories.length; j++) {
+        state.catSubtabs[state.categories[j].name] = state.categories[j].subtabs || [];
+      }
+      renderCatTabs();
+      if (state.category) renderNav();
+      _countsLoaded = true;
+    } catch (ex) {
+      console.error("loadRealCounts error", ex);
+    } finally {
+      _countsLoading = null;
+    }
+  })();
+  return _countsLoading;
 }
 
 function renderCatTabs() {
@@ -667,6 +696,9 @@ async function selectCat(key, skipHistory) {
   if (ed) { ed.style.display = "none"; ed.innerHTML = ""; }
   state._eventTicker = null;
   state._prevView = null;
+  // Lazy-load real counts on the first category pick. No-op once
+  // already loaded; runs in parallel with the loadMore() call below.
+  if (key !== null) loadRealCounts();
   state.category = key;
   state.sport = null;
   state.soccerComp = null;
