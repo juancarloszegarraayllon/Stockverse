@@ -2248,18 +2248,29 @@ var CHART_COLORS = [
 // Build a single SVG with all market lines overlaid. Y axis is
 // 0-100% (probability), X axis is 0 to full window width. Returns
 // "" when no series has data.
-function renderPriceChartSvg(series) {
+function renderPriceChartSvg(series, hoursWindow) {
   if (!series || !series.length) return "";
   // Determine global time bounds so every line shares an X scale.
   var tMin = Infinity, tMax = -Infinity;
+  var totalPoints = 0;
   for (var i = 0; i < series.length; i++) {
     var pts = series[i].points || [];
+    totalPoints += pts.length;
     for (var j = 0; j < pts.length; j++) {
       if (pts[j].t < tMin) tMin = pts[j].t;
       if (pts[j].t > tMax) tMax = pts[j].t;
     }
   }
-  if (!isFinite(tMin) || !isFinite(tMax) || tMin === tMax) return "";
+  if (!isFinite(tMin) || !isFinite(tMax) || totalPoints === 0) return "";
+  // If every point shares a timestamp (common right after a fresh
+  // DB where only one flush has happened), artificially widen the
+  // X range so we can still plot a meaningful current-price dot.
+  // Shows the latest value on the right edge with the full window
+  // extending to the left as empty space.
+  if (tMin === tMax) {
+    var windowMs = (hoursWindow || 24) * 3600000;
+    tMin = tMax - windowMs;
+  }
   var W = 900, H = 220;        // viewBox dimensions
   var padL = 32, padR = 8, padT = 12, padB = 22;
   var w = W - padL - padR;
@@ -2275,16 +2286,25 @@ function renderPriceChartSvg(series) {
     svg += '<line x1="' + padL + '" y1="' + y + '" x2="' + (padL + w) + '" y2="' + y + '" stroke="#1a1a1a" stroke-width="1"/>';
     svg += '<text x="' + (padL - 6) + '" y="' + (y + 3) + '" fill="#555" font-size="9" text-anchor="end">' + g + '%</text>';
   }
-  // Lines
+  // Lines (and single-point dots when a series only has one sample).
   for (var k = 0; k < series.length; k++) {
     var s = series[k];
     var pts2 = s.points || [];
-    if (pts2.length < 2) continue;
+    if (pts2.length === 0) continue;
+    var color = CHART_COLORS[k % CHART_COLORS.length];
+    if (pts2.length === 1) {
+      // Single point — draw a filled dot at the current price so
+      // the user sees the latest value even with zero history.
+      var cx = sx(pts2[0].t);
+      var cy = sy(pts2[0].p);
+      svg += '<circle cx="' + cx.toFixed(1) + '" cy="' + cy.toFixed(1)
+          + '" r="4" fill="' + color + '"/>';
+      continue;
+    }
     var d = "";
     for (var m = 0; m < pts2.length; m++) {
       d += (m === 0 ? "M" : "L") + sx(pts2[m].t).toFixed(1) + " " + sy(pts2[m].p).toFixed(1) + " ";
     }
-    var color = CHART_COLORS[k % CHART_COLORS.length];
     svg += '<path d="' + d + '" fill="none" stroke="' + color + '" stroke-width="2" stroke-linejoin="round"/>';
   }
   // X-axis tick labels: first (oldest) and last (now). Format
@@ -2422,9 +2442,9 @@ async function hydratePriceCharts() {
         body.innerHTML = '<div class="ed-chart-empty">' + escH(msg) + '</div>';
         continue;
       }
-      var svg = renderPriceChartSvg(series);
+      var svg = renderPriceChartSvg(series, hours);
       if (!svg) {
-        body.innerHTML = '<div class="ed-chart-empty">Not enough data points yet.</div>';
+        body.innerHTML = '<div class="ed-chart-empty">Price history is just starting to record for this event. The chart will fill in over the next few minutes as more snapshots arrive — try again shortly.</div>';
         continue;
       }
       var legend = '<div class="ed-chart-legend">';
