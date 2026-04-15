@@ -1598,6 +1598,205 @@ def _kalshi_url(series_ticker: str, event_ticker: str) -> str:
     return f"https://kalshi.com/markets/{s}/{s.replace('kx', '')}/{event_ticker.lower()}"
 
 
+@app.get("/api/event/{ticker}")
+def get_event_detail(ticker: str):
+    """Full per-event detail for the dedicated event page.
+
+    Looks up the event in the in-memory cache (built by get_data())
+    and returns a superset of /api/events — includes the formatted
+    outcome rows for card-style display plus enriched per-market
+    fields (yes/no bid+ask in dollars, last price, volume, OI,
+    liquidity, spread, change, Kalshi URL, rules) so the frontend
+    can render a full order-book view.
+    """
+    if not ticker:
+        return {"error": "ticker required"}
+    # Ensure cache is primed. Search data_all first (every market
+    # type, including spread/total siblings) then fall back to the
+    # grouped list, then through the ungrouped set as a last resort.
+    get_data()
+    records_all = _cache.get("data_all") or []
+    records_grouped = _cache.get("data") or []
+    found = None
+    for r in records_all:
+        if r.get("event_ticker") == ticker:
+            found = r
+            break
+    if found is None:
+        for r in records_grouped:
+            if r.get("event_ticker") == ticker:
+                found = r
+                break
+            # Also scan grouped market_groups (sibling events live
+            # under their moneyline parent in the grouped cache).
+            for g in r.get("_market_groups", []) or []:
+                if g.get("event_ticker") == ticker:
+                    # Wrap the sibling group as a standalone record
+                    # so the response shape stays consistent.
+                    found = dict(r)
+                    found["event_ticker"] = g.get("event_ticker")
+                    found["series_ticker"] = g.get("series_ticker")
+                    found["outcomes"] = g.get("_outcomes", [])
+                    found["_market_groups"] = None
+                    break
+            if found:
+                break
+    if found is None:
+        return {"error": f"event {ticker!r} not found in cache"}
+
+    # Import live-score feeds + helpers the same way /api/events does.
+    try:
+        from espn_feed import match_game, compact_label
+    except Exception:
+        match_game = None
+        compact_label = None
+    try:
+        from sportsdb_feed import match_game as sdb_match_game
+    except Exception:
+        sdb_match_game = None
+    try:
+        from sofascore_feed import match_game as sofa_match_game
+    except Exception:
+        sofa_match_game = None
+
+    try:
+        from kalshi_ws import LIVE_PRICES
+    except Exception:
+        LIVE_PRICES = {}
+
+    def _enrich_outcomes(stored):
+        """Turn raw stored outcomes into full per-market objects that
+        include both display-ready string fields and numeric fields
+        for the detail view's order-book / stats section."""
+        out = []
+        for o in stored:
+            tk = o.get("ticker", "")
+            lp = LIVE_PRICES.get(tk) or {}
+            yb = lp.get("yes_bid") if lp.get("yes_bid") is not None else o.get("_yb")
+            ya = lp.get("yes_ask") if lp.get("yes_ask") is not None else o.get("_ya")
+            nb = lp.get("no_bid")  if lp.get("no_bid")  is not None else o.get("_nb")
+            na = lp.get("no_ask")  if lp.get("no_ask")  is not None else o.get("_na")
+            last = lp.get("last_price") if lp.get("last_price") is not None else o.get("_last")
+            vol   = o.get("_vol", 0) or 0
+            vol24 = o.get("_vol24h", 0) or 0
+            oi    = o.get("_oi", 0) or 0
+            liq   = o.get("_liq", 0) or 0
+            prev  = o.get("_prev")
+            # Derived
+            if yb is not None and ya is not None and yb > 0 and ya > 0:
+                prob = round((yb + ya) / 2)
+                spread = round(ya - yb)
+            elif last is not None and last > 0:
+                prob = round(last)
+                spread = None
+            else:
+                prob = None
+                spread = None
+            change = None
+            if last is not None and prev is not None and prev > 0:
+                change = round(last - prev)
+            out.append({
+                "label":    o.get("label", ""),
+                "ticker":   tk,
+                "chance":   f"{int(round(prob))}%" if prob is not None else "—",
+                "yes":      f"{int(round(yb))}¢"   if yb   is not None else "—",
+                "no":       f"{int(round(na))}¢"   if na   is not None else "—",
+                "prob":     prob,
+                "yes_bid":  round(yb) if yb is not None else None,
+                "yes_ask":  round(ya) if ya is not None else None,
+                "no_bid":   round(nb) if nb is not None else None,
+                "no_ask":   round(na) if na is not None else None,
+                "yes_bid_dollars": (yb / 100.0) if yb is not None else None,
+                "yes_ask_dollars": (ya / 100.0) if ya is not None else None,
+                "no_bid_dollars":  (nb / 100.0) if nb is not None else None,
+                "no_ask_dollars":  (na / 100.0) if na is not None else None,
+                "last_price":         round(last) if last is not None else None,
+                "last_price_dollars": (last / 100.0) if last is not None else None,
+                "spread":        spread,
+                "change":        change,
+                "volume":        round(vol),
+                "volume_24h":    round(vol24),
+                "open_interest": round(oi),
+                "liquidity":     round(liq * 100) / 100,
+                "rules":         o.get("_rules", ""),
+            })
+        # Sort long markets by probability desc so the most likely
+        # outcomes are first — same rule the card uses.
+        if len(out) >= 5:
+            out.sort(key=lambda x: (x.get("prob") is None, -(x.get("prob") or 0)))
+        return out
+
+    # Build the response, re-using the formatting conventions from
+    # /api/events so the frontend card helpers work unchanged.
+    r = found
+    rc = dict(r)
+    # Strip private sort/internal fields the detail view doesn't need.
+    for k in ("_sort_ts", "_outcomes"):
+        rc.pop(k, None)
+    rc["outcomes"] = _enrich_outcomes(r.get("outcomes", []))
+    mg = r.get("_market_groups")
+    if mg:
+        rc["market_groups"] = [
+            {
+                "type_code":     g.get("type_code", ""),
+                "label":         g.get("label", ""),
+                "event_ticker":  g.get("event_ticker", ""),
+                "series_ticker": g.get("series_ticker", ""),
+                "url":           g.get("url", ""),
+                "outcomes":      _enrich_outcomes(g.get("_outcomes", [])),
+            }
+            for g in mg
+        ]
+    rc.pop("_market_groups", None)
+
+    # Attach live-game state (scoreboard, clock, period) when the
+    # event matches a currently-tracked feed game. Same logic as
+    # /api/events but inlined here for a single event.
+    sport = r.get("_sport", "")
+    title = r.get("title", "")
+    g = None
+    if sport and title:
+        if match_game is not None:
+            g = match_game(title, sport)
+        if g is None and sdb_match_game is not None:
+            g = sdb_match_game(title, sport)
+        if g is None and sofa_match_game is not None:
+            g = sofa_match_game(title, sport)
+    # Wrong-date guard — same as /api/events.
+    if g and g.get("scheduled_kickoff_ms"):
+        kdt_str = r.get("_kickoff_dt") or r.get("_sort_ts")
+        if kdt_str:
+            try:
+                from datetime import datetime as _datetime
+                espn_dt = _datetime.fromtimestamp(
+                    g["scheduled_kickoff_ms"] / 1000, tz=timezone.utc
+                )
+                kalshi_dt = _datetime.fromisoformat(kdt_str)
+                if abs((espn_dt - kalshi_dt).total_seconds()) > 18 * 3600:
+                    g = None
+            except Exception:
+                pass
+    if g:
+        rc["_live_state"] = {
+            "label":          (compact_label(g) if compact_label else ""),
+            "state":          g.get("state", ""),
+            "short_detail":   g.get("short_detail", ""),
+            "display_clock":  g.get("display_clock", ""),
+            "period":         g.get("period", 0),
+            "league":         g.get("league", ""),
+            "clock_running":  g.get("clock_running", True),
+            "home_abbr":      g.get("home_abbr", ""),
+            "away_abbr":      g.get("away_abbr", ""),
+            "home_display":   g.get("home_display", ""),
+            "away_display":   g.get("away_display", ""),
+            "home_score":     g.get("home_score", "") or ("0" if g.get("state") == "in" else ""),
+            "away_score":     g.get("away_score", "") or ("0" if g.get("state") == "in" else ""),
+        }
+
+    rc["url"] = _kalshi_url(r.get("series_ticker", ""), r.get("event_ticker", ""))
+    return {"event": rc}
+
+
 @app.get("/api/screener")
 async def get_screener(
     category: Optional[str] = None,

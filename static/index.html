@@ -239,6 +239,57 @@ html,body{overscroll-behavior:none}
   #screener{flex-direction:column}
   #screener-filters{flex:none;position:static;max-height:none}
 }
+
+/* ── Event detail page ──────────────────────────────────────────── */
+#event-detail{display:none;max-width:1100px;margin:0 auto;padding:0 4px}
+.ed-back{display:inline-flex;align-items:center;gap:6px;background:transparent;border:1px solid var(--border);color:var(--text-dim);font-family:inherit;font-size:12px;padding:6px 12px;border-radius:6px;cursor:pointer;margin-bottom:18px}
+.ed-back:hover{color:var(--text);border-color:var(--text-muted)}
+.ed-header{display:flex;flex-direction:column;gap:10px;padding:18px 20px;background:var(--bg2);border:1px solid var(--border);border-radius:12px}
+.ed-pills{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.ed-title{font-size:20px;font-weight:700;line-height:1.3;color:var(--text);margin:0}
+.ed-meta{display:flex;gap:14px;flex-wrap:wrap;font-size:12px;color:var(--text-muted)}
+.ed-meta .ed-meta-item{display:inline-flex;gap:5px}
+.ed-meta .ed-meta-label{color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px;font-size:10px;font-weight:700}
+.ed-meta .ed-meta-val{color:var(--text-dim)}
+.ed-meta a{color:var(--green);text-decoration:none}
+.ed-meta a:hover{text-decoration:underline}
+.ed-scoreboard{display:flex;align-items:center;justify-content:center;gap:20px;padding:14px 16px;margin-top:4px;background:var(--bg3);border:1px solid var(--border);border-radius:8px}
+.ed-scoreboard .ed-sb-team{display:flex;flex-direction:column;align-items:center;gap:2px;min-width:90px}
+.ed-scoreboard .ed-sb-name{font-size:12px;color:var(--text-dim);font-weight:600}
+.ed-scoreboard .ed-sb-score{font-size:28px;font-weight:800;color:var(--text);font-variant-numeric:tabular-nums}
+.ed-scoreboard .ed-sb-sep{font-size:14px;color:var(--text-muted)}
+.ed-scoreboard .ed-sb-clock{font-size:11px;color:var(--red);font-weight:700;letter-spacing:0.4px;text-transform:uppercase}
+.ed-tabs{display:flex;gap:4px;flex-wrap:wrap;margin:20px 0 0;padding:0;border-bottom:1px solid var(--border)}
+.ed-tab{padding:8px 14px;background:transparent;border:0;border-bottom:2px solid transparent;color:var(--text-muted);font-family:inherit;font-size:11px;font-weight:700;letter-spacing:0.5px;text-transform:uppercase;cursor:pointer;transition:color 0.12s,border-color 0.12s}
+.ed-tab:hover{color:var(--text-dim)}
+.ed-tab.active{color:var(--text);border-bottom-color:var(--green)}
+.ed-group{display:none}
+.ed-group.active{display:block}
+.ed-section-title{font-size:13px;font-weight:700;letter-spacing:0.5px;text-transform:uppercase;color:var(--text-dim);margin:24px 0 10px}
+.ed-markets-table{width:100%;border-collapse:collapse;background:var(--bg2);border:1px solid var(--border);border-radius:10px;overflow:hidden}
+.ed-markets-table th{text-align:left;font-size:10px;text-transform:uppercase;letter-spacing:0.5px;color:var(--text-muted);font-weight:700;padding:10px 12px;background:var(--bg3);border-bottom:1px solid var(--border)}
+.ed-markets-table td{padding:10px 12px;font-size:12px;color:var(--text-dim);border-bottom:1px solid var(--border);font-variant-numeric:tabular-nums}
+.ed-markets-table tr:last-child td{border-bottom:0}
+.ed-markets-table .ed-mk-label{color:var(--text);font-weight:600;text-align:left}
+.ed-markets-table .ed-num{text-align:center}
+.ed-markets-table .ed-prob{text-align:center;font-weight:700;color:var(--text)}
+.ed-markets-table .ed-yes{text-align:center;background:rgba(0,200,83,0.12);color:#4caf50;font-weight:700}
+.ed-markets-table .ed-no{text-align:center;background:rgba(244,67,54,0.12);color:#f44336;font-weight:700}
+.ed-markets-table .ed-live-dot::before{content:"";display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--red);margin-right:5px;vertical-align:middle;box-shadow:0 0 5px rgba(255,51,51,0.8);animation:live-pulse 1.2s infinite ease-in-out}
+.ed-summary{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:10px;margin-top:8px}
+.ed-stat{background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:10px 12px;display:flex;flex-direction:column;gap:2px}
+.ed-stat-label{font-size:10px;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px;font-weight:700}
+.ed-stat-val{font-size:15px;color:var(--text);font-weight:700;font-variant-numeric:tabular-nums}
+.market-card{cursor:pointer}
+.market-card a,.market-card button{cursor:auto}
+.market-card a.ticker-link:hover{text-decoration:underline}
+@media(max-width:700px){
+  .ed-title{font-size:17px}
+  .ed-markets-table th,.ed-markets-table td{padding:8px 6px;font-size:11px}
+  .ed-scoreboard{gap:12px;padding:12px 10px}
+  .ed-scoreboard .ed-sb-team{min-width:70px}
+  .ed-scoreboard .ed-sb-score{font-size:22px}
+}
 </style>
 </head>
 <body>
@@ -286,6 +337,7 @@ html,body{overscroll-behavior:none}
       <p>Select a category above to browse markets.</p>
     </div>
     <div id="cards-grid"></div>
+    <div id="event-detail"></div>
     <div id="loader"><div class="spinner"></div></div>
     <div id="count-bar"></div>
     <div id="sentinel"></div>
@@ -410,9 +462,17 @@ async function boot() {
     }
     renderCatTabs();
 
-    // Restore category from URL so refresh/back/forward works
-    var initialCat = new URLSearchParams(location.search).get("cat");
-    if (initialCat) selectCat(initialCat, true);
+    // Restore view from URL so refresh/back/forward works.
+    // ?event=TICKER takes precedence — it's the deep-link for an
+    // individual event's detail page.
+    var params = new URLSearchParams(location.search);
+    var initialEvent = params.get("event");
+    var initialCat = params.get("cat");
+    if (initialEvent) {
+      showEventDetail(initialEvent, true);
+    } else if (initialCat) {
+      selectCat(initialCat, true);
+    }
 
     // Step 2: Load real counts in background
     var r1 = await fetch("/api/categories");
@@ -461,6 +521,12 @@ function renderCatTabs() {
 }
 
 async function selectCat(key, skipHistory) {
+  // Always exit the event-detail view when changing categories so
+  // the previous overlay doesn't linger on top of the cards grid.
+  var ed = document.getElementById("event-detail");
+  if (ed) { ed.style.display = "none"; ed.innerHTML = ""; }
+  state._eventTicker = null;
+  state._prevView = null;
   state.category = key;
   state.sport = null;
   state.soccerComp = null;
@@ -652,7 +718,25 @@ function appendCards(evs) {
   for (var i = 0; i < evs.length; i++) {
     var div = document.createElement("div");
     div.innerHTML = buildCard(evs[i]);
-    if (div.firstChild) grid.appendChild(div.firstChild);
+    var card = div.firstChild;
+    if (!card) continue;
+    // Click anywhere on the card → open the dedicated event page.
+    // Ignore clicks on nested interactive elements (market-type tabs,
+    // outcome expand button, Kalshi ticker link) so existing behaviors
+    // still work. Also ignore middle-click / cmd+click so power users
+    // can still open the Kalshi link in a new tab.
+    card.addEventListener("click", function(ev) {
+      if (ev.button !== 0 || ev.metaKey || ev.ctrlKey || ev.shiftKey) return;
+      var t = ev.target;
+      while (t && t !== this) {
+        var tag = (t.tagName || "").toLowerCase();
+        if (tag === "a" || tag === "button") return;
+        t = t.parentNode;
+      }
+      var tkr = this.getAttribute("data-event-ticker");
+      if (tkr) showEventDetail(tkr);
+    });
+    grid.appendChild(card);
   }
 }
 
@@ -1247,6 +1331,10 @@ function _updateIfChanged(el, flashTarget, newVal) {
 }
 async function refreshVisible() {
   if (state.category === null || state.loading || state.offset === 0) return;
+  // Don't refresh the (hidden) cards grid while the event-detail
+  // page is showing — saves bandwidth and keeps the grid stable
+  // underneath.
+  if (state._eventTicker) return;
   var url = "/api/events?offset=0&limit=" + state.offset + "&date_filter=" + state.dateFilter + "&sort=" + state.sort;
   if (state.dateFilter === "custom" && state.dateFrom) url += "&date_from=" + state.dateFrom;
   if (state.dateFilter === "custom" && state.dateTo) url += "&date_to=" + state.dateTo;
@@ -1545,9 +1633,286 @@ document.getElementById("screener-more").addEventListener("click", function() {
   screenerLoad(true);
 });
 
+// ── Event detail page ────────────────────────────────────────────
+// Full per-event page shown at ?event=TICKER. Fetches /api/event/{ticker},
+// renders a header, optional scoreboard, tab strip (when the event has
+// multiple market groups), and an order-book-style table with every
+// market's yes/no prices, volume, OI, spread, and last price.
+
+function showEventDetail(ticker, skipHistory) {
+  if (!ticker) return;
+  // Preserve what view the user came from so the back button can
+  // restore the previous cards/screener state instead of the home
+  // screen. Only stash if we're entering the detail view from
+  // another view — don't overwrite on popstate re-entries.
+  if (!state._prevView) {
+    state._prevView = {
+      category: state.category,
+      sport: state.sport,
+      soccerComp: state.soccerComp,
+      search: state.search,
+      url: location.pathname + location.search,
+    };
+  }
+  state._eventTicker = ticker;
+  if (!skipHistory) {
+    var url = "?event=" + encodeURIComponent(ticker);
+    history.pushState({ event: ticker }, "", url);
+  }
+  // Hide all other views.
+  document.getElementById("home-screen").style.display = "none";
+  document.getElementById("cards-grid").style.display = "none";
+  document.getElementById("nav").style.display = "none";
+  document.getElementById("screener").style.display = "none";
+  document.getElementById("content").style.display = "";
+  document.getElementById("count-bar").textContent = "";
+  document.getElementById("loader").style.display = "flex";
+  var ed = document.getElementById("event-detail");
+  ed.style.display = "block";
+  ed.innerHTML = "";
+  fetch("/api/event/" + encodeURIComponent(ticker))
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+      document.getElementById("loader").style.display = "none";
+      if (d.error || !d.event) {
+        ed.innerHTML = '<button class="ed-back" onclick="window.exitEventDetail()">← Back</button>'
+          + '<div class="ed-header"><h1 class="ed-title">Event not found</h1>'
+          + '<div class="ed-meta"><span class="ed-meta-val">'
+          + (d.error || "Unknown error") + '</span></div></div>';
+        return;
+      }
+      ed.innerHTML = renderEventDetail(d.event);
+    })
+    .catch(function(ex) {
+      document.getElementById("loader").style.display = "none";
+      ed.innerHTML = '<button class="ed-back" onclick="window.exitEventDetail()">← Back</button>'
+        + '<div class="ed-header"><h1 class="ed-title">Failed to load event</h1></div>';
+      console.error("event detail error", ex);
+    });
+}
+
+window.exitEventDetail = function() {
+  var prev = state._prevView;
+  state._prevView = null;
+  state._eventTicker = null;
+  document.getElementById("event-detail").style.display = "none";
+  document.getElementById("event-detail").innerHTML = "";
+  if (prev && prev.category != null) {
+    // Restore the previous cards view. selectCat pushes its own
+    // history entry unless skipHistory is true — we want a new
+    // entry so the detail page stays in history for forward.
+    selectCat(prev.category, false);
+    return;
+  }
+  // No previous view → go to the home screen.
+  history.pushState({ category: null }, "", "/");
+  selectCat(null, true);
+};
+
+function formatEDDate(iso) {
+  if (!iso) return "";
+  try {
+    var d = new Date(iso);
+    return d.toLocaleDateString("en-US", {
+      month: "short", day: "numeric", year: "numeric",
+      hour: "numeric", minute: "2-digit", timeZone: "America/New_York",
+      timeZoneName: "short"
+    });
+  } catch (e) { return iso; }
+}
+
+function fmtNum(n) {
+  if (n === null || n === undefined) return "—";
+  if (n >= 1000000) return (n / 1000000).toFixed(1).replace(/\.0$/, "") + "M";
+  if (n >= 1000) return (n / 1000).toFixed(1).replace(/\.0$/, "") + "k";
+  return String(Math.round(n));
+}
+
+function fmtMoney(n) {
+  if (n === null || n === undefined) return "—";
+  if (n >= 1000000) return "$" + (n / 1000000).toFixed(2).replace(/\.?0+$/, "") + "M";
+  if (n >= 10000) return "$" + (n / 1000).toFixed(1).replace(/\.0$/, "") + "k";
+  return "$" + Math.round(n).toLocaleString();
+}
+
+function escH(s) {
+  return String(s == null ? "" : s)
+    .replace(/&/g, "&amp;").replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
+
+function renderMarketsTable(markets, liveBadge) {
+  if (!markets || !markets.length) {
+    return '<div style="color:var(--text-muted);padding:20px;text-align:center">No markets.</div>';
+  }
+  var h = '<table class="ed-markets-table"><thead><tr>';
+  h += '<th>Outcome</th>';
+  h += '<th style="text-align:center">Probability</th>';
+  h += '<th style="text-align:center">Yes</th>';
+  h += '<th style="text-align:center">No</th>';
+  h += '<th style="text-align:center">Last</th>';
+  h += '<th style="text-align:center">Spread</th>';
+  h += '<th style="text-align:center">24h Vol</th>';
+  h += '<th style="text-align:center">Volume</th>';
+  h += '<th style="text-align:center">OI</th>';
+  h += '<th style="text-align:center">Liquidity</th>';
+  h += '</tr></thead><tbody>';
+  for (var i = 0; i < markets.length; i++) {
+    var m = markets[i];
+    var liveCls = (liveBadge && i === 0) ? " ed-live-dot" : "";
+    h += '<tr>';
+    h += '<td class="ed-mk-label' + liveCls + '">' + escH(m.label) + '</td>';
+    h += '<td class="ed-prob">' + escH(m.chance) + '</td>';
+    h += '<td class="ed-yes">' + escH(m.yes) + '</td>';
+    h += '<td class="ed-no">' + escH(m.no) + '</td>';
+    h += '<td class="ed-num">' + (m.last_price != null ? (m.last_price + "¢") : "—") + '</td>';
+    h += '<td class="ed-num">' + (m.spread != null ? (m.spread + "¢") : "—") + '</td>';
+    h += '<td class="ed-num">' + fmtNum(m.volume_24h) + '</td>';
+    h += '<td class="ed-num">' + fmtNum(m.volume) + '</td>';
+    h += '<td class="ed-num">' + fmtNum(m.open_interest) + '</td>';
+    h += '<td class="ed-num">' + fmtMoney(m.liquidity) + '</td>';
+    h += '</tr>';
+  }
+  h += '</tbody></table>';
+  return h;
+}
+
+function summaryStats(markets) {
+  // Aggregate volume / OI / liquidity across every market in the
+  // current group so the top-line "event level" stats give users
+  // a quick read on overall activity.
+  var totVol = 0, tot24 = 0, totOI = 0, totLiq = 0, nMarkets = 0;
+  for (var i = 0; i < markets.length; i++) {
+    var m = markets[i];
+    if (m.volume != null) totVol += m.volume;
+    if (m.volume_24h != null) tot24 += m.volume_24h;
+    if (m.open_interest != null) totOI += m.open_interest;
+    if (m.liquidity != null) totLiq += m.liquidity;
+    nMarkets += 1;
+  }
+  var h = '<div class="ed-summary">';
+  h += '<div class="ed-stat"><div class="ed-stat-label">Markets</div><div class="ed-stat-val">' + nMarkets + '</div></div>';
+  h += '<div class="ed-stat"><div class="ed-stat-label">24h Volume</div><div class="ed-stat-val">' + fmtNum(tot24) + '</div></div>';
+  h += '<div class="ed-stat"><div class="ed-stat-label">Total Volume</div><div class="ed-stat-val">' + fmtNum(totVol) + '</div></div>';
+  h += '<div class="ed-stat"><div class="ed-stat-label">Open Interest</div><div class="ed-stat-val">' + fmtNum(totOI) + '</div></div>';
+  h += '<div class="ed-stat"><div class="ed-stat-label">Liquidity</div><div class="ed-stat-val">' + fmtMoney(totLiq) + '</div></div>';
+  h += '</div>';
+  return h;
+}
+
+function renderEventDetail(ev) {
+  var sport = ev._sport || "";
+  var cat = ev.category || "Other";
+  var icon = sport ? (SPORT_EMOJI[sport] || CAT_EMOJI[cat] || "") : (CAT_EMOJI[cat] || "");
+  var label = sport || cat;
+  var subcat = ev._subcat || "";
+  var ticker = ev.event_ticker || "";
+  var kalshiUrl = ev.url || "";
+  var kickoff = ev._kickoff_dt || "";
+  var expires = ev._exp_dt || ev._close_dt || "";
+  var live = ev._live_state || null;
+  var groups = ev.market_groups || null;
+  var hasGroups = Array.isArray(groups) && groups.length > 1;
+
+  var h = '<button class="ed-back" onclick="window.exitEventDetail()">← Back</button>';
+
+  // Header card: pills, title, meta, scoreboard.
+  h += '<div class="ed-header">';
+  h += '<div class="ed-pills">';
+  if (icon) h += '<span class="cat-icon">' + icon + '</span>';
+  h += '<span class="cat-pill">' + escH(label) + '</span>';
+  if (subcat) h += '<span class="sub-pill">' + escH(subcat) + '</span>';
+  if (live && live.state === "in") {
+    h += '<span class="live-badge"><span class="live-dot"></span>'
+      + '<span class="live-text">Live' + (live.short_detail ? " · " + escH(live.short_detail) : "") + '</span></span>';
+  } else if (live && live.state === "post") {
+    h += '<span class="final-badge">Final</span>';
+  }
+  h += '</div>';
+  h += '<h1 class="ed-title">' + escH(ev.title || "") + '</h1>';
+  h += '<div class="ed-meta">';
+  if (kickoff) h += '<span class="ed-meta-item"><span class="ed-meta-label">Starts</span><span class="ed-meta-val">' + escH(formatEDDate(kickoff)) + '</span></span>';
+  if (expires) h += '<span class="ed-meta-item"><span class="ed-meta-label">Expires</span><span class="ed-meta-val">' + escH(formatEDDate(expires)) + '</span></span>';
+  h += '<span class="ed-meta-item"><span class="ed-meta-label">Ticker</span><span class="ed-meta-val" style="font-family:monospace">' + escH(ticker) + '</span></span>';
+  if (kalshiUrl) h += '<span class="ed-meta-item"><a href="' + escH(kalshiUrl) + '" target="_blank">View on Kalshi ↗</a></span>';
+  h += '</div>';
+
+  // Scoreboard row when a live game is matched.
+  if (live && (live.home_abbr || live.away_abbr || live.home_score !== "" || live.away_score !== "")) {
+    h += '<div class="ed-scoreboard">';
+    h += '<div class="ed-sb-team"><div class="ed-sb-name">' + escH(live.home_display || live.home_abbr || "Home") + '</div>'
+       + '<div class="ed-sb-score">' + escH(live.home_score || "0") + '</div></div>';
+    h += '<div class="ed-sb-team"><div class="ed-sb-sep">vs</div>'
+       + '<div class="ed-sb-clock">' + escH(live.short_detail || live.display_clock || "") + '</div></div>';
+    h += '<div class="ed-sb-team"><div class="ed-sb-name">' + escH(live.away_display || live.away_abbr || "Away") + '</div>'
+       + '<div class="ed-sb-score">' + escH(live.away_score || "0") + '</div></div>';
+    h += '</div>';
+  }
+  h += '</div>'; // /ed-header
+
+  // Markets tabs (when the event has sibling market groups) or a
+  // single flat table.
+  if (hasGroups) {
+    h += '<div class="ed-tabs">';
+    for (var t = 0; t < groups.length; t++) {
+      var g = groups[t];
+      h += '<button class="ed-tab' + (t === 0 ? ' active' : '') + '"'
+         + ' data-group="' + escH(g.type_code) + '"'
+         + ' onclick="window.switchEDTab(this)">'
+         + escH(g.label) + '</button>';
+    }
+    h += '</div>';
+    for (var t2 = 0; t2 < groups.length; t2++) {
+      var g2 = groups[t2];
+      h += '<div class="ed-group' + (t2 === 0 ? ' active' : '') + '" data-group="' + escH(g2.type_code) + '">';
+      h += '<div class="ed-section-title">Overview</div>';
+      h += summaryStats(g2.outcomes || []);
+      h += '<div class="ed-section-title">Markets</div>';
+      h += renderMarketsTable(g2.outcomes || [], false);
+      h += '</div>';
+    }
+  } else {
+    h += '<div class="ed-section-title">Overview</div>';
+    h += summaryStats(ev.outcomes || []);
+    h += '<div class="ed-section-title">Markets</div>';
+    h += renderMarketsTable(ev.outcomes || [], !!(live && live.state === "in"));
+  }
+
+  return h;
+}
+
+window.switchEDTab = function(btn) {
+  var code = btn.getAttribute("data-group");
+  if (!code) return;
+  var tabs = document.querySelectorAll(".ed-tab");
+  for (var i = 0; i < tabs.length; i++) {
+    tabs[i].classList.toggle("active", tabs[i].getAttribute("data-group") === code);
+  }
+  var panels = document.querySelectorAll(".ed-group");
+  for (var j = 0; j < panels.length; j++) {
+    panels[j].classList.toggle("active", panels[j].getAttribute("data-group") === code);
+  }
+};
+
 window.addEventListener("popstate", function(e) {
-  // Browser back/forward button pressed
-  var cat = (e.state && e.state.category) || new URLSearchParams(location.search).get("cat") || null;
+  // Browser back/forward button pressed. Prefer explicit state
+  // objects over URL parsing because they survive redirect quirks.
+  var st = e.state || {};
+  var params = new URLSearchParams(location.search);
+  var eventTicker = st.event || params.get("event");
+  if (eventTicker) {
+    showEventDetail(eventTicker, true);
+    return;
+  }
+  // Leaving the detail view — hide it and restore the cards/screener
+  // view that's encoded in the URL.
+  if (state._eventTicker) {
+    state._prevView = null;
+    state._eventTicker = null;
+    document.getElementById("event-detail").style.display = "none";
+    document.getElementById("event-detail").innerHTML = "";
+  }
+  var cat = st.category || params.get("cat") || null;
   selectCat(cat, true);
 });
 
