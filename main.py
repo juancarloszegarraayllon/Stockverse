@@ -2233,6 +2233,79 @@ async def get_screener(
     return {"total": total, "offset": offset, "limit": limit, "markets": page}
 
 
+@app.get("/api/movers")
+def get_movers(
+    limit: int = 12,
+    min_volume_24h: int = 100,
+    direction: str = "both",  # "up", "down", or "both"
+):
+    """Top markets by 24h probability change. Powers the home-screen
+    "movers" section — surfaces which events are experiencing real
+    market action right now, based on Kalshi's previous_price vs
+    last_price delta.
+
+    Params:
+      limit            max markets returned (default 12)
+      min_volume_24h   filter out thin/noisy markets (default 100)
+      direction        "up" (biggest risers) | "down" (biggest
+                       fallers) | "both" (biggest abs change)
+    """
+    get_data()
+    from kalshi_ws import LIVE_PRICES
+    records = _cache.get("data_all") or _cache.get("data") or []
+    rows = []
+    for r in records:
+        title = r.get("title", "")
+        event_ticker = r.get("event_ticker", "")
+        series_ticker = r.get("series_ticker", "")
+        sport = r.get("_sport", "")
+        cat = r.get("category", "")
+        subcat = r.get("_subcat", "")
+        for o in r.get("outcomes", []):
+            tk = o.get("ticker", "")
+            lp = LIVE_PRICES.get(tk) or {}
+            last = lp.get("last_price") if lp.get("last_price") is not None else o.get("_last")
+            prev = o.get("_prev")
+            vol24 = o.get("_vol24h", 0) or 0
+            # Require both prices + meaningful volume to avoid
+            # showing a "mover" that moved because of a single
+            # 1-contract trade on an illiquid market.
+            if last is None or prev is None or prev <= 0 or last <= 0:
+                continue
+            if vol24 < min_volume_24h:
+                continue
+            change = last - prev
+            if direction == "up" and change <= 0:
+                continue
+            if direction == "down" and change >= 0:
+                continue
+            # Current probability — prefer midprice if we have both
+            # sides of the book, otherwise fall back to last_price.
+            yb = lp.get("yes_bid") if lp.get("yes_bid") is not None else o.get("_yb")
+            ya = lp.get("yes_ask") if lp.get("yes_ask") is not None else o.get("_ya")
+            if yb is not None and ya is not None and yb > 0 and ya > 0:
+                prob = round((yb + ya) / 2)
+            else:
+                prob = round(last)
+            rows.append({
+                "event_ticker": event_ticker,
+                "ticker": tk,
+                "title": title,
+                "label": o.get("label", ""),
+                "sport": sport,
+                "category": cat,
+                "subcat": subcat,
+                "prob": prob,
+                "last_price": round(last),
+                "previous_price": round(prev),
+                "change": round(change),          # in cents / percentage points
+                "volume_24h": round(vol24),
+                "url": _kalshi_url(series_ticker, event_ticker),
+            })
+    rows.sort(key=lambda x: abs(x["change"]), reverse=True)
+    return {"movers": rows[:limit]}
+
+
 @app.get("/api/sports")
 def get_sports(live: bool = False):
     records = get_data()

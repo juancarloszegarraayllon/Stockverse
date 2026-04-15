@@ -105,9 +105,39 @@ html,body{overscroll-behavior:none}
 .odds-box{padding:4px 0;border-radius:4px;width:44px;text-align:center;font-size:11px;font-weight:700}
 .odds-yes{background:#001a00;border:1px solid #003300;color:var(--green)}
 .odds-no{background:#1a0000;border:1px solid #330000;color:var(--red)}
-#home-screen{display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:60vh;gap:12px}
-#home-screen h2{font-size:1.4rem;color:var(--green);font-weight:700}
-#home-screen p{font-size:14px;color:var(--text-muted)}
+#home-screen{display:flex;flex-direction:column;gap:28px;padding:30px 20px;max-width:1100px;margin:0 auto;width:100%}
+#home-hero{text-align:center}
+#home-hero h2{font-size:1.6rem;color:var(--green);font-weight:700;margin-bottom:8px}
+#home-hero p{font-size:14px;color:var(--text-muted)}
+#movers-section{background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:18px}
+#movers-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;gap:12px;flex-wrap:wrap}
+#movers-header h3{font-size:13px;font-weight:700;letter-spacing:0.5px;text-transform:uppercase;color:var(--text)}
+#movers-tabs{display:flex;gap:4px}
+.movers-tab{padding:5px 11px;background:transparent;border:1px solid var(--border);color:var(--text-muted);font-family:inherit;font-size:10px;font-weight:700;letter-spacing:0.4px;text-transform:uppercase;cursor:pointer;border-radius:5px;transition:color 0.12s,border-color 0.12s}
+.movers-tab:hover{color:var(--text-dim)}
+.movers-tab.active{color:var(--text);border-color:var(--text-dim)}
+#movers-list{display:flex;flex-direction:column;gap:4px}
+.movers-empty{color:var(--text-muted);font-size:12px;padding:24px;text-align:center}
+.mover-row{display:grid;grid-template-columns:auto 1fr auto auto;gap:12px;align-items:center;padding:10px 12px;background:var(--bg3);border:1px solid var(--border);border-radius:8px;cursor:pointer;transition:border-color 0.12s}
+.mover-row:hover{border-color:var(--text-muted)}
+.mover-icon{font-size:18px;line-height:1;width:22px;text-align:center}
+.mover-info{min-width:0}
+.mover-title{font-size:12px;color:var(--text);font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.mover-label{font-size:11px;color:var(--text-muted);margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.mover-prob{font-size:15px;color:var(--text);font-weight:800;font-variant-numeric:tabular-nums;min-width:44px;text-align:right}
+.mover-change{font-size:11px;font-weight:800;letter-spacing:0.3px;padding:4px 8px;border-radius:5px;min-width:58px;text-align:center;font-variant-numeric:tabular-nums}
+.mover-change.up{background:rgba(0,200,83,0.12);color:#4caf50;border:1px solid rgba(0,200,83,0.3)}
+.mover-change.down{background:rgba(244,67,54,0.12);color:#f44336;border:1px solid rgba(244,67,54,0.3)}
+@media(max-width:600px){
+  #home-screen{padding:16px 12px;gap:18px}
+  #home-hero h2{font-size:1.3rem}
+  #movers-section{padding:14px}
+  .mover-row{grid-template-columns:auto 1fr auto;gap:8px;padding:10px}
+  .mover-icon{font-size:16px;width:18px}
+  .mover-prob{display:none}
+  .mover-title{font-size:11px}
+  .mover-label{font-size:10px}
+}
 #loader{display:none;justify-content:center;padding:20px}
 .spinner{width:24px;height:24px;border:2px solid var(--border);border-top-color:var(--green);border-radius:50%;animation:spin 0.7s linear infinite}
 @keyframes spin{to{transform:rotate(360deg)}}
@@ -189,8 +219,6 @@ html,body{overscroll-behavior:none}
   .header-odds-box{padding:0;width:38px}
   .live-badge{font-size:10px;letter-spacing:0.5px}
   .final-badge{font-size:10px;letter-spacing:0.5px}
-  #home-screen{padding:0 20px;text-align:center}
-  #home-screen h2{font-size:1.2rem}
 }
 
 /* ── Small phone ────────────────────────────────────────────────────── */
@@ -366,8 +394,21 @@ html,body{overscroll-behavior:none}
   <div id="nav"></div>
   <div id="content">
     <div id="home-screen">
-      <h2>Welcome to OddsIQ</h2>
-      <p>Select a category above to browse markets.</p>
+      <div id="home-hero">
+        <h2>Welcome to OddsIQ</h2>
+        <p>Select a category above to browse markets, or see what's moving right now.</p>
+      </div>
+      <div id="movers-section">
+        <div id="movers-header">
+          <h3>Biggest 24h Movers</h3>
+          <div id="movers-tabs">
+            <button class="movers-tab active" data-dir="both">All</button>
+            <button class="movers-tab" data-dir="up">Risers</button>
+            <button class="movers-tab" data-dir="down">Fallers</button>
+          </div>
+        </div>
+        <div id="movers-list"><div class="movers-empty">Loading…</div></div>
+      </div>
     </div>
     <div id="cards-grid"></div>
     <div id="event-detail"></div>
@@ -477,6 +518,88 @@ var CAT_EMOJI = {
   "Health": "🏥", "Social": "👥", "World": "🌐", "Transportation": "✈", "Mentions": "💬"
 };
 
+// ── Movers (home-screen "Biggest 24h Movers" section) ──────────────
+// Pulls /api/movers and renders a compact list. Each row links to
+// the event detail page via showEventDetail. Re-renders on tab
+// switch (All / Risers / Fallers). Refreshes every 60s while the
+// home screen is visible so fresh moves surface without reload.
+var moversState = { dir: "both", loading: false, data: [] };
+
+async function loadMovers() {
+  if (moversState.loading) return;
+  moversState.loading = true;
+  try {
+    var r = await fetch("/api/movers?direction=" + moversState.dir + "&limit=12");
+    var d = await r.json();
+    moversState.data = d.movers || [];
+    renderMovers();
+  } catch (e) {
+    console.error("loadMovers error", e);
+    document.getElementById("movers-list").innerHTML =
+      '<div class="movers-empty">Failed to load. Try again shortly.</div>';
+  } finally {
+    moversState.loading = false;
+  }
+}
+
+function renderMovers() {
+  var list = document.getElementById("movers-list");
+  if (!list) return;
+  var rows = moversState.data;
+  if (!rows.length) {
+    list.innerHTML = '<div class="movers-empty">No significant movers right now.</div>';
+    return;
+  }
+  var h = "";
+  for (var i = 0; i < rows.length; i++) {
+    var m = rows[i];
+    var icon = m.sport ? (SPORT_EMOJI[m.sport] || CAT_EMOJI[m.category] || "")
+                       : (CAT_EMOJI[m.category] || "");
+    var chg = m.change;
+    var chgCls = chg > 0 ? "up" : "down";
+    var chgText = (chg > 0 ? "+" : "") + chg + "pp";
+    h += '<div class="mover-row" data-ticker="' + escH(m.event_ticker) + '">';
+    h += '<div class="mover-icon">' + escH(icon) + '</div>';
+    h += '<div class="mover-info">';
+    h += '<div class="mover-title">' + escH(m.title) + '</div>';
+    h += '<div class="mover-label">' + escH(m.label) + '</div>';
+    h += '</div>';
+    h += '<div class="mover-prob">' + m.prob + '%</div>';
+    h += '<div class="mover-change ' + chgCls + '">' + chgText + '</div>';
+    h += '</div>';
+  }
+  list.innerHTML = h;
+  // Wire click-through to the detail page.
+  var nodes = list.querySelectorAll(".mover-row");
+  for (var j = 0; j < nodes.length; j++) {
+    nodes[j].addEventListener("click", function() {
+      var tkr = this.getAttribute("data-ticker");
+      if (tkr) showEventDetail(tkr);
+    });
+  }
+}
+
+// Auto-refresh movers every 60s while the home screen is visible.
+// Skipped on category/detail views so we don't hit /api/movers
+// needlessly when the section isn't on screen.
+setInterval(function() {
+  var homeVis = document.getElementById("home-screen");
+  if (homeVis && homeVis.style.display !== "none") loadMovers();
+}, 60000);
+
+// Tab handlers — All / Risers / Fallers.
+document.addEventListener("DOMContentLoaded", function() {
+  var tabs = document.querySelectorAll(".movers-tab");
+  for (var i = 0; i < tabs.length; i++) {
+    tabs[i].addEventListener("click", function() {
+      for (var j = 0; j < tabs.length; j++) tabs[j].classList.remove("active");
+      this.classList.add("active");
+      moversState.dir = this.getAttribute("data-dir");
+      loadMovers();
+    });
+  }
+});
+
 async function boot() {
   try {
     // Step 1: Load static metadata instantly (no data fetch needed)
@@ -494,6 +617,10 @@ async function boot() {
       state.catSubtabs[state.categories[i].name] = state.categories[i].subtabs || [];
     }
     renderCatTabs();
+
+    // Kick off the Movers section fetch in parallel with the rest
+    // of boot — cheap endpoint, warms up Kalshi cache if cold.
+    loadMovers();
 
     // Restore the full nav state from the URL so refresh, direct
     // deep-links, and back/forward all land the user back on the
@@ -642,6 +769,9 @@ async function restoreFromUrl(searchStr) {
     document.getElementById("cards-grid").style.display = "none";
     document.getElementById("screener").style.display = "none";
     document.getElementById("content").style.display = "";
+    // Refresh movers whenever the home screen is re-shown — the
+    // 60s auto-refresh might be minutes away from firing.
+    loadMovers();
     document.getElementById("nav").style.display = "none";
     document.getElementById("count-bar").textContent = "";
     renderCatTabs();
@@ -743,6 +873,7 @@ async function selectCat(key, skipHistory) {
     document.getElementById("cards-grid").style.display = "none";
     document.getElementById("nav").style.display = "none";
     document.getElementById("count-bar").textContent = "";
+    loadMovers();
     return;
   }
   document.getElementById("home-screen").style.display = "none";
