@@ -1537,6 +1537,14 @@ def get_events(
                 "series_home_wins":   g.get("series_home_wins"),
                 "series_away_wins":   g.get("series_away_wins"),
                 "series_game_number": g.get("series_game_number"),
+                # Two-leg knockout aggregate (soccer cup ties).
+                "is_two_leg":         bool(g.get("is_two_leg")),
+                "aggregate_home":     g.get("aggregate_home"),
+                "aggregate_away":     g.get("aggregate_away"),
+                "leg_number":         g.get("leg_number"),
+                "round_name":         g.get("round_name", ""),
+                "tournament_name":    g.get("tournament_name", "") or g.get("league", ""),
+                "aggregate_winner":   g.get("aggregate_winner", ""),
             }
             # Parse team names from the Kalshi title ("A vs B")
             # and assign to title_home / title_away using flip.
@@ -1806,6 +1814,14 @@ def get_event_detail(ticker: str):
             "series_home_wins":   g.get("series_home_wins"),
             "series_away_wins":   g.get("series_away_wins"),
             "series_game_number": g.get("series_game_number"),
+            # Two-leg knockout aggregate (soccer cup ties).
+            "is_two_leg":         bool(g.get("is_two_leg")),
+            "aggregate_home":     g.get("aggregate_home"),
+            "aggregate_away":     g.get("aggregate_away"),
+            "leg_number":         g.get("leg_number"),
+            "round_name":         g.get("round_name", ""),
+            "tournament_name":    g.get("tournament_name", "") or g.get("league", ""),
+            "aggregate_winner":   g.get("aggregate_winner", ""),
         }
 
     rc["url"] = _kalshi_url(r.get("series_ticker", ""), r.get("event_ticker", ""))

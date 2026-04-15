@@ -232,6 +232,40 @@ def _parse_event(ev: Dict[str, Any], sport_label: str) -> Optional[Dict[str, Any
                     g["clock_running"] = True
         except Exception:
             pass
+        # Two-leg knockout ties (Champions League round-of-16 +,
+        # Copa Libertadores, domestic 2-leg cup ties, etc.).
+        # SofaScore surfaces the running aggregate under
+        # homeScore.aggregated / awayScore.aggregated (or at the
+        # event level) once the first leg has been played. The
+        # roundInfo.name usually contains "2nd leg" or "1st leg".
+        try:
+            agg_h = home_score_obj.get("aggregated")
+            agg_a = away_score_obj.get("aggregated")
+            if agg_h is None and agg_a is None:
+                ascore = ev.get("aggregatedScore") or {}
+                agg_h = ascore.get("home")
+                agg_a = ascore.get("away")
+            round_info = ev.get("roundInfo") or {}
+            round_name = (round_info.get("name") or "").strip()
+            # Detect leg number from the round name. SofaScore uses
+            # "1st leg" / "2nd leg" literally. Fall back to None.
+            leg_number = None
+            rn_low = round_name.lower()
+            if "2nd leg" in rn_low or "second leg" in rn_low:
+                leg_number = 2
+            elif "1st leg" in rn_low or "first leg" in rn_low:
+                leg_number = 1
+            if (agg_h is not None and agg_a is not None) or leg_number:
+                g["is_two_leg"] = True
+                g["aggregate_home"] = int(agg_h) if isinstance(agg_h, (int, float)) else None
+                g["aggregate_away"] = int(agg_a) if isinstance(agg_a, (int, float)) else None
+                g["leg_number"] = leg_number
+                g["round_name"] = round_name
+                g["tournament_name"] = league
+                winner_code = ev.get("aggregatedWinnerCode") or ""
+                g["aggregate_winner"] = winner_code  # "home" / "away" / "draw" / ""
+        except Exception:
+            pass
     # Tennis: build a full scoreboard-style label showing every
     # completed set plus the current set games plus current game
     # points. SofaScore's tennis score dict looks like:

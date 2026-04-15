@@ -273,6 +273,7 @@ html,body{overscroll-behavior:none}
 .ed-sdot-filled{background:var(--green);border-color:var(--green);box-shadow:0 0 4px rgba(0,255,100,0.5)}
 .ed-series-summary{font-size:11px;font-weight:700;color:var(--green);text-transform:uppercase;letter-spacing:0.5px;white-space:nowrap}
 .ed-series-summary-solo{font-size:12px;color:var(--text);font-weight:600;text-align:center}
+.ed-series-hint{font-size:10px;color:var(--text-muted);text-align:center;letter-spacing:0.3px;font-style:italic}
 .ed-tabs{display:flex;gap:4px;flex-wrap:wrap;margin:20px 0 0;padding:0;border-bottom:1px solid var(--border)}
 .ed-tab{padding:8px 14px;background:transparent;border:0;border-bottom:2px solid transparent;color:var(--text-muted);font-family:inherit;font-size:11px;font-weight:700;letter-spacing:0.5px;text-transform:uppercase;cursor:pointer;transition:color 0.12s,border-color 0.12s}
 .ed-tab:hover{color:var(--text-dim)}
@@ -1877,6 +1878,54 @@ function renderEventDetail(ev) {
        + '<div class="ed-sb-clock">' + escH(live.short_detail || live.display_clock || "") + '</div></div>';
     h += '<div class="ed-sb-team"><div class="ed-sb-name">' + escH(live.away_display || live.away_abbr || "Away") + '</div>'
        + '<div class="ed-sb-score">' + escH(live.away_score || "0") + '</div></div>';
+    h += '</div>';
+  }
+
+  // Two-leg knockout tie panel (soccer: Champions League, Copa
+  // Libertadores, domestic cup ties). Shown when SofaScore or
+  // ESPN reported aggregate scores or an explicit leg number.
+  if (live && live.is_two_leg) {
+    var aggH = (typeof live.aggregate_home === "number") ? live.aggregate_home : null;
+    var aggA = (typeof live.aggregate_away === "number") ? live.aggregate_away : null;
+    var hasAgg = aggH !== null && aggA !== null;
+    var legN = live.leg_number;
+    var tiebits = [];
+    if (legN) tiebits.push("Leg " + legN + " of 2");
+    if (live.round_name) tiebits.push(live.round_name);
+    else if (live.tournament_name) tiebits.push(live.tournament_name);
+    var tieHeader = tiebits.join(" · ");
+    var winCode = live.aggregate_winner || "";
+    h += '<div class="ed-series">';
+    if (tieHeader) h += '<div class="ed-series-title">' + escH(tieHeader) + '</div>';
+    if (hasAgg) {
+      // "Aggregate" row: home side | center label | away side.
+      // Uses the same .ed-series-row layout as the NBA panel but
+      // shows aggregate goals instead of series wins (no dots,
+      // since the number of legs is always exactly 2).
+      var leadLabel = "Aggregate tied";
+      if (winCode === "home") leadLabel = (live.home_abbr || "Home") + " leads aggregate";
+      else if (winCode === "away") leadLabel = (live.away_abbr || "Away") + " leads aggregate";
+      else if (aggH > aggA) leadLabel = (live.home_abbr || "Home") + " leads aggregate";
+      else if (aggA > aggH) leadLabel = (live.away_abbr || "Away") + " leads aggregate";
+      h += '<div class="ed-series-row">';
+      h += '<div class="ed-series-team">';
+      h += '<div class="ed-series-name">' + escH(live.home_display || live.home_abbr || "Home") + '</div>';
+      h += '<div class="ed-series-wins">' + aggH + '</div>';
+      h += '</div>';
+      h += '<div class="ed-series-summary">' + escH(leadLabel) + '</div>';
+      h += '<div class="ed-series-team ed-series-team-r">';
+      h += '<div class="ed-series-wins">' + aggA + '</div>';
+      h += '<div class="ed-series-name">' + escH(live.away_display || live.away_abbr || "Away") + '</div>';
+      h += '</div>';
+      h += '</div>';
+      // Secondary hint line — emphasizes that this is the
+      // cumulative score across both legs, not the current match.
+      h += '<div class="ed-series-hint">Aggregate score across both legs</div>';
+    } else if (legN) {
+      // Known leg but no aggregate yet (usually the 1st leg before
+      // kickoff). Just show a hint line.
+      h += '<div class="ed-series-summary-solo">Aggregate score will show after the 1st leg ends.</div>';
+    }
     h += '</div>';
   }
 

@@ -399,9 +399,10 @@ def _parse_event(ev: Dict[str, Any], league: str, sport: str) -> Optional[Dict[s
     # Game number — scan notes[] for a "Game N" headline. ESPN uses
     # either notes[0].headline or the competition's `notes` array.
     game_number = None
-    for note in (ev.get("notes") or []) + (comp.get("notes") or []):
+    import re as _re
+    all_notes = (ev.get("notes") or []) + (comp.get("notes") or [])
+    for note in all_notes:
         headline = (note.get("headline") if isinstance(note, dict) else "") or ""
-        import re as _re
         m = _re.search(r"Game\s+(\d+)", headline, _re.IGNORECASE)
         if m:
             try:
@@ -409,6 +410,37 @@ def _parse_event(ev: Dict[str, Any], league: str, sport: str) -> Optional[Dict[s
                 break
             except Exception:
                 pass
+
+    # ── Two-leg aggregate (soccer knockouts) ──────────────────────
+    # ESPN surfaces soccer knockout aggregate scores inside notes[]
+    # with a headline like "Aggregate Score: 3-2" or "Agg: 3-2".
+    # Leg number ("1st leg" / "2nd leg") can appear in notes too,
+    # though ESPN is less consistent than SofaScore here.
+    is_two_leg = False
+    aggregate_home = None
+    aggregate_away = None
+    leg_number = None
+    if sport == "Soccer":
+        for note in all_notes:
+            headline = (note.get("headline") if isinstance(note, dict) else "") or ""
+            hl = headline.strip()
+            if not hl:
+                continue
+            # Aggregate pattern: "Aggregate[ Score]: H-A"
+            m_agg = _re.search(r"Agg(?:regate)?(?:\s+Score)?\s*[:\-]?\s*(\d+)\s*[-–]\s*(\d+)",
+                               hl, _re.IGNORECASE)
+            if m_agg:
+                try:
+                    aggregate_home = int(m_agg.group(1))
+                    aggregate_away = int(m_agg.group(2))
+                    is_two_leg = True
+                except Exception:
+                    pass
+            m_leg = _re.search(r"(1st|2nd|first|second)\s+leg", hl, _re.IGNORECASE)
+            if m_leg:
+                tok = m_leg.group(1).lower()
+                leg_number = 1 if tok in ("1st", "first") else 2
+                is_two_leg = True
     # Most North-American playoff series are best-of-7 (NBA, NHL
     # conference finals; MLB LCS + World Series) with a handful of
     # best-of-5 (NBA play-in, MLB Division Series). Inferring from
@@ -443,6 +475,11 @@ def _parse_event(ev: Dict[str, Any], league: str, sport: str) -> Optional[Dict[s
         "series_home_wins":  series_home_wins,
         "series_away_wins":  series_away_wins,
         "series_game_number": game_number,
+        # Two-leg aggregate (soccer knockout ties).
+        "is_two_leg":        is_two_leg,
+        "aggregate_home":    aggregate_home,
+        "aggregate_away":    aggregate_away,
+        "leg_number":        leg_number,
     }
 
 
