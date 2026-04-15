@@ -2412,9 +2412,14 @@ function renderPriceChartSvg(series, hoursWindow, volume) {
       };
     }),
   };
-  svg += '<script type="application/json" class="ed-chart-meta">'
+  // IMPORTANT: escape both opening and closing <script> tags so the
+  // HTML parser doesn't prematurely end the outer <script> block.
+  // The literal "</script>" inside this source file would otherwise
+  // terminate the main script early, dumping the rest of the JS
+  // into the DOM as visible text.
+  svg += '<scr' + 'ipt type="application/json" class="ed-chart-meta">'
        + JSON.stringify(meta).replace(/</g, "\\u003c")
-       + '</script>';
+       + '<\/scr' + 'ipt>';
   svg += '<div class="ed-chart-tooltip" style="display:none"></div>';
   return svg;
 }
