@@ -316,6 +316,19 @@ html,body{overscroll-behavior:none}
 .ed-rule-item{margin-bottom:10px}
 .ed-rule-label{font-size:12px;font-weight:700;color:var(--green);margin-bottom:2px}
 .ed-rule-text{font-size:12px;line-height:1.5;color:var(--text-dim)}
+.ed-chart{margin-top:12px;background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:14px}
+.ed-chart-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px}
+.ed-chart-body{min-height:120px}
+.ed-chart-loading,.ed-chart-empty{color:var(--text-muted);font-size:12px;padding:32px 16px;text-align:center;font-style:italic}
+.ed-chart-svg{width:100%;height:220px;display:block;background:#050505;border-radius:6px}
+.ed-chart-legend{display:flex;flex-wrap:wrap;gap:6px 14px;margin-top:10px}
+.ed-chart-legend-item{display:inline-flex;align-items:center;gap:6px;font-size:11px;color:var(--text-dim)}
+.ed-chart-swatch{width:10px;height:10px;border-radius:2px;display:inline-block;flex-shrink:0}
+.ed-chart-legend-label{color:var(--text);font-weight:600}
+.ed-chart-legend-val{color:var(--text-dim);font-variant-numeric:tabular-nums}
+.ed-chart-legend-delta{font-size:10px;font-weight:800;font-variant-numeric:tabular-nums;padding:2px 5px;border-radius:3px;letter-spacing:0.2px}
+.ed-chart-legend-delta.up{background:rgba(0,200,83,0.15);color:#4caf50}
+.ed-chart-legend-delta.down{background:rgba(244,67,54,0.15);color:#f44336}
 .ed-tabs{display:flex;gap:4px;flex-wrap:wrap;margin:20px 0 0;padding:0;border-bottom:1px solid var(--border)}
 .ed-tab{padding:8px 14px;background:transparent;border:0;border-bottom:2px solid transparent;color:var(--text-muted);font-family:inherit;font-size:11px;font-weight:700;letter-spacing:0.5px;text-transform:uppercase;cursor:pointer;transition:color 0.12s,border-color 0.12s}
 .ed-tab:hover{color:var(--text-dim)}
@@ -2081,6 +2094,10 @@ function showEventDetail(ticker, skipHistory) {
         return;
       }
       ed.innerHTML = renderEventDetail(d.event);
+      // Populate the price-history chart asynchronously. The
+      // event detail page shows a loading placeholder until this
+      // fetch completes.
+      hydratePriceCharts();
     })
     .catch(function(ex) {
       document.getElementById("loader").style.display = "none";
@@ -2204,6 +2221,149 @@ window.toggleRules = function(btn) {
   btn.setAttribute("aria-expanded", open ? "true" : "false");
   btn.classList.toggle("open", open);
 };
+
+// Map market_ticker → human-readable label for chart legend use.
+function _outcomeLabels(outcomes) {
+  var m = {};
+  for (var i = 0; i < outcomes.length; i++) {
+    if (outcomes[i] && outcomes[i].ticker) {
+      m[outcomes[i].ticker] = outcomes[i].label || outcomes[i].ticker;
+    }
+  }
+  return m;
+}
+
+// Color palette for price-history chart lines. Matches the
+// category pill greens + adds contrasting hues so up to ~6
+// overlaid outcomes are visually distinguishable.
+var CHART_COLORS = [
+  "#4caf50", "#f44336", "#ffd54f", "#4fc3f7",
+  "#ba68c8", "#ff8a65", "#81c784", "#e57373",
+];
+
+// Build a single SVG with all market lines overlaid. Y axis is
+// 0-100% (probability), X axis is 0 to full window width. Returns
+// "" when no series has data.
+function renderPriceChartSvg(series) {
+  if (!series || !series.length) return "";
+  // Determine global time bounds so every line shares an X scale.
+  var tMin = Infinity, tMax = -Infinity;
+  for (var i = 0; i < series.length; i++) {
+    var pts = series[i].points || [];
+    for (var j = 0; j < pts.length; j++) {
+      if (pts[j].t < tMin) tMin = pts[j].t;
+      if (pts[j].t > tMax) tMax = pts[j].t;
+    }
+  }
+  if (!isFinite(tMin) || !isFinite(tMax) || tMin === tMax) return "";
+  var W = 900, H = 220;        // viewBox dimensions
+  var padL = 32, padR = 8, padT = 12, padB = 22;
+  var w = W - padL - padR;
+  var h = H - padT - padB;
+  function sx(t) { return padL + ((t - tMin) / (tMax - tMin)) * w; }
+  function sy(p) { return padT + (1 - (p / 100)) * h; }
+  var svg = '<svg viewBox="0 0 ' + W + ' ' + H + '" class="ed-chart-svg" preserveAspectRatio="none">';
+  // Horizontal gridlines at 0, 25, 50, 75, 100%
+  var grid = [0, 25, 50, 75, 100];
+  for (var gi = 0; gi < grid.length; gi++) {
+    var g = grid[gi];
+    var y = sy(g);
+    svg += '<line x1="' + padL + '" y1="' + y + '" x2="' + (padL + w) + '" y2="' + y + '" stroke="#1a1a1a" stroke-width="1"/>';
+    svg += '<text x="' + (padL - 6) + '" y="' + (y + 3) + '" fill="#555" font-size="9" text-anchor="end">' + g + '%</text>';
+  }
+  // Lines
+  for (var k = 0; k < series.length; k++) {
+    var s = series[k];
+    var pts2 = s.points || [];
+    if (pts2.length < 2) continue;
+    var d = "";
+    for (var m = 0; m < pts2.length; m++) {
+      d += (m === 0 ? "M" : "L") + sx(pts2[m].t).toFixed(1) + " " + sy(pts2[m].p).toFixed(1) + " ";
+    }
+    var color = CHART_COLORS[k % CHART_COLORS.length];
+    svg += '<path d="' + d + '" fill="none" stroke="' + color + '" stroke-width="2" stroke-linejoin="round"/>';
+  }
+  // X-axis tick labels: first (oldest) and last (now)
+  var firstDate = new Date(tMin);
+  var lastDate  = new Date(tMax);
+  function hm(d) {
+    var hh = d.getHours();
+    var mm = d.getMinutes();
+    return (hh < 10 ? "0" + hh : hh) + ":" + (mm < 10 ? "0" + mm : mm);
+  }
+  svg += '<text x="' + padL + '" y="' + (H - 6) + '" fill="#666" font-size="10">' + hm(firstDate) + '</text>';
+  svg += '<text x="' + (padL + w) + '" y="' + (H - 6) + '" fill="#666" font-size="10" text-anchor="end">' + hm(lastDate) + '</text>';
+  svg += '</svg>';
+  return svg;
+}
+
+// Build the chart section shown above the markets table.
+// Includes placeholder while the /api/event/{ticker}/prices fetch
+// is in flight, then replaces itself with the rendered chart +
+// legend once data arrives.
+function renderPriceHistoryPanel(evTicker, outcomeLabels) {
+  return '<div class="ed-chart" data-ticker="' + escH(evTicker) + '"'
+       + ' data-labels="' + escH(JSON.stringify(outcomeLabels)) + '">'
+       + '<div class="ed-chart-header">'
+       +   '<div class="ed-section-title" style="margin:0">Price history · 24h</div>'
+       + '</div>'
+       + '<div class="ed-chart-body"><div class="ed-chart-loading">Loading…</div></div>'
+       + '</div>';
+}
+
+// Fetch + populate every .ed-chart placeholder currently in the DOM.
+// Called after the detail page renders so the chart appears after
+// a brief loading state without blocking the rest of the page.
+async function hydratePriceCharts() {
+  var placeholders = document.querySelectorAll(".ed-chart");
+  for (var i = 0; i < placeholders.length; i++) {
+    var el = placeholders[i];
+    if (el.dataset.hydrated) continue;
+    el.dataset.hydrated = "1";
+    var tkr = el.getAttribute("data-ticker");
+    var labels = {};
+    try { labels = JSON.parse(el.getAttribute("data-labels") || "{}"); } catch (e) {}
+    try {
+      var r = await fetch("/api/event/" + encodeURIComponent(tkr) + "/prices?hours=24");
+      var d = await r.json();
+      var series = d.series || [];
+      // Attach labels to each series for the legend.
+      for (var j = 0; j < series.length; j++) {
+        series[j].label = labels[series[j].market_ticker] || series[j].market_ticker;
+      }
+      var body = el.querySelector(".ed-chart-body");
+      if (!series.length) {
+        body.innerHTML = '<div class="ed-chart-empty">No price history recorded yet for this event. Data starts accumulating as soon as the market is tracked — check back shortly.</div>';
+        continue;
+      }
+      var svg = renderPriceChartSvg(series);
+      if (!svg) {
+        body.innerHTML = '<div class="ed-chart-empty">Not enough data points yet.</div>';
+        continue;
+      }
+      var legend = '<div class="ed-chart-legend">';
+      for (var s = 0; s < series.length; s++) {
+        var color = CHART_COLORS[s % CHART_COLORS.length];
+        var curr = series[s].last;
+        var delta = (series[s].last - series[s].first);
+        var deltaText = (delta >= 0 ? "+" : "") + delta.toFixed(0) + "¢";
+        var deltaCls = delta >= 0 ? "up" : "down";
+        legend += '<div class="ed-chart-legend-item">';
+        legend += '<span class="ed-chart-swatch" style="background:' + color + '"></span>';
+        legend += '<span class="ed-chart-legend-label">' + escH(series[s].label) + '</span>';
+        legend += '<span class="ed-chart-legend-val">' + curr.toFixed(0) + '¢</span>';
+        legend += '<span class="ed-chart-legend-delta ' + deltaCls + '">' + deltaText + '</span>';
+        legend += '</div>';
+      }
+      legend += '</div>';
+      body.innerHTML = svg + legend;
+    } catch (ex) {
+      var body2 = el.querySelector(".ed-chart-body");
+      if (body2) body2.innerHTML = '<div class="ed-chart-empty">Failed to load price history.</div>';
+      console.error("hydratePriceCharts error", ex);
+    }
+  }
+}
 
 function renderMarketsTable(markets, liveBadge) {
   if (!markets || !markets.length) {
@@ -2434,6 +2594,7 @@ function renderEventDetail(ev) {
       h += '<div class="ed-group' + (t2 === 0 ? ' active' : '') + '" data-group="' + escH(g2.type_code) + '">';
       h += '<div class="ed-section-title">Overview</div>';
       h += summaryStats(g2.outcomes || []);
+      h += renderPriceHistoryPanel(g2.event_ticker || ticker, _outcomeLabels(g2.outcomes || []));
       h += '<div class="ed-section-title">Markets</div>';
       h += renderMarketsTable(g2.outcomes || [], false);
       h += renderSettlementRules(g2.outcomes || []);
@@ -2442,6 +2603,7 @@ function renderEventDetail(ev) {
   } else {
     h += '<div class="ed-section-title">Overview</div>';
     h += summaryStats(ev.outcomes || []);
+    h += renderPriceHistoryPanel(ticker, _outcomeLabels(ev.outcomes || []));
     h += '<div class="ed-section-title">Markets</div>';
     h += renderMarketsTable(ev.outcomes || [], !!(live && live.state === "in"));
     h += renderSettlementRules(ev.outcomes || []);

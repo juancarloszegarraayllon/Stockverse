@@ -2067,6 +2067,129 @@ def get_event_detail(ticker: str):
     return {"event": rc}
 
 
+@app.get("/api/event/{ticker}/prices")
+async def get_event_prices(ticker: str, hours: int = 24, max_points: int = 120):
+    """Return time-series price history for every market under an
+    event. Powers the sparkline on the event detail page.
+
+    Queries the `prices` table (written every ~10s by the WS flush
+    task). Downsamples to `max_points` per market by bucketing rows
+    into fixed time windows and averaging `last_price` (falling
+    back to midprice) within each bucket — keeps the payload small
+    without losing the shape of the curve.
+
+    Params:
+      hours       lookback window in hours (default 24, max 168)
+      max_points  target points per market (default 120 ≈ 12/hr)
+    """
+    ticker = (ticker or "").strip().upper()
+    if not ticker:
+        return {"error": "ticker required"}
+    hours = max(1, min(int(hours), 168))
+    max_points = max(10, min(int(max_points), 300))
+    # Identify the markets we care about — pull them from the cache
+    # so we don't need to re-hit Kalshi just to list tickers.
+    get_data()
+    records_all = _cache.get("data_all") or []
+    records_grouped = _cache.get("data") or []
+    market_tickers = []
+    for r in records_all:
+        if r.get("event_ticker") == ticker:
+            for o in r.get("outcomes", []):
+                if o.get("ticker"):
+                    market_tickers.append(o["ticker"])
+            break
+    if not market_tickers:
+        # Fallback — scan grouped market_groups too in case the
+        # event is a sibling collapsed under a moneyline parent.
+        for r in records_grouped:
+            matched = False
+            if r.get("event_ticker") == ticker:
+                for o in r.get("outcomes", []):
+                    if o.get("ticker"):
+                        market_tickers.append(o["ticker"])
+                matched = True
+            for g in r.get("_market_groups", []) or []:
+                if g.get("event_ticker") == ticker:
+                    for o in g.get("_outcomes", []):
+                        if o.get("ticker"):
+                            market_tickers.append(o["ticker"])
+                    matched = True
+            if matched:
+                break
+    if not market_tickers:
+        return {"error": f"event {ticker!r} not found in cache", "series": []}
+    # No DB → no history.
+    from db import DATABASE_URL, async_session
+    if not DATABASE_URL or async_session is None:
+        return {"series": [], "hours": hours, "note": "database not configured"}
+    try:
+        from sqlalchemy import select, func
+        from models import Price
+        from datetime import datetime as _dt, timedelta as _td, timezone as _tz
+        since = _dt.now(_tz.utc) - _td(hours=hours)
+        # Bucket size = total window / target points. Round to a
+        # nice integer of seconds so buckets align cleanly.
+        bucket_s = max(30, int((hours * 3600) / max_points))
+        out_series = []
+        async with async_session() as session:
+            for mk in market_tickers:
+                stmt = (
+                    select(Price.captured_at, Price.last_price,
+                           Price.yes_bid, Price.yes_ask)
+                    .where(Price.market_ticker == mk,
+                           Price.captured_at >= since)
+                    .order_by(Price.captured_at.asc())
+                )
+                rows = (await session.execute(stmt)).all()
+                if not rows:
+                    continue
+                # Downsample into fixed time buckets. Each bucket
+                # gets a representative price (average of last_price
+                # when available, else midprice of yes_bid/yes_ask).
+                buckets = {}
+                for captured, last, yb, ya in rows:
+                    try:
+                        ts = captured.timestamp()
+                    except Exception:
+                        continue
+                    key = int(ts // bucket_s) * bucket_s
+                    price_cents = last
+                    if price_cents is None and yb is not None and ya is not None:
+                        price_cents = (yb + ya) / 2.0
+                    if price_cents is None:
+                        continue
+                    b = buckets.setdefault(key, [0.0, 0])
+                    b[0] += float(price_cents)
+                    b[1] += 1
+                points = []
+                for key in sorted(buckets.keys()):
+                    total, count = buckets[key]
+                    if count == 0:
+                        continue
+                    points.append({
+                        "t": key * 1000,  # epoch ms for JS
+                        "p": round(total / count, 2),
+                    })
+                if points:
+                    out_series.append({
+                        "market_ticker": mk,
+                        "points": points,
+                        "min": min(pt["p"] for pt in points),
+                        "max": max(pt["p"] for pt in points),
+                        "first": points[0]["p"],
+                        "last": points[-1]["p"],
+                    })
+        return {
+            "series": out_series,
+            "hours": hours,
+            "bucket_seconds": bucket_s,
+        }
+    except Exception as e:
+        logging.getLogger("oddsiq").warning("prices query failed: %s", e)
+        return {"series": [], "error": str(e)}
+
+
 @app.get("/api/screener")
 async def get_screener(
     category: Optional[str] = None,
