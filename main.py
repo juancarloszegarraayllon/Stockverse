@@ -2316,6 +2316,10 @@ def kalshi_event_raw(ticker: str = "", status: str = "", prefer: str = "sport"):
     If empty, returns the first matching sport event in the
     first few pages.
     """
+    # Kalshi tickers are canonically uppercase. Browsers sometimes
+    # percent-lowercase query strings and users often paste the
+    # lowercase form from logs — normalize here so the lookup hits.
+    ticker = (ticker or "").strip().upper()
     try:
         client = get_client()
         picked = None
