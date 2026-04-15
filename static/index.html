@@ -2412,11 +2412,11 @@ function renderPriceChartSvg(series, hoursWindow, volume) {
       };
     }),
   };
-  // IMPORTANT: escape both opening and closing <script> tags so the
-  // HTML parser doesn't prematurely end the outer <script> block.
-  // The literal "</script>" inside this source file would otherwise
-  // terminate the main script early, dumping the rest of the JS
-  // into the DOM as visible text.
+  // IMPORTANT: the closing tag below must be split so the HTML
+  // parser doesn't prematurely end the outer script block. See
+  // the README entry on inline script escaping; do not write the
+  // tag name contiguously anywhere in this source file (not even
+  // in comments — the HTML parser scans them too).
   svg += '<scr' + 'ipt type="application/json" class="ed-chart-meta">'
        + JSON.stringify(meta).replace(/</g, "\\u003c")
        + '<\/scr' + 'ipt>';
