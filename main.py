@@ -2122,7 +2122,12 @@ async def get_event_prices(ticker: str, hours: int = 24, max_points: int = 120):
     # No DB → no history.
     from db import DATABASE_URL, async_session
     if not DATABASE_URL or async_session is None:
-        return {"series": [], "hours": hours, "note": "database not configured"}
+        return {
+            "series": [],
+            "hours": hours,
+            "note": "database not configured — set DATABASE_URL to record price history",
+            "market_tickers": market_tickers,
+        }
     try:
         from sqlalchemy import select, func
         from models import Price
@@ -2184,10 +2189,85 @@ async def get_event_prices(ticker: str, hours: int = 24, max_points: int = 120):
             "series": out_series,
             "hours": hours,
             "bucket_seconds": bucket_s,
+            "market_tickers": market_tickers,
         }
     except Exception as e:
         logging.getLogger("oddsiq").warning("prices query failed: %s", e)
         return {"series": [], "error": str(e)}
+
+
+@app.get("/api/debug_prices")
+async def debug_prices(ticker: str = ""):
+    """Diagnostic for the price-history pipeline. Reports whether
+    DATABASE_URL is set, total rows in the prices table, the most
+    recent capture timestamp, a handful of recently-seen market
+    tickers, and — if the caller passes an event ticker — how many
+    rows exist for each of that event's markets."""
+    ticker = (ticker or "").strip().upper()
+    out: Dict[str, Any] = {"ticker": ticker}
+    from db import DATABASE_URL, async_session
+    out["database_url_set"] = bool(DATABASE_URL)
+    out["async_session_ready"] = async_session is not None
+    if not DATABASE_URL or async_session is None:
+        out["error"] = "database not configured"
+        return out
+    try:
+        from sqlalchemy import select, func
+        from models import Price
+        async with async_session() as session:
+            # Global stats
+            total = (await session.execute(
+                select(func.count()).select_from(Price)
+            )).scalar_one()
+            out["total_rows"] = int(total)
+            latest = (await session.execute(
+                select(func.max(Price.captured_at)).select_from(Price)
+            )).scalar()
+            out["latest_captured_at"] = latest.isoformat() if latest else None
+            # Recent tickers — useful to sanity-check the WS flush.
+            recent_stmt = (
+                select(Price.market_ticker, func.max(Price.captured_at))
+                .group_by(Price.market_ticker)
+                .order_by(func.max(Price.captured_at).desc())
+                .limit(10)
+            )
+            recent = (await session.execute(recent_stmt)).all()
+            out["recent_tickers"] = [
+                {"ticker": t, "latest": ts.isoformat() if ts else None}
+                for t, ts in recent
+            ]
+            # Per-event breakdown when a ticker was supplied.
+            if ticker:
+                get_data()
+                records_all = _cache.get("data_all") or []
+                markets_for_event = []
+                for r in records_all:
+                    if r.get("event_ticker") == ticker:
+                        markets_for_event = [
+                            o.get("ticker") for o in r.get("outcomes", [])
+                            if o.get("ticker")
+                        ]
+                        break
+                out["markets_for_event"] = markets_for_event
+                per_market = []
+                for mk in markets_for_event:
+                    row_count = (await session.execute(
+                        select(func.count()).select_from(Price)
+                        .where(Price.market_ticker == mk)
+                    )).scalar_one()
+                    latest_m = (await session.execute(
+                        select(func.max(Price.captured_at))
+                        .where(Price.market_ticker == mk)
+                    )).scalar()
+                    per_market.append({
+                        "market_ticker": mk,
+                        "row_count": int(row_count),
+                        "latest": latest_m.isoformat() if latest_m else None,
+                    })
+                out["per_market"] = per_market
+    except Exception as e:
+        out["error"] = f"{type(e).__name__}: {e}"
+    return out
 
 
 @app.get("/api/screener")

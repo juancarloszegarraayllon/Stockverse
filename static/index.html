@@ -2393,7 +2393,22 @@ async function hydratePriceCharts() {
       }
       var body = el.querySelector(".ed-chart-body");
       if (!series.length) {
-        body.innerHTML = '<div class="ed-chart-empty">No price history recorded yet for this event. Data starts accumulating as soon as the market is tracked — check back shortly.</div>';
+        // Different empty-state copy depending on why we got no
+        // series — easier to diagnose from a glance at the page.
+        var msg;
+        if (d.note) {
+          msg = d.note;
+        } else if (d.error) {
+          msg = "Failed to load price history: " + d.error;
+        } else if (hours <= 6) {
+          msg = "No price history recorded for the last " + hours
+              + "h yet. Try a longer window (24H or 7D).";
+        } else {
+          msg = "No price history recorded yet for this event. "
+              + "Data starts accumulating as soon as the market "
+              + "is tracked — check back shortly.";
+        }
+        body.innerHTML = '<div class="ed-chart-empty">' + escH(msg) + '</div>';
         continue;
       }
       var svg = renderPriceChartSvg(series);
