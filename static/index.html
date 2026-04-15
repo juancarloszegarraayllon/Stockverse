@@ -322,6 +322,10 @@ html,body{overscroll-behavior:none}
         </div>
       </div>
       <div class="sf-group">
+        <label>Min Total Volume</label>
+        <input type="number" id="sf-min-volume" placeholder="e.g. 100" min="0">
+      </div>
+      <div class="sf-group">
         <label>Min 24h Volume</label>
         <input type="number" id="sf-min-vol24h" placeholder="e.g. 10" min="0">
       </div>
@@ -330,8 +334,8 @@ html,body{overscroll-behavior:none}
         <input type="number" id="sf-min-oi" placeholder="e.g. 50" min="0">
       </div>
       <div class="sf-group">
-        <label>Min Total Volume</label>
-        <input type="number" id="sf-min-volume" placeholder="e.g. 100" min="0">
+        <label>Expiration Time</label>
+        <input type="date" id="sf-expires-before">
       </div>
       <button id="sf-apply" class="sf-btn">Apply Filters</button>
       <div id="screener-count"></div>
@@ -1441,6 +1445,7 @@ async function screenerLoad(append) {
   var minVol24 = document.getElementById("sf-min-vol24h").value;
   var minOi = document.getElementById("sf-min-oi").value;
   var minVol = document.getElementById("sf-min-volume").value;
+  var expiresBefore = document.getElementById("sf-expires-before").value;
   var search = document.getElementById("sf-search").value;
   if (cat) url += "&category=" + encodeURIComponent(cat);
   if (sport) url += "&sport=" + encodeURIComponent(sport);
@@ -1450,6 +1455,7 @@ async function screenerLoad(append) {
   if (minVol24) url += "&min_vol24h=" + minVol24;
   if (minOi) url += "&min_oi=" + minOi;
   if (minVol) url += "&min_volume=" + minVol;
+  if (expiresBefore) url += "&expires_before=" + encodeURIComponent(expiresBefore);
   if (search) url += "&search=" + encodeURIComponent(search);
   try {
     var r = await fetch(url);
@@ -1512,6 +1518,7 @@ document.getElementById("sf-reset").addEventListener("click", function() {
   document.getElementById("sf-min-vol24h").value = "";
   document.getElementById("sf-min-oi").value = "";
   document.getElementById("sf-min-volume").value = "";
+  document.getElementById("sf-expires-before").value = "";
   document.getElementById("sf-search").value = "";
   screenerState.offset = 0;
   screenerLoad();

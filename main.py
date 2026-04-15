@@ -1608,6 +1608,7 @@ async def get_screener(
     min_volume: Optional[float] = None,
     min_oi: Optional[float] = None,
     min_vol24h: Optional[float] = None,
+    expires_before: Optional[str] = None,   # ISO date 'YYYY-MM-DD'
     sort_by: Optional[str] = "volume_24h",  # prob, volume, volume_24h, oi, spread, change, liquidity
     sort_dir: Optional[str] = "desc",       # asc, desc
     offset: int = 0,
@@ -1678,6 +1679,20 @@ async def get_screener(
                 continue
             if min_vol24h is not None and vol24 < min_vol24h:
                 continue
+            if expires_before:
+                # Drop rows whose expected_expiration_time is strictly
+                # after the user-selected date. Fail open if either
+                # value is malformed so a bad filter never wipes the
+                # whole table.
+                try:
+                    from datetime import datetime as _datetime
+                    if exp_dt:
+                        row_dt = _datetime.fromisoformat(exp_dt.replace("Z", "+00:00"))
+                        cutoff = _datetime.fromisoformat(expires_before + "T23:59:59+00:00")
+                        if row_dt > cutoff:
+                            continue
+                except Exception:
+                    pass
             if search:
                 sq = search.lower()
                 if sq not in title.lower() and sq not in o.get("label", "").lower():
