@@ -334,6 +334,10 @@ html,body{overscroll-behavior:none}
         <input type="number" id="sf-min-oi" placeholder="e.g. 50" min="0">
       </div>
       <div class="sf-group">
+        <label>Max Days to Expiration</label>
+        <input type="number" id="sf-max-days" placeholder="e.g. 30" min="0">
+      </div>
+      <div class="sf-group">
         <label>Expiration Time</label>
         <input type="date" id="sf-expires-before">
       </div>
@@ -1372,6 +1376,17 @@ var SCREENER_COLS = [
   { key: "volume",             label: "Volume",            cls: "s-num", w: 90,  fmt: function(v) { return v != null ? v.toLocaleString() : "—"; } },
   { key: "volume_24h",         label: "Volume Last 24h",   cls: "s-num", w: 90,  fmt: function(v) { return v != null ? v.toLocaleString() : "—"; } },
   { key: "open_interest",      label: "Open Interest",     cls: "s-num", w: 90,  fmt: function(v) { return v != null ? v.toLocaleString() : "—"; } },
+  { key: "days_to_expiration", label: "Days to Expiration", cls: "s-num", w: 90, fmt: function(v, row) {
+      var exp = row && row.expiration_time;
+      if (!exp) return "—";
+      try {
+        var d = new Date(exp);
+        var ms = d.getTime() - Date.now();
+        var days = Math.ceil(ms / 86400000);
+        if (days < 0) return "Expired";
+        return days + (days === 1 ? " day" : " days");
+      } catch(e) { return "—"; }
+    }},
   { key: "expiration_time",    label: "Expiration Time",   cls: "",      w: 100, fmt: function(v) {
       if (!v) return "—";
       try { var d = new Date(v); return d.toLocaleDateString("en-US", {month:"short",day:"numeric",year:"numeric"}); } catch(e) { return "—"; }
@@ -1445,6 +1460,7 @@ async function screenerLoad(append) {
   var minVol24 = document.getElementById("sf-min-vol24h").value;
   var minOi = document.getElementById("sf-min-oi").value;
   var minVol = document.getElementById("sf-min-volume").value;
+  var maxDays = document.getElementById("sf-max-days").value;
   var expiresBefore = document.getElementById("sf-expires-before").value;
   var search = document.getElementById("sf-search").value;
   if (cat) url += "&category=" + encodeURIComponent(cat);
@@ -1455,6 +1471,7 @@ async function screenerLoad(append) {
   if (minVol24) url += "&min_vol24h=" + minVol24;
   if (minOi) url += "&min_oi=" + minOi;
   if (minVol) url += "&min_volume=" + minVol;
+  if (maxDays) url += "&max_days=" + encodeURIComponent(maxDays);
   if (expiresBefore) url += "&expires_before=" + encodeURIComponent(expiresBefore);
   if (search) url += "&search=" + encodeURIComponent(search);
   try {
@@ -1518,6 +1535,7 @@ document.getElementById("sf-reset").addEventListener("click", function() {
   document.getElementById("sf-min-vol24h").value = "";
   document.getElementById("sf-min-oi").value = "";
   document.getElementById("sf-min-volume").value = "";
+  document.getElementById("sf-max-days").value = "";
   document.getElementById("sf-expires-before").value = "";
   document.getElementById("sf-search").value = "";
   screenerState.offset = 0;

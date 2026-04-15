@@ -1609,6 +1609,7 @@ async def get_screener(
     min_oi: Optional[float] = None,
     min_vol24h: Optional[float] = None,
     expires_before: Optional[str] = None,   # ISO date 'YYYY-MM-DD'
+    max_days: Optional[int] = None,         # expires within N days from now
     sort_by: Optional[str] = "volume_24h",  # prob, volume, volume_24h, oi, spread, change, liquidity
     sort_dir: Optional[str] = "desc",       # asc, desc
     offset: int = 0,
@@ -1689,6 +1690,17 @@ async def get_screener(
                     if exp_dt:
                         row_dt = _datetime.fromisoformat(exp_dt.replace("Z", "+00:00"))
                         cutoff = _datetime.fromisoformat(expires_before + "T23:59:59+00:00")
+                        if row_dt > cutoff:
+                            continue
+                except Exception:
+                    pass
+            if max_days is not None and max_days >= 0:
+                # Drop rows expiring more than N days from now.
+                try:
+                    from datetime import datetime as _dt2, timedelta as _td
+                    if exp_dt:
+                        row_dt = _dt2.fromisoformat(exp_dt.replace("Z", "+00:00"))
+                        cutoff = _dt2.now(tz=timezone.utc) + _td(days=max_days)
                         if row_dt > cutoff:
                             continue
                 except Exception:
