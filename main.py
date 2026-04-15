@@ -1646,23 +1646,48 @@ def _enrich_soccer_aggregate(g, title):
         sg = sofa_match(title, "Soccer")
     except Exception:
         return g
-    if not sg:
-        return g
-    # Prefer SofaScore's aggregate fields when present.
-    if sg.get("is_two_leg"):
-        g["is_two_leg"] = True
-        if sg.get("aggregate_home") is not None:
-            g["aggregate_home"] = sg.get("aggregate_home")
-        if sg.get("aggregate_away") is not None:
-            g["aggregate_away"] = sg.get("aggregate_away")
-        if sg.get("leg_number") and not g.get("leg_number"):
-            g["leg_number"] = sg.get("leg_number")
-        if sg.get("round_name") and not g.get("round_name"):
-            g["round_name"] = sg.get("round_name")
-        if sg.get("tournament_name") and not g.get("tournament_name"):
-            g["tournament_name"] = sg.get("tournament_name")
-        if sg.get("aggregate_winner") and not g.get("aggregate_winner"):
-            g["aggregate_winner"] = sg.get("aggregate_winner")
+    if sg:
+        # Prefer SofaScore's aggregate fields when present.
+        if sg.get("is_two_leg"):
+            g["is_two_leg"] = True
+            if sg.get("aggregate_home") is not None:
+                g["aggregate_home"] = sg.get("aggregate_home")
+            if sg.get("aggregate_away") is not None:
+                g["aggregate_away"] = sg.get("aggregate_away")
+            if sg.get("leg_number") and not g.get("leg_number"):
+                g["leg_number"] = sg.get("leg_number")
+            if sg.get("round_name") and not g.get("round_name"):
+                g["round_name"] = sg.get("round_name")
+            if sg.get("tournament_name") and not g.get("tournament_name"):
+                g["tournament_name"] = sg.get("tournament_name")
+            if sg.get("aggregate_winner") and not g.get("aggregate_winner"):
+                g["aggregate_winner"] = sg.get("aggregate_winner")
+    # Final fallback — on-demand SofaScore search when the cached
+    # games (live + scheduled) don't contain the fixture. This is a
+    # blocking HTTP call per card, scoped to 2-leg soccer only and
+    # cached for 5 minutes, so the cost is negligible in practice.
+    still_missing = (g.get("aggregate_home") is None or g.get("aggregate_away") is None)
+    if g.get("is_two_leg") and still_missing:
+        try:
+            from sofascore_feed import lookup_aggregate_sync
+            home_hint = g.get("home_display") or ""
+            away_hint = g.get("away_display") or ""
+            agg = lookup_aggregate_sync(home_hint, away_hint) if home_hint and away_hint else None
+            if agg:
+                if agg.get("aggregate_home") is not None:
+                    g["aggregate_home"] = agg["aggregate_home"]
+                if agg.get("aggregate_away") is not None:
+                    g["aggregate_away"] = agg["aggregate_away"]
+                if agg.get("leg_number") and not g.get("leg_number"):
+                    g["leg_number"] = agg["leg_number"]
+                if agg.get("round_name") and not g.get("round_name"):
+                    g["round_name"] = agg["round_name"]
+                if agg.get("tournament_name") and not g.get("tournament_name"):
+                    g["tournament_name"] = agg["tournament_name"]
+                if agg.get("aggregate_winner") and not g.get("aggregate_winner"):
+                    g["aggregate_winner"] = agg["aggregate_winner"]
+        except Exception:
+            pass
     return g
 
 

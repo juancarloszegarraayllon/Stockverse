@@ -53,6 +53,9 @@ html,body{overscroll-behavior:none}
 .market-card:hover{border-color:#333}
 .card-top{display:flex;justify-content:space-between;align-items:flex-start;gap:6px;flex-wrap:wrap;min-width:0}
 .card-live-row{margin:4px 0 2px}
+.card-series-row{margin:2px 0}
+.agg-pill{display:inline-flex;align-items:center;gap:5px;font-size:9px;font-weight:800;color:var(--green);text-transform:uppercase;letter-spacing:0.6px;background:rgba(0,200,83,0.08);border:1px solid rgba(0,200,83,0.35);padding:2px 6px;border-radius:4px}
+.agg-pill .agg-num{color:var(--text);font-weight:900;letter-spacing:0.3px}
 .card-pills{display:flex;flex-direction:column;gap:2px}
 .cat-pill{font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:0.6px;color:var(--text)}
 .subcat-pill{font-size:11px;color:#888;letter-spacing:0.3px}
@@ -828,6 +831,44 @@ function liveScoreString(live) {
   return (aa || "AWAY") + " " + as + " - " + (ha || "HOME") + " " + hs;
 }
 
+// Compact aggregate / series indicator for card view. Shows a
+// single pill line like "AGG 3-2 · Leg 2/2" for soccer 2-leg
+// ties, or "SERIES OKC 3-1" for NBA playoffs. Returns "" when
+// the game isn't a playoff / knockout tie or we lack the data.
+function renderSeriesPill(ev) {
+  var live = ev && ev._live_state;
+  if (!live) return "";
+  if (live.is_two_leg) {
+    var aggH = (typeof live.aggregate_home === "number") ? live.aggregate_home : null;
+    var aggA = (typeof live.aggregate_away === "number") ? live.aggregate_away : null;
+    var parts = [];
+    if (aggH !== null && aggA !== null) {
+      parts.push('<span class="agg-num">' + aggH + '\u2013' + aggA + '</span>');
+    }
+    if (live.leg_number) parts.push("Leg " + live.leg_number + "/2");
+    if (parts.length === 0) return "";
+    return '<span class="agg-pill" title="Aggregate across both legs">AGG ' + parts.join(' \u00B7 ') + '</span>';
+  }
+  if (live.is_playoff) {
+    var hW = (typeof live.series_home_wins === "number") ? live.series_home_wins : null;
+    var aW = (typeof live.series_away_wins === "number") ? live.series_away_wins : null;
+    var gN = live.series_game_number;
+    if (hW === null || aW === null) {
+      if (live.series_summary) return '<span class="agg-pill">PLAYOFF \u00B7 ' + live.series_summary.toUpperCase() + '</span>';
+      return "";
+    }
+    var leader = live.home_abbr || "HOME";
+    var leadWins = hW, trailWins = aW;
+    if (aW > hW) { leader = live.away_abbr || "AWAY"; leadWins = aW; trailWins = hW; }
+    else if (aW === hW) { leader = "TIED"; }
+    var tag = leader === "TIED" ? ("SERIES TIED " + hW + "\u2013" + aW)
+                                : ("SERIES " + leader + " " + leadWins + "\u2013" + trailWins);
+    if (gN) tag = "GAME " + gN + " \u00B7 " + tag;
+    return '<span class="agg-pill">' + tag + '</span>';
+  }
+  return "";
+}
+
 function renderTimeSlot(ev) {
   if (isLive(ev)) {
     // ESPN says the game has already ended even though Kalshi's
@@ -1127,6 +1168,10 @@ function buildCard(ev) {
   // Row 3: live badge / date + ticker link
   var timeSlot = renderTimeSlot(ev);
   if (timeSlot) h += "<div class=\"card-live-row\">" + timeSlot + "</div>";
+  // Playoff / 2-leg series pill — rendered below the live badge on
+  // the card so the user sees "AGG 3-2 · Leg 2/2" at a glance.
+  var seriesPill = renderSeriesPill(ev);
+  if (seriesPill) h += '<div class="card-series-row">' + seriesPill + '</div>';
   h += "<div class=\"card-ticker\">";
   if (url) h += "<a href=\"" + url + "\" target=\"_blank\">" + ticker + "</a>";
   else h += "<span>" + ticker + "</span>";
@@ -1379,6 +1424,23 @@ async function refreshVisible() {
       if (slot) {
         var fresh = renderTimeSlot(ev);
         if (slot.innerHTML !== fresh) slot.innerHTML = fresh;
+      }
+      // Series/aggregate pill — update in place so newly resolved
+      // aggregate data surfaces without a full card rebuild.
+      var seriesEl = card.querySelector(".card-series-row");
+      var freshSeries = renderSeriesPill(ev);
+      if (seriesEl && freshSeries) {
+        if (seriesEl.innerHTML !== freshSeries) seriesEl.innerHTML = freshSeries;
+      } else if (!seriesEl && freshSeries) {
+        var anchor = card.querySelector(".card-live-row") || card.querySelector(".card-ticker");
+        if (anchor) {
+          var d = document.createElement("div");
+          d.className = "card-series-row";
+          d.innerHTML = freshSeries;
+          anchor.parentNode.insertBefore(d, anchor.nextSibling);
+        }
+      } else if (seriesEl && !freshSeries) {
+        seriesEl.parentNode.removeChild(seriesEl);
       }
       // Tennis scoreboard (if present) — update in place from the
       // freshly fetched _live_state so live score changes flow in

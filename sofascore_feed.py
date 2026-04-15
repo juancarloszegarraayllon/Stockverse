@@ -656,3 +656,124 @@ def match_game(title: str, sport: str) -> Optional[Dict[str, Any]]:
             best_score = score
             best = g
     return best
+
+
+# ── On-demand aggregate search ──────────────────────────────────
+# Synchronous fallback used by main.py when the live + scheduled
+# caches don't contain a fixture but we still need its 2-leg
+# aggregate. Scoped to Soccer knockout ties only (UCL, EL, CL,
+# Copa Libertadores, cup 2-leg ties). Runs at most once per
+# cache request, in-line with the API handler, so latency is
+# noticeable but acceptable for the tiny number of games that
+# hit this path.
+
+_AGG_CACHE: Dict[str, Dict[str, Any]] = {}
+_AGG_CACHE_TTL = 300  # 5 minutes — aggregate rarely changes mid-match
+
+def lookup_aggregate_sync(home_hint: str, away_hint: str) -> Optional[Dict[str, Any]]:
+    """Try to find a soccer event matching the given team hints and
+    return its aggregate / leg / winner data. Returns None on any
+    failure — callers must treat a missing return as "unknown".
+
+    The flow:
+      1. Hit SofaScore's global search endpoint with "<home> <away>".
+      2. Pick the first event whose teams look like both hints.
+      3. Fetch /api/v1/event/{id} and read homeScore.aggregated /
+         awayScore.aggregated + aggregatedWinnerCode + roundInfo.
+    """
+    if httpx is None:
+        return None
+    if not home_hint or not away_hint:
+        return None
+    ck = (_normalize(home_hint) + "|" + _normalize(away_hint))
+    cached = _AGG_CACHE.get(ck)
+    if cached and (time.time() - cached.get("_ts", 0) < _AGG_CACHE_TTL):
+        return cached.get("data")
+    # SofaScore's search endpoint. "search/events" is the focused
+    # endpoint that returns a short list of matched events.
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                      "AppleWebKit/537.36 (KHTML, like Gecko) "
+                      "Chrome/125.0.0.0 Safari/537.36",
+        "Accept": "application/json, text/plain, */*",
+        "Accept-Language": "en-US,en;q=0.9",
+        "Referer": "https://www.sofascore.com/",
+        "Origin": "https://www.sofascore.com",
+    }
+    # Combine both hints for the search query — forces SofaScore to
+    # return fixtures that include both teams.
+    q = f"{home_hint} {away_hint}".strip()
+    try:
+        with httpx.Client(headers=headers, follow_redirects=True, timeout=10.0) as client:
+            r = client.get("https://api.sofascore.com/api/v1/search/events",
+                           params={"q": q, "page": 0})
+            if r.status_code != 200:
+                return None
+            data = r.json() or {}
+            results = data.get("results") or []
+            # results[i].entity holds the actual event dict when
+            # type == "event". Filter to soccer events whose teams
+            # match both hints.
+            h_norm = _normalize(home_hint)
+            a_norm = _normalize(away_hint)
+            chosen = None
+            for item in results:
+                if not isinstance(item, dict):
+                    continue
+                if item.get("type") != "event":
+                    continue
+                ent = item.get("entity") or {}
+                # Team names on the search event dict
+                home_t = (ent.get("homeTeam") or {})
+                away_t = (ent.get("awayTeam") or {})
+                h_name = _normalize(home_t.get("name", ""))
+                a_name = _normalize(away_t.get("name", ""))
+                # Accept either orientation (home/away may be flipped
+                # in the search vs. the Kalshi title).
+                ok1 = (h_norm in h_name or h_name in h_norm) and (a_norm in a_name or a_name in a_norm)
+                ok2 = (h_norm in a_name or a_name in h_norm) and (a_norm in h_name or h_name in a_norm)
+                if ok1 or ok2:
+                    chosen = ent
+                    break
+            if not chosen:
+                return None
+            ev_id = chosen.get("id")
+            if not ev_id:
+                return None
+            # Pull the detail endpoint for authoritative aggregate.
+            dr = client.get(f"https://api.sofascore.com/api/v1/event/{ev_id}")
+            if dr.status_code != 200:
+                return None
+            ddata = dr.json() or {}
+            dev = ddata.get("event") or chosen
+            d_home = dev.get("homeScore") or {}
+            d_away = dev.get("awayScore") or {}
+            agg_h = d_home.get("aggregated")
+            agg_a = d_away.get("aggregated")
+            if agg_h is None and agg_a is None:
+                ascore = dev.get("aggregatedScore") or {}
+                agg_h = ascore.get("home")
+                agg_a = ascore.get("away")
+            round_info = dev.get("roundInfo") or {}
+            rn = (round_info.get("name") or "").strip()
+            leg_n = None
+            rnl = rn.lower()
+            if "2nd leg" in rnl or "second leg" in rnl:
+                leg_n = 2
+            elif "1st leg" in rnl or "first leg" in rnl:
+                leg_n = 1
+            out = {
+                "aggregate_home":    int(agg_h) if isinstance(agg_h, (int, float)) else None,
+                "aggregate_away":    int(agg_a) if isinstance(agg_a, (int, float)) else None,
+                "leg_number":        leg_n,
+                "round_name":        rn,
+                "aggregate_winner":  dev.get("aggregatedWinnerCode") or "",
+                "tournament_name":   ((dev.get("tournament") or {}).get("name") or ""),
+                "is_two_leg":        True if (agg_h is not None or leg_n) else False,
+                "_sofa_event_id":    ev_id,
+            }
+            _AGG_CACHE[ck] = {"_ts": time.time(), "data": out}
+            return out
+    except Exception as e:
+        log.debug("sofascore aggregate sync lookup failed: %s", e)
+        return None
