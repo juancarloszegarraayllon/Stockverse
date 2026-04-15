@@ -1,12 +1,34 @@
-from fastapi import FastAPI, Query
-from fastapi.responses import HTMLResponse, FileResponse, Response
+from fastapi import FastAPI, Query, Request
+from fastapi.responses import HTMLResponse, FileResponse, Response, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
-import os, time, tempfile, functools, asyncio, threading, logging
+from starlette.middleware.base import BaseHTTPMiddleware
+import os, time, tempfile, functools, asyncio, threading, logging, hashlib, json
 from datetime import date, timedelta, timezone
 from typing import Optional
 
 logging.basicConfig(level=logging.INFO)
+
+# ── Sentry error tracking (optional) ────────────────────────────────
+# Enabled automatically when SENTRY_DSN is set in the environment.
+# No-op otherwise, so local dev and unconfigured deploys skip it.
+# Set SENTRY_TRACES_SAMPLE_RATE (0.0-1.0) to enable performance
+# monitoring; defaults to 0 (error-only, free tier friendly).
+_SENTRY_DSN = os.environ.get("SENTRY_DSN", "").strip()
+if _SENTRY_DSN:
+    try:
+        import sentry_sdk
+        sentry_sdk.init(
+            dsn=_SENTRY_DSN,
+            traces_sample_rate=float(os.environ.get("SENTRY_TRACES_SAMPLE_RATE", "0.0")),
+            environment=os.environ.get("SENTRY_ENVIRONMENT", "production"),
+            # Don't send PII by default. Safe since we don't have
+            # user accounts yet.
+            send_default_pii=False,
+        )
+        logging.getLogger("oddsiq").info("sentry enabled")
+    except Exception as e:
+        logging.getLogger("oddsiq").warning("sentry init failed: %s", e)
 
 app = FastAPI(title="OddsIQ API")
 
@@ -78,6 +100,75 @@ app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], all
 # once gzipped. Huge bandwidth savings for paginated card loads and
 # the screener table.
 app.add_middleware(GZipMiddleware, minimum_size=500)
+
+
+# ── Request timing + slow-request logging ──────────────────────────
+# Logs every request that takes longer than SLOW_REQUEST_MS so we can
+# spot regressions. Also sets X-Response-Time-Ms on the response.
+SLOW_REQUEST_MS = int(os.environ.get("SLOW_REQUEST_MS", "1000"))
+
+
+class TimingMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        t0 = time.time()
+        response = await call_next(request)
+        elapsed_ms = int((time.time() - t0) * 1000)
+        response.headers["X-Response-Time-Ms"] = str(elapsed_ms)
+        if elapsed_ms >= SLOW_REQUEST_MS:
+            logging.getLogger("slow").warning(
+                "SLOW %d ms %s %s",
+                elapsed_ms,
+                request.method,
+                str(request.url.path) + ("?" + request.url.query if request.url.query else ""),
+            )
+        return response
+
+
+app.add_middleware(TimingMiddleware)
+
+
+# ── ETag middleware for /api/events ────────────────────────────────
+# Live-refresh polls /api/events every 5s per open tab. When prices
+# haven't changed, we return 304 Not Modified (empty body, ~200 B)
+# instead of the full ~20-50 KB JSON. Saves substantial bandwidth at
+# scale and reduces client parse cost.
+class EventsETagMiddleware(BaseHTTPMiddleware):
+    _etag_paths = ("/api/events", "/api/screener", "/api/meta",
+                   "/api/categories", "/api/sports")
+
+    async def dispatch(self, request: Request, call_next):
+        response = await call_next(request)
+        if request.method != "GET":
+            return response
+        path = request.url.path
+        if not any(path == p for p in self._etag_paths):
+            return response
+        if response.status_code != 200:
+            return response
+        # Buffer the response body so we can hash it. Gzip middleware
+        # runs after this (middleware order is reverse of add order),
+        # so the body here is the raw JSON — perfect for hashing
+        # before it gets compressed.
+        body_chunks = []
+        async for chunk in response.body_iterator:
+            body_chunks.append(chunk)
+        body = b"".join(body_chunks)
+        etag = '"' + hashlib.md5(body).hexdigest() + '"'
+        inm = request.headers.get("if-none-match")
+        if inm and inm == etag:
+            return Response(status_code=304, headers={"ETag": etag,
+                            "Cache-Control": "no-cache"})
+        new_headers = dict(response.headers)
+        new_headers["ETag"] = etag
+        new_headers["Cache-Control"] = "no-cache"
+        # Content-Length may no longer match after we rebuild; let
+        # Starlette/Uvicorn recompute it.
+        new_headers.pop("content-length", None)
+        return Response(content=body, status_code=response.status_code,
+                        headers=new_headers, media_type=response.media_type)
+
+
+app.add_middleware(EventsETagMiddleware)
 
 
 async def _score_flush_loop():
@@ -3278,17 +3369,48 @@ import os as _os
 @app.get("/", response_class=HTMLResponse)
 def root():
     p = _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), "static", "index.html")
-    if _os.path.exists(p):
-        # FileResponse sets Last-Modified + ETag automatically, so
-        # returning visitors get a cheap 304 when the file hasn't
-        # changed. Keep max-age short so users always pick up the
-        # latest deploy within a minute.
-        return FileResponse(
-            p,
-            media_type="text/html; charset=utf-8",
-            headers={"Cache-Control": "public, max-age=60, must-revalidate"},
-        )
-    return HTMLResponse("<h1>static/index.html not found</h1><p>Make sure index.html is in the static/ folder</p>")
+    if not _os.path.exists(p):
+        return HTMLResponse("<h1>static/index.html not found</h1><p>Make sure index.html is in the static/ folder</p>")
+    # Read + substitute analytics snippet. Caches the rendered HTML
+    # in memory so we don't re-read the file on every request — the
+    # cache is invalidated on file mtime change so dev reloads work.
+    global _INDEX_HTML_CACHE
+    mtime = _os.path.getmtime(p)
+    if _INDEX_HTML_CACHE.get("mtime") != mtime:
+        with open(p, "r", encoding="utf-8") as f:
+            html = f.read()
+        html = html.replace("<!--__ANALYTICS__-->", _analytics_snippet())
+        _INDEX_HTML_CACHE["html"] = html
+        _INDEX_HTML_CACHE["mtime"] = mtime
+    return HTMLResponse(
+        _INDEX_HTML_CACHE["html"],
+        headers={"Cache-Control": "public, max-age=60, must-revalidate"},
+    )
+
+
+_INDEX_HTML_CACHE = {"html": None, "mtime": None}
+
+
+def _analytics_snippet() -> str:
+    """Return the <script> tag to inject into index.html, based on
+    environment variables. Currently supports Plausible (lightweight,
+    privacy-friendly, GDPR-compliant without cookie banners).
+
+    Set ANALYTICS_DOMAIN to your Plausible site domain (e.g.
+    "oddsiq.com") to enable. Self-hosted Plausible instances can
+    point ANALYTICS_SCRIPT_URL at a custom script URL.
+    """
+    domain = os.environ.get("ANALYTICS_DOMAIN", "").strip()
+    if not domain:
+        return ""
+    script_url = os.environ.get(
+        "ANALYTICS_SCRIPT_URL",
+        "https://plausible.io/js/script.js",
+    )
+    return (
+        f'<script defer data-domain="{domain}" '
+        f'src="{script_url}"></script>'
+    )
 
 
 @app.get("/healthz")

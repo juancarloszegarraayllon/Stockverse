@@ -62,10 +62,38 @@ jobs:
 The `/healthz` endpoint is intentionally cheap (no DB, no Kalshi
 calls) so the keep-warm traffic has near-zero cost.
 
+## Environment variables
+
+Required:
+- `KALSHI_API_KEY_ID` — Kalshi API key ID
+- `KALSHI_PRIVATE_KEY` — Kalshi API private key (PEM content, multi-line)
+
+Optional:
+- `DATABASE_URL` — Postgres URL (Railway injects automatically with the plugin)
+- `SENTRY_DSN` — enables Sentry error tracking
+- `SENTRY_TRACES_SAMPLE_RATE` — `0.0`–`1.0`, Sentry performance sampling (default `0.0`)
+- `SENTRY_ENVIRONMENT` — Sentry env tag (default `production`)
+- `ANALYTICS_DOMAIN` — Plausible domain (e.g. `oddsiq.com`) to enable analytics
+- `ANALYTICS_SCRIPT_URL` — override Plausible script URL for self-hosted instances
+- `SLOW_REQUEST_MS` — log requests slower than this many ms (default `1000`)
+
+## Launch checklist
+
+Before you share the URL:
+
+1. **Custom domain** — Railway → Settings → Domains. Point your DNS (CNAME to the Railway-provided host). SSL is automatic.
+2. **Keep-warm pinger** — see section above. 5-minute HTTP monitor on `/healthz`.
+3. **Sentry** — [sentry.io](https://sentry.io) free tier. Create a project, copy the DSN, set `SENTRY_DSN` in Railway env. Python errors appear with full stack traces + request context.
+4. **Analytics** — [plausible.io](https://plausible.io) ($9/mo) or self-host. Add your domain, set `ANALYTICS_DOMAIN` in Railway env. Events track automatically.
+5. **Smoke-test** — visit your domain, click through sports categories, open a card, refresh, use browser back. Nothing should 500.
+6. **Watch logs** — Railway logs will show `SLOW …` warnings for any request > 1s; investigate anything that recurs.
+
 ## Features
 - True infinite scroll (IntersectionObserver)
 - Sticky sports nav with expand/collapse
 - Date filtering
 - Search
-- 30-min data cache
+- Stale-while-revalidate cache (30-min TTL, 2-hour hard expiry)
+- Gzip compression + ETag on hot endpoints
+- Optional Sentry + Plausible integrations
 - All Kalshi sports/categories
