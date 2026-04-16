@@ -2267,73 +2267,93 @@ window.toggleRules = function(btn) {
 // sample_active_market (every market field) — we just lay them
 // out in a dense grid for at-a-glance inspection.
 
-// Field catalog: each entry is [label, key, sourceType]. Fields
-// render in rows of 4 label/value pairs; rows are grouped by
-// sourceType ("event" | "market") for logical clustering. Keys
-// match the raw Kalshi field names exactly so future additions
-// just need one-line changes here.
-var DATA_GRID_FIELDS = [
-  // Identity
-  ["Event Ticker",          "event_ticker",            "event"],
-  ["Series Ticker",         "series_ticker",           "event"],
-  ["Category",              "category",                "event"],
-  ["Market Type",           "market_type",             "market"],
-  ["Title",                 "title",                   "event"],
-  ["Sub Title",             "sub_title",               "event"],
-  ["Status",                "status",                  "market"],
-  ["Result",                "result",                  "market"],
-  ["Ticker",                "ticker",                  "market"],
-  ["Yes Sub Title",         "yes_sub_title",           "market"],
-  ["No Sub Title",          "no_sub_title",            "market"],
-  ["Markets",               "__markets_count",         "event"],
-  ["Mutually Exclusive",    "mutually_exclusive",      "event"],
-  ["Collateral Return Type","collateral_return_type",  "event"],
-  ["Available On Brokers",  "available_on_brokers",    "event"],
-  ["Fractional Trading",    "fractional_trading_enabled", "market"],
-  // Pricing
-  ["Probability",           "last_price_dollars",      "market"],
-  ["Yes Bid",               "yes_bid_dollars",         "market"],
-  ["Yes Ask",               "yes_ask_dollars",         "market"],
-  ["No Bid",                "no_bid_dollars",          "market"],
-  ["No Ask",                "no_ask_dollars",          "market"],
-  ["Previous Price",        "previous_price_dollars",  "market"],
-  ["Previous Yes Bid",      "previous_yes_bid_dollars","market"],
-  ["Previous Yes Ask",      "previous_yes_ask_dollars","market"],
-  ["Yes Bid Size",          "yes_bid_size_fp",         "market"],
-  ["Yes Ask Size",          "yes_ask_size_fp",         "market"],
-  ["Tick Size",             "tick_size",               "market"],
-  ["Notional Value",        "notional_value_dollars",  "market"],
-  // Volume / Liquidity
-  ["Volume",                "volume_fp",               "market"],
-  ["Volume 24h",            "volume_24h_fp",           "market"],
-  ["Open Interest",         "open_interest_fp",        "market"],
-  ["Liquidity",             "liquidity_dollars",       "market"],
-  // Timing
-  ["Open Time",             "open_time",               "market"],
-  ["Close Time",            "close_time",              "market"],
-  ["Created Time",          "created_time",            "market"],
-  ["Updated Time",          "updated_time",            "market"],
-  ["Expected Expiration",   "expected_expiration_time","market"],
-  ["Expiration Time",       "expiration_time",         "market"],
-  ["Latest Expiration",     "latest_expiration_time",  "market"],
-  ["Settlement Timer (s)",  "settlement_timer_seconds","market"],
-  ["Can Close Early",       "can_close_early",         "market"],
-  ["Early Close Condition", "early_close_condition",   "market"],
-  ["Fee Waiver Expiration", "fee_waiver_expiration_time","market"],
-  ["Settlement Ts",         "settlement_ts",           "market"],
-  // Strike / Ranges
-  ["Strike Date",           "strike_date",             "event"],
-  ["Strike Period",         "strike_period",           "event"],
-  ["Floor Strike",          "floor_strike",            "market"],
-  ["Cap Strike",            "cap_strike",              "market"],
-  ["Functional Strike",     "functional_strike",       "market"],
-  ["Custom Strike",         "custom_strike",           "market"],
-  ["Price Level Structure", "price_level_structure",   "market"],
-  ["Price Ranges",          "price_ranges",            "market"],
-  ["Expiration Value",      "expiration_value",        "market"],
-  ["Primary Participant",   "primary_participant_key", "market"],
-  ["Last Updated Ts",       "last_updated_ts",         "event"],
-  ["Product Metadata",      "product_metadata",        "event"],
+// Field catalog organized in COLUMNS that match the user's
+// spreadsheet layout. Each inner array is one vertical column;
+// the renderer interleaves them into rows of 4 pairs (like
+// finviz reads: row1 = col1[0], col2[0], col3[0], col4[0]).
+var _DATA_GRID_COLUMNS = [
+  // Column 1: Event identity
+  [
+    ["Event Ticker",          "event_ticker",            "event"],
+    ["Title",                 "title",                   "event"],
+    ["Series Ticker",         "series_ticker",           "event"],
+    ["Category",              "category",                "event"],
+    ["Markets",               "__markets_count",         "event"],
+    ["Sub Title",             "sub_title",               "event"],
+    ["Mutually Exclusive",    "mutually_exclusive",      "event"],
+    ["Collateral Return Type","collateral_return_type",  "event"],
+    ["Strike Date",           "strike_date",             "event"],
+    ["Strike Period",         "strike_period",           "event"],
+    ["Available On Brokers",  "available_on_brokers",    "event"],
+    ["Last Updated Ts",       "last_updated_ts",         "event"],
+    ["Product Metadata",      "product_metadata",        "event"],
+  ],
+  // Column 2: Pricing
+  [
+    ["Yes Bid",               "yes_bid_dollars",         "market"],
+    ["Yes Ask",               "yes_ask_dollars",         "market"],
+    ["No Bid",                "no_bid_dollars",          "market"],
+    ["No Ask",                "no_ask_dollars",          "market"],
+    ["Probability",           "last_price_dollars",      "market"],
+    ["Previous Price",        "previous_price_dollars",  "market"],
+    ["Previous Yes Bid",      "previous_yes_bid_dollars","market"],
+    ["Previous Yes Ask",      "previous_yes_ask_dollars","market"],
+  ],
+  // Column 3: Volume / Sizes
+  [
+    ["Volume",                "volume_fp",               "market"],
+    ["Volume 24h",            "volume_24h_fp",           "market"],
+    ["Open Interest Fp",      "open_interest_fp",        "market"],
+    ["Liquidity",             "liquidity_dollars",       "market"],
+    ["Yes Bid Size",          "yes_bid_size_fp",         "market"],
+    ["Yes Ask Size",          "yes_ask_size_fp",         "market"],
+  ],
+  // Column 4: Market identity
+  [
+    ["Ticker",                "ticker",                  "market"],
+    ["Yes Sub Title",         "yes_sub_title",           "market"],
+    ["No Sub Title",          "no_sub_title",            "market"],
+    ["Status",                "status",                  "market"],
+    ["Result",                "result",                  "market"],
+    ["Market Type",           "market_type",             "market"],
+  ],
+  // Column 5: Timing (part 1)
+  [
+    ["Open Time",             "open_time",               "market"],
+    ["Close Time",            "close_time",              "market"],
+    ["Created Time",          "created_time",            "market"],
+    ["Updated Time",          "updated_time",            "market"],
+    ["Expected Expiration",   "expected_expiration_time","market"],
+    ["Expiration Time",       "expiration_time",         "market"],
+  ],
+  // Column 6: Timing (part 2)
+  [
+    ["Latest Expiration",     "latest_expiration_time",  "market"],
+    ["Settlement Timer (s)",  "settlement_timer_seconds","market"],
+    ["Settlement Ts",         "settlement_ts",           "market"],
+    ["Fee Waiver Expiration", "fee_waiver_expiration_time","market"],
+  ],
+  // Column 7: Settlement / Rules
+  [
+    ["Can Close Early",       "can_close_early",         "market"],
+    ["Early Close Condition", "early_close_condition",   "market"],
+    ["Rules Primary",         "rules_primary",           "market"],
+    ["Rules Secondary",       "rules_secondary",         "market"],
+    ["Expiration Value",      "expiration_value",        "market"],
+    ["Fractional Trading",    "fractional_trading_enabled","market"],
+  ],
+  // Column 8: Strike / Structure
+  [
+    ["Floor Strike",          "floor_strike",            "market"],
+    ["Cap Strike",            "cap_strike",              "market"],
+    ["Functional Strike",     "functional_strike",       "market"],
+    ["Custom Strike",         "custom_strike",           "market"],
+    ["Price Level Structure",  "price_level_structure",  "market"],
+    ["Price Ranges",          "price_ranges",            "market"],
+    ["Notional Value",        "notional_value_dollars",  "market"],
+    ["Tick Size",             "tick_size",               "market"],
+    ["Primary Participant",   "primary_participant_key", "market"],
+  ],
 ];
 
 // Placeholder markup rendered inline by renderEventDetail. Populated
@@ -2440,28 +2460,40 @@ async function hydrateMarketDataGrid(chartEl) {
     }
     // Synthetic fields that aren't raw API responses.
     ev.__markets_count = d.market_count || "—";
-    // Render as a flat grid of 4 label/value pairs per row.
-    var rows = [];
-    for (var i = 0; i < DATA_GRID_FIELDS.length; i += 4) {
-      var cells = "";
-      for (var j = 0; j < 4; j++) {
-        var entry = DATA_GRID_FIELDS[i + j];
-        if (!entry) {
-          cells += '<td class="ed-dl"></td><td class="ed-dv"></td>';
-          continue;
-        }
-        var label = entry[0];
-        var key = entry[1];
-        var src = entry[2] === "event" ? ev : mk;
-        var val = src[key];
-        var formatted = _formatDataValue(val, key);
-        var vCls = (formatted === "—") ? "ed-dv ed-dv-muted" : "ed-dv";
-        cells += '<td class="ed-dl">' + escH(label) + '</td>'
-              +  '<td class="' + vCls + '">' + formatted + '</td>';
+    // Render column-by-column across rows of 4. The columns are
+    // defined in _DATA_GRID_COLUMNS (matching the user's
+    // spreadsheet order). We process 4 columns per "band"; each
+    // row reads across those 4 columns at the same row index.
+    var allRows = [];
+    var COLS_PER_ROW = 4;
+    for (var band = 0; band < _DATA_GRID_COLUMNS.length; band += COLS_PER_ROW) {
+      var bandCols = _DATA_GRID_COLUMNS.slice(band, band + COLS_PER_ROW);
+      var maxLen = 0;
+      for (var c = 0; c < bandCols.length; c++) {
+        if (bandCols[c].length > maxLen) maxLen = bandCols[c].length;
       }
-      rows.push('<tr>' + cells + '</tr>');
+      for (var ri = 0; ri < maxLen; ri++) {
+        var cells = "";
+        for (var ci = 0; ci < COLS_PER_ROW; ci++) {
+          var col = bandCols[ci];
+          var entry = col ? col[ri] : undefined;
+          if (!entry) {
+            cells += '<td class="ed-dl"></td><td class="ed-dv"></td>';
+            continue;
+          }
+          var label = entry[0];
+          var key = entry[1];
+          var src = entry[2] === "event" ? ev : mk;
+          var val = src[key];
+          var formatted = _formatDataValue(val, key);
+          var vCls = (formatted === "\u2014") ? "ed-dv ed-dv-muted" : "ed-dv";
+          cells += '<td class="ed-dl">' + escH(label) + '</td>'
+                +  '<td class="' + vCls + '">' + formatted + '</td>';
+        }
+        allRows.push('<tr>' + cells + '</tr>');
+      }
     }
-    body.innerHTML = '<table class="ed-data-table"><tbody>' + rows.join("") + '</tbody></table>';
+    body.innerHTML = '<table class="ed-data-table"><tbody>' + allRows.join("") + '</tbody></table>';
   } catch (ex) {
     body.innerHTML = '<div style="padding:16px;color:var(--text-muted);font-size:11px">Failed to load market data.</div>';
     console.error("hydrateMarketDataGrid error", ex);
