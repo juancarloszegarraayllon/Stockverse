@@ -278,30 +278,63 @@ async def batch_insert_prices(rows):
 
     Each row is a dict with: market_ticker, yes_bid, yes_ask,
     no_bid, no_ask, last_price, source ('ws').
+
+    Retries once on transient connection errors (Neon cold-start,
+    stale pool, connection reset) by disposing the engine pool and
+    reattempting. Tracks consecutive failures so the WS flush loop
+    can surface the health via /api/ws_status.
     """
     if not DATABASE_URL or not rows:
         return
-    try:
-        from models import Price
-        async with async_session() as session:
-            async with session.begin():
-                session.add_all([
-                    Price(
-                        market_ticker=r.get("market_ticker", ""),
-                        yes_bid=r.get("yes_bid"),
-                        yes_ask=r.get("yes_ask"),
-                        no_bid=r.get("no_bid"),
-                        no_ask=r.get("no_ask"),
-                        last_price=r.get("last_price"),
-                        volume=r.get("volume"),
-                        open_interest=r.get("open_interest"),
-                        source="ws",
-                    )
-                    for r in rows
-                ])
-        log.info("price flush: %d rows inserted", len(rows))
-    except Exception as e:
-        log.error("price flush failed: %s", e)
+    global _flush_health
+    for attempt in range(2):
+        try:
+            from models import Price
+            async with async_session() as session:
+                async with session.begin():
+                    session.add_all([
+                        Price(
+                            market_ticker=r.get("market_ticker", ""),
+                            yes_bid=r.get("yes_bid"),
+                            yes_ask=r.get("yes_ask"),
+                            no_bid=r.get("no_bid"),
+                            no_ask=r.get("no_ask"),
+                            last_price=r.get("last_price"),
+                            volume=r.get("volume"),
+                            open_interest=r.get("open_interest"),
+                            source="ws",
+                        )
+                        for r in rows
+                    ])
+            log.info("price flush: %d rows inserted", len(rows))
+            _flush_health["last_ok"] = __import__("time").time()
+            _flush_health["consecutive_errors"] = 0
+            _flush_health["last_error"] = None
+            return
+        except Exception as e:
+            _flush_health["consecutive_errors"] = _flush_health.get("consecutive_errors", 0) + 1
+            _flush_health["last_error"] = f"{type(e).__name__}: {e}"
+            _flush_health["last_error_ts"] = __import__("time").time()
+            log.error("price flush failed (attempt %d): %s", attempt + 1, e)
+            if attempt == 0:
+                # Dispose pool so next attempt gets fresh connections.
+                try:
+                    if engine is not None:
+                        await engine.dispose()
+                except Exception:
+                    pass
+                import asyncio as _a
+                await _a.sleep(0.5)
+
+# Tracks flush pipeline health — exposed via /api/ws_status so we
+# can diagnose "WS is alive but writes aren't landing" scenarios
+# without having to check Railway logs.
+_flush_health: dict = {
+    "last_ok": None,
+    "consecutive_errors": 0,
+    "last_error": None,
+    "last_error_ts": None,
+}
 
 
 async def upsert_entities(teams):

@@ -2751,13 +2751,21 @@ def refresh():
 
 @app.get("/api/ws_status")
 def ws_status():
-    """Debug endpoint: reports the Kalshi WebSocket connection state
-    and how many markets have received at least one live price tick."""
+    """Debug endpoint: reports the Kalshi WebSocket connection state,
+    how many markets have received at least one live price tick, and
+    the health of the DB flush pipeline (last successful write,
+    consecutive error count, last error message)."""
     try:
         from kalshi_ws import STATUS, LIVE_PRICES
-        return {"status": dict(STATUS), "live_count": len(LIVE_PRICES)}
+        out = {"status": dict(STATUS), "live_count": len(LIVE_PRICES)}
     except Exception as e:
-        return {"status": None, "error": str(e)}
+        out = {"status": None, "error": str(e)}
+    try:
+        from db import _flush_health
+        out["flush"] = dict(_flush_health)
+    except Exception:
+        out["flush"] = None
+    return out
 
 @app.get("/api/ws_raw")
 def ws_raw():
