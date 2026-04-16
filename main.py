@@ -4001,32 +4001,37 @@ def get_event_history(ticker: str, hours: int = 24, period: int = 60, debug: boo
                     continue
                 points = []
                 for c in candles:
-                    # Kalshi returns timestamps as ISO strings or
-                    # unix seconds — handle both.
-                    ts_raw = c.get("end_period_ts") or c.get("ts")
-                    try:
-                        if isinstance(ts_raw, (int, float)):
-                            t_ms = int(ts_raw * 1000)
-                        else:
-                            t_ms = int(_dt.fromisoformat(
-                                str(ts_raw).replace("Z", "+00:00")
-                            ).timestamp() * 1000)
-                    except Exception:
-                        continue
-                    # Extract close price from the yes_price object
-                    # or fall back to a flat price field. Kalshi
-                    # returns cents (integers).
-                    price_obj = c.get("yes_price") or {}
-                    price = price_obj.get("close")
-                    if price is None:
-                        price = c.get("price") or c.get("close")
-                    if price is None:
+                    # Timestamp: unix seconds (integer).
+                    ts_raw = c.get("end_period_ts")
+                    if ts_raw is None:
                         continue
                     try:
-                        p = float(price)
+                        t_ms = int(float(ts_raw) * 1000)
                     except Exception:
                         continue
-                    vol = c.get("volume")
+                    # Price: Kalshi returns dollar strings like
+                    # "0.2000" under price.close_dollars. Convert
+                    # to cents (0-100 scale) for our chart.
+                    price_obj = c.get("price") or {}
+                    price_str = price_obj.get("close_dollars")
+                    if price_str is None:
+                        # Fallback: try yes_bid close as proxy.
+                        yb = c.get("yes_bid") or {}
+                        price_str = yb.get("close_dollars")
+                    if price_str is None:
+                        continue
+                    try:
+                        p = float(price_str) * 100  # dollars → cents
+                    except Exception:
+                        continue
+                    # Volume per candle.
+                    vol = None
+                    vol_str = c.get("volume_fp")
+                    if vol_str is not None:
+                        try:
+                            vol = float(vol_str)
+                        except Exception:
+                            pass
                     points.append({
                         "t": t_ms,
                         "p": round(p, 2),
