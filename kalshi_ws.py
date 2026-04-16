@@ -208,15 +208,31 @@ async def _refresh_loop(ws, get_tickers, subscribed, next_id_box):
 
 async def _price_flush_loop():
     """Flush buffered price updates to the database every N seconds.
-    Runs as an asyncio task alongside the WS message loop."""
+    Runs as an asyncio task alongside the WS message loop.
+
+    Deduplicates the buffer before writing — if a market got 10
+    updates in a single flush cycle, only the latest snapshot is
+    written. This dramatically reduces row count (and DB storage)
+    without losing any resolution the chart actually needs (charts
+    bucket into 30s windows so per-second ticks are redundant)."""
     while True:
         try:
             await asyncio.sleep(PRICE_FLUSH_INTERVAL)
             if not _price_buffer:
                 continue
             # Swap the buffer so the WS loop can keep appending
-            batch = _price_buffer[:]
+            raw = _price_buffer[:]
             _price_buffer.clear()
+            # Deduplicate: keep only the LAST update per market
+            # ticker. Dict insertion order (Python 3.7+) preserves
+            # chronological ordering, and later entries overwrite
+            # earlier ones for the same key.
+            deduped = {}
+            for row in raw:
+                tk = row.get("market_ticker")
+                if tk:
+                    deduped[tk] = row
+            batch = list(deduped.values())
             try:
                 from db import batch_insert_prices
                 await batch_insert_prices(batch)

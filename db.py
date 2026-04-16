@@ -337,6 +337,39 @@ _flush_health: dict = {
 }
 
 
+# ── Price data retention ─────────────────────────────────────────
+# Neon free tier = 512 MB. At ~46 MB/hr of tick data, we can keep
+# ~10 hours before hitting the wall. Default retention of 6 hours
+# provides a safe margin and covers the 1H + 6H chart timeframes.
+# The 24H and 7D tabs show partial data — acceptable for free tier.
+# Upgrade to Neon Launch ($19/mo, 10 GB) for 7+ days of history.
+PRICE_RETENTION_HOURS = int(os.environ.get("PRICE_RETENTION_HOURS", "6"))
+
+
+async def prune_old_prices():
+    """Delete price rows older than PRICE_RETENTION_HOURS. Called
+    by the periodic pruning task and exposed via /api/prune."""
+    if not DATABASE_URL or async_session is None:
+        return 0
+    try:
+        from sqlalchemy import delete
+        from models import Price
+        from datetime import datetime, timezone as tz, timedelta
+        cutoff = datetime.now(tz.utc) - timedelta(hours=PRICE_RETENTION_HOURS)
+        async with async_session() as session:
+            async with session.begin():
+                result = await session.execute(
+                    delete(Price).where(Price.captured_at < cutoff)
+                )
+                deleted = result.rowcount
+        if deleted > 0:
+            log.info("pruned %d price rows older than %dh", deleted, PRICE_RETENTION_HOURS)
+        return deleted
+    except Exception as e:
+        log.error("price prune failed: %s", e)
+        return -1
+
+
 async def upsert_entities(teams):
     """Upsert teams into the entities + entity_aliases tables.
 

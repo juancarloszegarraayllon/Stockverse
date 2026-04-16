@@ -94,6 +94,9 @@ async def startup_event():
         logging.getLogger("oddsiq").warning("failed to start sofascore feed: %s", e)
     # Phase 4: periodically flush live scores from all feeds to the DB.
     asyncio.create_task(_score_flush_loop())
+    # Phase 5: periodically prune old price rows to stay within
+    # Neon free-tier storage limits (512 MB). Runs hourly.
+    asyncio.create_task(_price_prune_loop())
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 # Gzip compression on responses >= 500 bytes. Screener + events JSON
 # responses are typically 20-200KB uncompressed, usually 3-5x smaller
@@ -169,6 +172,23 @@ class EventsETagMiddleware(BaseHTTPMiddleware):
 
 
 app.add_middleware(EventsETagMiddleware)
+
+
+async def _price_prune_loop():
+    """Hourly: delete price rows older than PRICE_RETENTION_HOURS.
+    Also runs once immediately on startup to clear any overflow
+    from a previous session (e.g. hitting the 512 MB Neon limit)."""
+    _log = logging.getLogger("price_prune")
+    await asyncio.sleep(10)  # let DB init finish
+    while True:
+        try:
+            from db import prune_old_prices
+            deleted = await prune_old_prices()
+            if deleted and deleted > 0:
+                _log.info("pruned %d old price rows", deleted)
+        except Exception as e:
+            _log.error("prune loop error: %s", e)
+        await asyncio.sleep(3600)  # every hour
 
 
 async def _score_flush_loop():
@@ -3808,6 +3828,22 @@ def _analytics_snippet() -> str:
         f'<script defer data-domain="{domain}" '
         f'src="{script_url}"></script>'
     )
+
+
+@app.get("/api/prune")
+async def prune_prices():
+    """Manually trigger pruning of old price rows. Returns the
+    number of rows deleted. Safe to call repeatedly — only deletes
+    rows older than PRICE_RETENTION_HOURS (default 6h)."""
+    try:
+        from db import prune_old_prices, PRICE_RETENTION_HOURS
+        deleted = await prune_old_prices()
+        return {
+            "deleted": deleted,
+            "retention_hours": PRICE_RETENTION_HOURS,
+        }
+    except Exception as e:
+        return {"error": str(e)}
 
 
 @app.get("/api/db_health")
