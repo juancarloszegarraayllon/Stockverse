@@ -3850,7 +3850,10 @@ def get_event_history(ticker: str, hours: int = 24, period: int = 60, debug: boo
     if not ticker:
         return {"error": "ticker required", "series": []}
     hours = max(1, min(int(hours), 8760))
-    period = max(1, min(int(period), 1440))
+    # Kalshi only accepts specific period_interval values. Snap the
+    # requested period to the nearest valid option.
+    VALID_PERIODS = [1, 5, 15, 60, 1440]
+    period = min(VALID_PERIODS, key=lambda p: abs(p - int(period)))
     # Find market tickers from the cache.
     get_data()
     records_all = _cache.get("data_all") or []
@@ -3898,10 +3901,12 @@ def get_event_history(ticker: str, hours: int = 24, period: int = 60, debug: boo
         # Try the first market ticker to find the correct API path.
         # Kalshi's API version/path may differ from what we expect.
         # Common patterns: /trade-api/v2, /v1, /v2, etc.
+        # Kalshi's candlestick endpoint requires the series ticker in
+        # the path. period_interval must be one of the allowed values
+        # (1, 5, 15, 60, 1440 — minutes). Values outside this set
+        # return 400 "PeriodInterval failed on 'oneof' tag".
         _CANDIDATE_PATHS = [
             "/trade-api/v2/series/{series}/markets/{mk}/candlesticks",
-            "/trade-api/v2/markets/{mk}/candlesticks",
-            "/trade-api/v2/markets/{mk}/history",
         ]
         def _sign_get(path_str):
             ts_ms = str(int(time.time() * 1000))

@@ -2533,9 +2533,9 @@ function wireChartHover(chartEl) {
 var CHART_TIMEFRAMES = [
   { key: "1h",  hours: 1,   label: "1H",  src: "db",    period: null },
   { key: "6h",  hours: 6,   label: "6H",  src: "db",    period: null },
-  { key: "24h", hours: 24,  label: "24H", src: "kalshi", period: 15   },
-  { key: "7d",  hours: 168, label: "7D",  src: "kalshi", period: 60   },
-  { key: "30d", hours: 720, label: "30D", src: "kalshi", period: 360  },
+  { key: "24h", hours: 24,  label: "24H", src: "kalshi", period: 60   },
+  { key: "7d",  hours: 168, label: "7D",  src: "kalshi", period: 1440 },
+  { key: "30d", hours: 720, label: "30D", src: "kalshi", period: 1440 },
 ];
 
 // Build the chart section shown above the markets table.
