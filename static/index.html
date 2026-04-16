@@ -1620,9 +1620,12 @@ document.getElementById("search-input").addEventListener("input", function(e) {
       // Search cleared - go back to home
       state.category = null;
     }
-    // Switch out of screener view if active
+    // Switch out of screener and event-detail views if active
     document.getElementById("screener").style.display = "none";
     document.getElementById("content").style.display = "";
+    var ed = document.getElementById("event-detail");
+    if (ed) { ed.style.display = "none"; ed.innerHTML = ""; }
+    state._eventTicker = null;
     // Sync URL so browser back can pop the search term off.
     pushNavState(false);
     renderCatTabs();
