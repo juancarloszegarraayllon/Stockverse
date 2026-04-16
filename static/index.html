@@ -316,6 +316,21 @@ html,body{overscroll-behavior:none}
 .ed-rule-item{margin-bottom:10px}
 .ed-rule-label{font-size:12px;font-weight:700;color:var(--green);margin-bottom:2px}
 .ed-rule-text{font-size:12px;line-height:1.5;color:var(--text-dim)}
+.ed-data-grid{margin-top:20px;background:var(--bg2);border:1px solid var(--border);border-radius:10px;overflow:hidden}
+.ed-data-grid-toggle{width:100%;display:flex;align-items:center;justify-content:space-between;padding:14px 18px;background:transparent;border:0;color:var(--text);font-family:inherit;font-size:13px;font-weight:700;letter-spacing:0.4px;text-transform:uppercase;cursor:pointer;transition:background 0.12s}
+.ed-data-grid-toggle:hover{background:var(--bg3)}
+.ed-data-grid-toggle .ed-dg-chevron{color:var(--text-muted);font-size:11px;transition:transform 0.2s}
+.ed-data-grid-toggle.open .ed-dg-chevron{transform:rotate(180deg)}
+.ed-data-grid-body{border-top:1px solid var(--border)}
+.ed-data-table{width:100%;border-collapse:collapse}
+.ed-data-table td{padding:5px 10px;font-size:11px;border-bottom:1px solid var(--border);border-right:1px solid var(--border);vertical-align:top}
+.ed-data-table tr:last-child td{border-bottom:0}
+.ed-data-table td:nth-child(even){border-right:1px solid var(--border)}
+.ed-data-table .ed-dl{color:var(--text-muted);font-weight:600;letter-spacing:0.2px;white-space:nowrap;width:1%;padding-right:6px}
+.ed-data-table .ed-dv{color:var(--text);font-variant-numeric:tabular-nums;word-break:break-word}
+.ed-data-table .ed-dv-pos{color:#4caf50}
+.ed-data-table .ed-dv-neg{color:#f44336}
+.ed-data-table .ed-dv-muted{color:var(--text-muted)}
 .ed-chart{margin-top:12px;background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:14px}
 .ed-chart-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;gap:10px;flex-wrap:wrap}
 .ed-chart-header-right{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
@@ -2241,6 +2256,218 @@ window.toggleRules = function(btn) {
   btn.classList.toggle("open", open);
 };
 
+
+// ── Market data grid (finviz-style dense table) ────────────────
+// Every Kalshi field for the event and its primary market rendered
+// as label:value pairs in a tight grid. Lives below "How this
+// settles" on the event detail page.
+//
+// Data arrives async via /api/kalshi_event_raw which already
+// returns event_top_level_only (every event field) and
+// sample_active_market (every market field) — we just lay them
+// out in a dense grid for at-a-glance inspection.
+
+// Field catalog: each entry is [label, key, sourceType]. Fields
+// render in rows of 4 label/value pairs; rows are grouped by
+// sourceType ("event" | "market") for logical clustering. Keys
+// match the raw Kalshi field names exactly so future additions
+// just need one-line changes here.
+var DATA_GRID_FIELDS = [
+  // Identity
+  ["Event Ticker",          "event_ticker",            "event"],
+  ["Series Ticker",         "series_ticker",           "event"],
+  ["Category",              "category",                "event"],
+  ["Market Type",           "market_type",             "market"],
+  ["Title",                 "title",                   "event"],
+  ["Sub Title",             "sub_title",               "event"],
+  ["Status",                "status",                  "market"],
+  ["Result",                "result",                  "market"],
+  ["Ticker",                "ticker",                  "market"],
+  ["Yes Sub Title",         "yes_sub_title",           "market"],
+  ["No Sub Title",          "no_sub_title",            "market"],
+  ["Markets",               "__markets_count",         "event"],
+  ["Mutually Exclusive",    "mutually_exclusive",      "event"],
+  ["Collateral Return Type","collateral_return_type",  "event"],
+  ["Available On Brokers",  "available_on_brokers",    "event"],
+  ["Fractional Trading",    "fractional_trading_enabled", "market"],
+  // Pricing
+  ["Probability",           "last_price_dollars",      "market"],
+  ["Yes Bid",               "yes_bid_dollars",         "market"],
+  ["Yes Ask",               "yes_ask_dollars",         "market"],
+  ["No Bid",                "no_bid_dollars",          "market"],
+  ["No Ask",                "no_ask_dollars",          "market"],
+  ["Previous Price",        "previous_price_dollars",  "market"],
+  ["Previous Yes Bid",      "previous_yes_bid_dollars","market"],
+  ["Previous Yes Ask",      "previous_yes_ask_dollars","market"],
+  ["Yes Bid Size",          "yes_bid_size_fp",         "market"],
+  ["Yes Ask Size",          "yes_ask_size_fp",         "market"],
+  ["Tick Size",             "tick_size",               "market"],
+  ["Notional Value",        "notional_value_dollars",  "market"],
+  // Volume / Liquidity
+  ["Volume",                "volume_fp",               "market"],
+  ["Volume 24h",            "volume_24h_fp",           "market"],
+  ["Open Interest",         "open_interest_fp",        "market"],
+  ["Liquidity",             "liquidity_dollars",       "market"],
+  // Timing
+  ["Open Time",             "open_time",               "market"],
+  ["Close Time",            "close_time",              "market"],
+  ["Created Time",          "created_time",            "market"],
+  ["Updated Time",          "updated_time",            "market"],
+  ["Expected Expiration",   "expected_expiration_time","market"],
+  ["Expiration Time",       "expiration_time",         "market"],
+  ["Latest Expiration",     "latest_expiration_time",  "market"],
+  ["Settlement Timer (s)",  "settlement_timer_seconds","market"],
+  ["Can Close Early",       "can_close_early",         "market"],
+  ["Early Close Condition", "early_close_condition",   "market"],
+  ["Fee Waiver Expiration", "fee_waiver_expiration_time","market"],
+  ["Settlement Ts",         "settlement_ts",           "market"],
+  // Strike / Ranges
+  ["Strike Date",           "strike_date",             "event"],
+  ["Strike Period",         "strike_period",           "event"],
+  ["Floor Strike",          "floor_strike",            "market"],
+  ["Cap Strike",            "cap_strike",              "market"],
+  ["Functional Strike",     "functional_strike",       "market"],
+  ["Custom Strike",         "custom_strike",           "market"],
+  ["Price Level Structure", "price_level_structure",   "market"],
+  ["Price Ranges",          "price_ranges",            "market"],
+  ["Expiration Value",      "expiration_value",        "market"],
+  ["Primary Participant",   "primary_participant_key", "market"],
+  ["Last Updated Ts",       "last_updated_ts",         "event"],
+  ["Product Metadata",      "product_metadata",        "event"],
+];
+
+// Placeholder markup rendered inline by renderEventDetail. Populated
+// asynchronously by hydrateMarketDataGrid() once /api/kalshi_event_raw
+// returns. Closed by default so the page doesn't grow too tall.
+function renderMarketDataGrid(evTicker) {
+  return '<div class="ed-data-grid" data-ticker="' + escH(evTicker) + '">'
+       + '<button class="ed-data-grid-toggle" aria-expanded="false" onclick="window.toggleDataGrid(this)">'
+       +   '<span>Market Data</span>'
+       +   '<span class="ed-dg-chevron">\u25BE</span>'
+       + '</button>'
+       + '<div class="ed-data-grid-body" hidden>'
+       +   '<div class="ed-dg-loading" style="padding:24px;text-align:center;font-size:11px;color:var(--text-muted);font-style:italic">Loading…</div>'
+       + '</div>'
+       + '</div>';
+}
+
+window.toggleDataGrid = function(btn) {
+  var body = btn.nextElementSibling;
+  if (!body) return;
+  var open = body.hidden;
+  body.hidden = !open;
+  btn.setAttribute("aria-expanded", open ? "true" : "false");
+  btn.classList.toggle("open", open);
+  // Lazy-load on first expand so we don't pay the Kalshi API
+  // round-trip for users who never open it.
+  if (open && !btn.dataset.hydrated) {
+    btn.dataset.hydrated = "1";
+    hydrateMarketDataGrid(btn.closest(".ed-data-grid"));
+  }
+};
+
+// Format a raw Kalshi value for display. Handles booleans, numbers,
+// dates, nested objects, and null/undefined gracefully.
+function _formatDataValue(val, key) {
+  if (val === null || val === undefined || val === "") return "—";
+  // Specific date-like keys → format as human readable.
+  var dateKeys = {
+    "open_time": 1, "close_time": 1, "created_time": 1, "updated_time": 1,
+    "expected_expiration_time": 1, "expiration_time": 1, "latest_expiration_time": 1,
+    "fee_waiver_expiration_time": 1, "settlement_ts": 1, "strike_date": 1,
+    "last_updated_ts": 1,
+  };
+  if (dateKeys[key] && typeof val === "string") {
+    if (val.startsWith("0001-01-01")) return "—";  // unset
+    try {
+      var d = new Date(val);
+      if (isNaN(d.getTime())) return escH(val);
+      return d.toLocaleString("en-US", {
+        month: "short", day: "numeric", year: "numeric",
+        hour: "numeric", minute: "2-digit",
+        timeZone: "America/New_York",
+      });
+    } catch (e) { return escH(val); }
+  }
+  // Dollar-priced fields → prefix $ and cap at 4 decimals.
+  var dollarKeys = {
+    "last_price_dollars": 1, "yes_bid_dollars": 1, "yes_ask_dollars": 1,
+    "no_bid_dollars": 1, "no_ask_dollars": 1, "previous_price_dollars": 1,
+    "previous_yes_bid_dollars": 1, "previous_yes_ask_dollars": 1,
+    "notional_value_dollars": 1, "liquidity_dollars": 1,
+  };
+  if (dollarKeys[key]) {
+    var num = parseFloat(val);
+    if (isNaN(num)) return escH(String(val));
+    return "$" + num.toFixed(4).replace(/0+$/, "").replace(/\.$/, "");
+  }
+  // Volume / size / OI → thousands separators.
+  var countKeys = {
+    "volume_fp": 1, "volume_24h_fp": 1, "open_interest_fp": 1,
+    "yes_bid_size_fp": 1, "yes_ask_size_fp": 1,
+  };
+  if (countKeys[key]) {
+    var n = parseFloat(val);
+    if (isNaN(n)) return escH(String(val));
+    return Math.round(n).toLocaleString();
+  }
+  if (typeof val === "boolean") return val ? "Yes" : "No";
+  if (typeof val === "number") return String(val);
+  if (typeof val === "object") {
+    try { return escH(JSON.stringify(val)); } catch (e) { return "—"; }
+  }
+  return escH(String(val));
+}
+
+// Fetch /api/kalshi_event_raw and populate the data grid body.
+async function hydrateMarketDataGrid(chartEl) {
+  if (!chartEl) return;
+  var tkr = chartEl.getAttribute("data-ticker");
+  var body = chartEl.querySelector(".ed-data-grid-body");
+  if (!tkr || !body) return;
+  try {
+    var r = await fetch("/api/kalshi_event_raw?ticker=" + encodeURIComponent(tkr));
+    var d = await r.json();
+    if (d.error) {
+      body.innerHTML = '<div style="padding:16px;color:var(--text-muted);font-size:11px">Failed to load market data: ' + escH(d.error) + '</div>';
+      return;
+    }
+    var ev = d.event_top_level_only || {};
+    var mk = d.sample_active_market || {};
+    if (!Object.keys(ev).length && !Object.keys(mk).length) {
+      body.innerHTML = '<div style="padding:16px;color:var(--text-muted);font-size:11px">No market data available.</div>';
+      return;
+    }
+    // Synthetic fields that aren't raw API responses.
+    ev.__markets_count = d.market_count || "—";
+    // Render as a flat grid of 4 label/value pairs per row.
+    var rows = [];
+    for (var i = 0; i < DATA_GRID_FIELDS.length; i += 4) {
+      var cells = "";
+      for (var j = 0; j < 4; j++) {
+        var entry = DATA_GRID_FIELDS[i + j];
+        if (!entry) {
+          cells += '<td class="ed-dl"></td><td class="ed-dv"></td>';
+          continue;
+        }
+        var label = entry[0];
+        var key = entry[1];
+        var src = entry[2] === "event" ? ev : mk;
+        var val = src[key];
+        var formatted = _formatDataValue(val, key);
+        var vCls = (formatted === "—") ? "ed-dv ed-dv-muted" : "ed-dv";
+        cells += '<td class="ed-dl">' + escH(label) + '</td>'
+              +  '<td class="' + vCls + '">' + formatted + '</td>';
+      }
+      rows.push('<tr>' + cells + '</tr>');
+    }
+    body.innerHTML = '<table class="ed-data-table"><tbody>' + rows.join("") + '</tbody></table>';
+  } catch (ex) {
+    body.innerHTML = '<div style="padding:16px;color:var(--text-muted);font-size:11px">Failed to load market data.</div>';
+    console.error("hydrateMarketDataGrid error", ex);
+  }
+}
+
 // Map market_ticker → human-readable label for chart legend use.
 function _outcomeLabels(outcomes) {
   var m = {};
@@ -3071,6 +3298,7 @@ function renderEventDetail(ev) {
       h += marketsSectionTitle(live);
       h += renderMarketsTable(g2.outcomes || [], live);
       h += renderSettlementRules(g2.outcomes || []);
+      h += renderMarketDataGrid(g2.event_ticker || ticker);
       h += '</div>';
     }
   } else {
@@ -3080,6 +3308,7 @@ function renderEventDetail(ev) {
     h += marketsSectionTitle(live);
     h += renderMarketsTable(ev.outcomes || [], live);
     h += renderSettlementRules(ev.outcomes || []);
+    h += renderMarketDataGrid(ticker);
   }
 
   return h;
