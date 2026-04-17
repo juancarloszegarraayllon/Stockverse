@@ -278,9 +278,9 @@ html,body{overscroll-behavior:none}
 #event-detail{display:none;max-width:1100px;margin:0 auto;padding:0 4px}
 .ed-layout{position:relative}
 .ed-main{}
-.ed-sidebar{position:fixed;right:calc((100vw - 1100px - 300px) / 4);top:50%;transform:translateY(-50%);width:300px;max-height:calc(100vh - var(--header-h) - 32px);overflow-y:auto;scrollbar-width:thin;scrollbar-color:var(--border) transparent;z-index:50}
+.ed-sidebar{position:fixed;right:calc((100vw - 1100px - 300px) / 4);top:calc(var(--header-h) + 16px);width:300px;max-height:calc(100vh - var(--header-h) - 32px);overflow-y:auto;scrollbar-width:thin;scrollbar-color:var(--border) transparent;z-index:50}
 @media(max-width:1500px){.ed-sidebar{width:260px;right:calc((100vw - 1100px - 260px) / 4)}}
-@media(max-width:1200px){.ed-sidebar{position:static;width:100%;max-height:none;margin-bottom:16px;transform:none}}
+@media(max-width:1200px){.ed-sidebar{position:static;width:100%;max-height:none;margin-bottom:16px}}
 .ed-stats-panel{background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:14px}
 .ed-stats-title{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;color:var(--green);text-align:center;margin-bottom:12px}
 .ed-stats-teams{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;padding-bottom:8px;border-bottom:1px solid var(--border)}
@@ -2166,6 +2166,14 @@ function showEventDetail(ticker, skipHistory) {
       // Hydrate the game stats sidebar if present.
       if (d.event && d.event.event_ticker) {
         hydrateGameStats(d.event.event_ticker);
+        // Align sidebar top with ed-layout.
+        setTimeout(function() {
+          var layout = document.querySelector(".ed-layout");
+          var sidebar = document.querySelector(".ed-sidebar");
+          if (layout && sidebar && window.innerWidth > 1200) {
+            sidebar.style.top = layout.getBoundingClientRect().top + "px";
+          }
+        }, 100);
       }
     })
     .catch(function(ex) {
