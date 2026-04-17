@@ -275,11 +275,12 @@ html,body{overscroll-behavior:none}
 }
 
 /* ── Event detail page ──────────────────────────────────────────── */
-#event-detail{display:none;max-width:1300px;margin:0 auto;padding:0 4px}
-.ed-layout{display:flex;gap:16px;align-items:flex-start}
-.ed-main{flex:1;min-width:0}
-.ed-sidebar{width:320px;flex-shrink:0;position:sticky;top:calc(var(--header-h) + 16px);max-height:calc(100vh - var(--header-h) - 32px);overflow-y:auto;scrollbar-width:thin;scrollbar-color:var(--border) transparent}
-@media(max-width:900px){.ed-layout{flex-direction:column}.ed-sidebar{width:100%;position:static;max-height:none}}
+#event-detail{display:none;max-width:1100px;margin:0 auto;padding:0 4px}
+.ed-layout{position:relative}
+.ed-main{}
+.ed-sidebar{position:fixed;right:12px;top:calc(var(--header-h) + 16px);width:300px;max-height:calc(100vh - var(--header-h) - 32px);overflow-y:auto;scrollbar-width:thin;scrollbar-color:var(--border) transparent;z-index:50}
+@media(max-width:1500px){.ed-sidebar{width:260px}}
+@media(max-width:1200px){.ed-sidebar{position:static;width:100%;max-height:none;margin-bottom:16px}}
 .ed-stats-panel{background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:14px}
 .ed-stats-title{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;color:var(--green);text-align:center;margin-bottom:12px}
 .ed-stats-teams{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;padding-bottom:8px;border-bottom:1px solid var(--border)}
