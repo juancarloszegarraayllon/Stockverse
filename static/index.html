@@ -322,10 +322,11 @@ html,body{overscroll-behavior:none}
 .ed-data-grid-toggle .ed-dg-chevron{color:var(--text-muted);font-size:11px;transition:transform 0.2s}
 .ed-data-grid-toggle.open .ed-dg-chevron{transform:rotate(180deg)}
 .ed-data-grid-body{border-top:1px solid var(--border);padding:14px 18px}
-.ed-dg-group-title{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;color:var(--green);margin:14px 0 6px;padding-bottom:4px;border-bottom:1px solid var(--border)}
-.ed-dg-group-title:first-child{margin-top:0}
-.ed-dg-fields{display:flex;flex-wrap:wrap;gap:4px 12px;margin-bottom:6px}
-.ed-dg-field{display:inline-flex;align-items:center;gap:5px;font-size:11px;color:var(--text-dim);cursor:pointer;padding:3px 0;user-select:none}
+.ed-dg-picker{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:0 20px;align-items:start}
+.ed-dg-col{}
+.ed-dg-group-title{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;color:var(--green);margin:0 0 6px;padding-bottom:4px;border-bottom:1px solid var(--border)}
+.ed-dg-fields{display:flex;flex-direction:column;gap:2px;margin-bottom:14px}
+.ed-dg-field{display:flex;align-items:center;gap:5px;font-size:11px;color:var(--text-dim);cursor:pointer;padding:2px 0;user-select:none}
 .ed-dg-field input[type="checkbox"]{accent-color:var(--green);cursor:pointer;margin:0}
 .ed-dg-field:hover{color:var(--text)}
 .ed-dg-result{margin-top:16px}
@@ -2434,10 +2435,11 @@ async function hydrateMarketDataGrid(el) {
     var storageKey = "dg_checked";
     var savedChecked = {};
     try { savedChecked = JSON.parse(localStorage.getItem(storageKey) || "{}"); } catch(e) {}
-    // Render checkbox groups.
-    var html = '';
+    // Render checkbox groups as vertical columns side-by-side.
+    var html = '<div class="ed-dg-picker">';
     for (var gi = 0; gi < DATA_FIELD_GROUPS.length; gi++) {
       var grp = DATA_FIELD_GROUPS[gi];
+      html += '<div class="ed-dg-col">';
       html += '<div class="ed-dg-group-title">' + escH(grp.name) + '</div>';
       html += '<div class="ed-dg-fields">';
       for (var fi = 0; fi < grp.fields.length; fi++) {
@@ -2451,8 +2453,9 @@ async function hydrateMarketDataGrid(el) {
              + checked + '>'
              + escH(f[0]) + '</label>';
       }
-      html += '</div>';
+      html += '</div></div>';
     }
+    html += '</div>';
     html += '<div class="ed-dg-result"></div>';
     body.innerHTML = html;
     // Rebuild comparison table on checkbox change.
@@ -2476,29 +2479,35 @@ async function hydrateMarketDataGrid(el) {
       var evFields = checked.filter(function(c) { return c.src === "event"; });
       var mkFields = checked.filter(function(c) { return c.src === "market"; });
       var tbl = '';
+      // Event-level: transposed — field names as column headers,
+      // single value row below (shared across all outcomes).
       if (evFields.length) {
-        tbl += '<table class="ed-data-table" style="margin-bottom:10px"><tbody>';
+        tbl += '<table class="ed-data-table" style="margin-bottom:10px"><thead><tr>';
         for (var ei = 0; ei < evFields.length; ei++) {
-          var ef = evFields[ei];
-          var val = ev[ef.key];
-          var fmt = _formatDataValue(val, ef.key);
-          var cls = fmt === "\u2014" ? "ed-dv ed-dv-muted" : "ed-dv";
-          tbl += '<tr><td class="ed-dl">' + escH(ef.label) + '</td><td class="' + cls + '">' + fmt + '</td></tr>';
+          tbl += '<th>' + escH(evFields[ei].label) + '</th>';
         }
-        tbl += '</tbody></table>';
+        tbl += '</tr></thead><tbody><tr>';
+        for (var ei2 = 0; ei2 < evFields.length; ei2++) {
+          var val = ev[evFields[ei2].key];
+          var fmt = _formatDataValue(val, evFields[ei2].key);
+          var cls = fmt === "\u2014" ? "ed-dv ed-dv-muted" : "ed-dv";
+          tbl += '<td class="' + cls + '">' + fmt + '</td>';
+        }
+        tbl += '</tr></tbody></table>';
       }
+      // Market-level: transposed — field names as column headers,
+      // one row per outcome for side-by-side comparison.
       if (mkFields.length && outcomes.length) {
-        tbl += '<table class="ed-data-table"><thead><tr><th>Field</th>';
-        for (var hi = 0; hi < outLabels.length; hi++) {
-          tbl += '<th>' + escH(outLabels[hi]) + '</th>';
+        tbl += '<table class="ed-data-table"><thead><tr><th>Outcome</th>';
+        for (var mhi = 0; mhi < mkFields.length; mhi++) {
+          tbl += '<th>' + escH(mkFields[mhi].label) + '</th>';
         }
         tbl += '</tr></thead><tbody>';
-        for (var mfi = 0; mfi < mkFields.length; mfi++) {
-          var mf = mkFields[mfi];
-          tbl += '<tr><td class="ed-dl">' + escH(mf.label) + '</td>';
-          for (var oi = 0; oi < outcomes.length; oi++) {
-            var v = outcomes[oi][mf.key];
-            var fv = _formatDataValue(v, mf.key);
+        for (var oi = 0; oi < outcomes.length; oi++) {
+          tbl += '<tr><td class="ed-dl">' + escH(outLabels[oi]) + '</td>';
+          for (var mfi = 0; mfi < mkFields.length; mfi++) {
+            var v = outcomes[oi][mkFields[mfi].key];
+            var fv = _formatDataValue(v, mkFields[mfi].key);
             var vc = fv === "\u2014" ? "ed-dv ed-dv-muted" : "ed-dv";
             tbl += '<td class="' + vc + '">' + fv + '</td>';
           }
