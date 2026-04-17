@@ -2530,6 +2530,12 @@ async function hydrateMarketDataGrid(el) {
   }
 }
 
+// Color palette for price-history chart lines.
+var CHART_COLORS = [
+  "#4caf50", "#f44336", "#ffd54f", "#4fc3f7",
+  "#ba68c8", "#ff8a65", "#81c784", "#e57373",
+];
+
 // Map market_ticker to human-readable label for chart legend use.
 function _outcomeLabels(outcomes) {
   var m = {};
