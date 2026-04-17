@@ -2166,16 +2166,17 @@ function showEventDetail(ticker, skipHistory) {
       // Hydrate the game stats sidebar if present.
       if (d.event && d.event.event_ticker) {
         hydrateGameStats(d.event.event_ticker);
-        // Align sidebar horizontally with ed-main top while
-        // keeping the CSS vertical centering.
+        // Align sidebar: top matches ed-main top, left edge
+        // sits right of ed-main's right edge.
         setTimeout(function() {
           var main = document.querySelector(".ed-main");
           var sidebar = document.querySelector(".ed-sidebar");
           if (main && sidebar && window.innerWidth > 1200) {
             var rect = main.getBoundingClientRect();
-            sidebar.style.top = "calc(50% + var(--header-h) / 2)";
+            sidebar.style.top = rect.top + "px";
             sidebar.style.left = (rect.right + 20) + "px";
             sidebar.style.right = "auto";
+            sidebar.style.transform = "none";
           }
         }, 100);
       }
