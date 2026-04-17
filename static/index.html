@@ -2166,6 +2166,15 @@ function showEventDetail(ticker, skipHistory) {
       // Hydrate the game stats sidebar if present.
       if (d.event && d.event.event_ticker) {
         hydrateGameStats(d.event.event_ticker);
+        // Align sidebar top with the Overview section.
+        setTimeout(function() {
+          var overview = document.querySelector(".ed-section-title");
+          var sidebar = document.querySelector(".ed-sidebar");
+          if (overview && sidebar && window.innerWidth > 1200) {
+            var rect = overview.getBoundingClientRect();
+            sidebar.style.top = rect.top + "px";
+          }
+        }, 100);
       }
     })
     .catch(function(ex) {
