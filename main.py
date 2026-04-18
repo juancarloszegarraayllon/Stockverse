@@ -4191,44 +4191,103 @@ def get_event_stats(ticker: str):
             "Referer": "https://www.sofascore.com/",
             "Origin": "https://www.sofascore.com",
         }
-        stats_url = f"https://api.sofascore.com/api/v1/event/{sofa_id}/statistics"
+        base = f"https://api.sofascore.com/api/v1/event/{sofa_id}"
         with _httpx.Client(headers=headers, timeout=10.0) as client:
-            r = client.get(stats_url)
-            if r.status_code != 200:
-                return {
-                    "error": f"SofaScore statistics returned HTTP {r.status_code}",
-                    "sofa_event_id": sofa_id,
-                }
-            data = r.json() or {}
-            raw_stats = data.get("statistics") or []
-            # Find the "ALL" period (full match stats).
-            all_period = None
-            for period in raw_stats:
-                if period.get("period") == "ALL":
-                    all_period = period
-                    break
-            if not all_period and raw_stats:
-                all_period = raw_stats[0]
-            if not all_period:
-                return {
-                    "error": "no statistics available yet",
-                    "sofa_event_id": sofa_id,
-                    "home": home_name,
-                    "away": away_name,
-                }
-            # Flatten the grouped stats into a simple list of
-            # {name, home, away} objects.
+            # ── Statistics ──────────────────────────────────────
             stats = []
-            for group in all_period.get("groups") or []:
-                for item in group.get("statisticsItems") or []:
-                    stats.append({
-                        "name":  item.get("name", ""),
-                        "home":  str(item.get("home", "")),
-                        "away":  str(item.get("away", "")),
-                        "group": group.get("groupName", ""),
-                    })
+            try:
+                r = client.get(base + "/statistics")
+                if r.status_code == 200:
+                    raw_stats = (r.json() or {}).get("statistics") or []
+                    all_period = None
+                    for period in raw_stats:
+                        if period.get("period") == "ALL":
+                            all_period = period
+                            break
+                    if not all_period and raw_stats:
+                        all_period = raw_stats[0]
+                    if all_period:
+                        for group in all_period.get("groups") or []:
+                            for item in group.get("statisticsItems") or []:
+                                stats.append({
+                                    "name":  item.get("name", ""),
+                                    "home":  str(item.get("home", "")),
+                                    "away":  str(item.get("away", "")),
+                                    "group": group.get("groupName", ""),
+                                })
+            except Exception:
+                pass
+            # ── Incidents (timeline) ────────────────────────────
+            incidents = []
+            try:
+                r2 = client.get(base + "/incidents")
+                if r2.status_code == 200:
+                    raw_inc = (r2.json() or {}).get("incidents") or []
+                    for inc in raw_inc:
+                        itype = inc.get("incidentType") or ""
+                        entry = {
+                            "type": itype,
+                            "time": inc.get("time"),
+                            "addedTime": inc.get("addedTime"),
+                            "isHome": inc.get("isHome"),
+                            "text": inc.get("text") or "",
+                        }
+                        # Player info for goals, cards, subs.
+                        player = inc.get("player") or {}
+                        entry["player"] = player.get("shortName") or player.get("name") or ""
+                        # Assist for goals.
+                        assist = inc.get("assist1") or inc.get("assist") or {}
+                        if isinstance(assist, dict):
+                            entry["assist"] = assist.get("shortName") or assist.get("name") or ""
+                        else:
+                            entry["assist"] = ""
+                        # Sub: player in / out.
+                        pin = inc.get("playerIn") or {}
+                        pout = inc.get("playerOut") or {}
+                        if isinstance(pin, dict):
+                            entry["playerIn"] = pin.get("shortName") or pin.get("name") or ""
+                        if isinstance(pout, dict):
+                            entry["playerOut"] = pout.get("shortName") or pout.get("name") or ""
+                        # Card color.
+                        entry["incidentClass"] = inc.get("incidentClass") or ""
+                        # Goal details.
+                        entry["goalType"] = inc.get("incidentClass") or ""
+                        # Score after goal.
+                        entry["homeScore"] = inc.get("homeScore")
+                        entry["awayScore"] = inc.get("awayScore")
+                        incidents.append(entry)
+            except Exception:
+                pass
+            # ── Lineups ─────────────────────────────────────────
+            lineups = {}
+            try:
+                r3 = client.get(base + "/lineups")
+                if r3.status_code == 200:
+                    raw_lin = r3.json() or {}
+                    for side in ("home", "away"):
+                        team = raw_lin.get(side) or {}
+                        players_arr = team.get("players") or []
+                        formation = team.get("formation") or ""
+                        parsed_players = []
+                        for p in players_arr:
+                            pl = p.get("player") or {}
+                            parsed_players.append({
+                                "name": pl.get("shortName") or pl.get("name") or "",
+                                "position": p.get("position") or pl.get("position") or "",
+                                "jerseyNumber": pl.get("jerseyNumber") or p.get("jerseyNumber"),
+                                "substitute": p.get("substitute", False),
+                                "captain": p.get("captain", False),
+                            })
+                        lineups[side] = {
+                            "formation": formation,
+                            "players": parsed_players,
+                        }
+            except Exception:
+                pass
             return {
                 "stats": stats,
+                "incidents": incidents,
+                "lineups": lineups,
                 "home": home_name,
                 "away": away_name,
                 "sofa_event_id": sofa_id,

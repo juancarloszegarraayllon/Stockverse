@@ -294,6 +294,33 @@ html,body{overscroll-behavior:none}
 .ed-stats-bar{display:flex;height:4px;border-radius:2px;overflow:hidden;margin-top:3px}
 .ed-stats-bar-home{background:var(--green);height:100%}
 .ed-stats-bar-away{background:var(--red);height:100%}
+.ed-sb-tabs{display:flex;gap:0;border-bottom:1px solid var(--border);margin-bottom:12px}
+.ed-sb-tab{flex:1;padding:8px 0;background:transparent;border:0;border-bottom:2px solid transparent;color:var(--text-muted);font-family:inherit;font-size:10px;font-weight:700;letter-spacing:0.5px;text-transform:uppercase;cursor:pointer;text-align:center;transition:color 0.12s,border-color 0.12s}
+.ed-sb-tab:hover{color:var(--text-dim)}
+.ed-sb-tab.active{color:var(--text);border-bottom-color:var(--green)}
+.ed-sb-panel{display:none}
+.ed-sb-panel.active{display:block}
+.ed-tl-item{display:flex;align-items:flex-start;gap:8px;padding:6px 0;border-bottom:1px solid var(--border);font-size:11px}
+.ed-tl-item:last-child{border-bottom:0}
+.ed-tl-time{min-width:28px;color:var(--text-muted);font-weight:700;font-variant-numeric:tabular-nums;text-align:right;flex-shrink:0}
+.ed-tl-icon{width:16px;text-align:center;flex-shrink:0;font-size:13px}
+.ed-tl-detail{flex:1;color:var(--text-dim);line-height:1.3}
+.ed-tl-player{color:var(--text);font-weight:600}
+.ed-tl-assist{color:var(--text-muted);font-size:10px}
+.ed-tl-score{color:var(--green);font-weight:700;font-size:10px;margin-left:4px}
+.ed-tl-sub-in{color:#4caf50}
+.ed-tl-sub-out{color:#f44336}
+.ed-tl-home{border-left:3px solid var(--green);padding-left:8px}
+.ed-tl-away{border-left:3px solid var(--red);padding-left:8px}
+.ed-tl-neutral{border-left:3px solid var(--border);padding-left:8px}
+.ed-lu-formation{text-align:center;font-size:12px;font-weight:700;color:var(--green);margin-bottom:8px;letter-spacing:0.5px}
+.ed-lu-section{font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;color:var(--text-muted);margin:10px 0 4px;padding-top:6px;border-top:1px solid var(--border)}
+.ed-lu-section:first-child{border-top:0;margin-top:0;padding-top:0}
+.ed-lu-player{display:flex;align-items:center;gap:6px;padding:3px 0;font-size:11px}
+.ed-lu-num{min-width:20px;text-align:center;font-weight:700;color:var(--text-muted);font-variant-numeric:tabular-nums}
+.ed-lu-name{flex:1;color:var(--text-dim)}
+.ed-lu-pos{font-size:9px;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.3px}
+.ed-lu-captain{color:var(--green);font-size:9px;font-weight:700}
 .ed-header{display:flex;flex-direction:column;gap:10px;padding:18px 20px;background:var(--bg2);border:1px solid var(--border);border-radius:12px}
 .ed-pills{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
 .ed-title{font-size:20px;font-weight:700;line-height:1.3;color:var(--text);margin:0}
@@ -3276,7 +3303,7 @@ async function hydrateGameStats(evTicker) {
   try {
     var r = await fetch("/api/event/" + encodeURIComponent(evTicker) + "/stats");
     var d = await r.json();
-    if (d.error || !d.stats || !d.stats.length) {
+    if (d.error && !d.stats) {
       panel.innerHTML = '<div class="ed-stats-loading">'
         + (d.error === "no SofaScore match found for this event"
           ? 'Game stats not available for this event.'
@@ -3286,28 +3313,133 @@ async function hydrateGameStats(evTicker) {
     }
     var home = d.home || "Home";
     var away = d.away || "Away";
-    var h = '<div class="ed-stats-title">Team Stats</div>';
-    h += '<div class="ed-stats-teams">';
-    h += '<div class="ed-stats-team">' + escH(home) + '</div>';
-    h += '<div class="ed-stats-team">' + escH(away) + '</div>';
+    var stats = d.stats || [];
+    var incidents = d.incidents || [];
+    var lineups = d.lineups || {};
+    var hasStats = stats.length > 0;
+    var hasTimeline = incidents.length > 0;
+    var hasLineups = (lineups.home && lineups.home.players && lineups.home.players.length > 0);
+    if (!hasStats && !hasTimeline && !hasLineups) {
+      panel.innerHTML = '<div class="ed-stats-loading">No match data available yet.</div>';
+      return;
+    }
+    // Tab strip.
+    var h = '<div class="ed-sb-tabs">';
+    if (hasStats) h += '<button class="ed-sb-tab active" data-panel="stats" onclick="window.switchSBTab(this)">Stats</button>';
+    if (hasTimeline) h += '<button class="ed-sb-tab' + (!hasStats ? ' active' : '') + '" data-panel="timeline" onclick="window.switchSBTab(this)">Timeline</button>';
+    if (hasLineups) h += '<button class="ed-sb-tab' + (!hasStats && !hasTimeline ? ' active' : '') + '" data-panel="lineups" onclick="window.switchSBTab(this)">Lineups</button>';
     h += '</div>';
-    for (var i = 0; i < d.stats.length; i++) {
-      var s = d.stats[i];
-      h += '<div class="ed-stats-row">';
-      h += '<div class="ed-stats-home">' + escH(s.home) + '</div>';
-      h += '<div class="ed-stats-name">' + escH(s.name) + '</div>';
-      h += '<div class="ed-stats-away">' + escH(s.away) + '</div>';
+    // ── Stats panel ──────────────────────────────────────────
+    if (hasStats) {
+      h += '<div class="ed-sb-panel active" data-panel="stats">';
+      h += '<div class="ed-stats-title">Team Stats</div>';
+      h += '<div class="ed-stats-teams">';
+      h += '<div class="ed-stats-team">' + escH(home) + '</div>';
+      h += '<div class="ed-stats-team">' + escH(away) + '</div>';
       h += '</div>';
-      // Add a visual bar for percentage-like stats.
-      var hNum = parseFloat(s.home);
-      var aNum = parseFloat(s.away);
-      if (!isNaN(hNum) && !isNaN(aNum) && (hNum + aNum) > 0) {
-        var hPct = hNum / (hNum + aNum) * 100;
-        h += '<div class="ed-stats-bar">';
-        h += '<div class="ed-stats-bar-home" style="width:' + hPct.toFixed(1) + '%"></div>';
-        h += '<div class="ed-stats-bar-away" style="width:' + (100 - hPct).toFixed(1) + '%"></div>';
+      for (var i = 0; i < stats.length; i++) {
+        var s = stats[i];
+        h += '<div class="ed-stats-row">';
+        h += '<div class="ed-stats-home">' + escH(s.home) + '</div>';
+        h += '<div class="ed-stats-name">' + escH(s.name) + '</div>';
+        h += '<div class="ed-stats-away">' + escH(s.away) + '</div>';
+        h += '</div>';
+        var hNum = parseFloat(s.home);
+        var aNum = parseFloat(s.away);
+        if (!isNaN(hNum) && !isNaN(aNum) && (hNum + aNum) > 0) {
+          var hPct = hNum / (hNum + aNum) * 100;
+          h += '<div class="ed-stats-bar">';
+          h += '<div class="ed-stats-bar-home" style="width:' + hPct.toFixed(1) + '%"></div>';
+          h += '<div class="ed-stats-bar-away" style="width:' + (100 - hPct).toFixed(1) + '%"></div>';
+          h += '</div>';
+        }
+      }
+      h += '</div>';
+    }
+    // ── Timeline panel ───────────────────────────────────────
+    if (hasTimeline) {
+      h += '<div class="ed-sb-panel' + (!hasStats ? ' active' : '') + '" data-panel="timeline">';
+      for (var ti = 0; ti < incidents.length; ti++) {
+        var inc = incidents[ti];
+        var itype = inc.type || "";
+        var minute = inc.time != null ? inc.time + "'" : "";
+        if (inc.addedTime) minute += "+" + inc.addedTime;
+        var sideCls = inc.isHome === true ? " ed-tl-home" : (inc.isHome === false ? " ed-tl-away" : " ed-tl-neutral");
+        var icon = "";
+        var detail = "";
+        if (itype === "goal") {
+          icon = "\u26BD";
+          detail = '<span class="ed-tl-player">' + escH(inc.player) + '</span>';
+          if (inc.assist) detail += '<br><span class="ed-tl-assist">Assist: ' + escH(inc.assist) + '</span>';
+          if (inc.homeScore != null && inc.awayScore != null) {
+            detail += '<span class="ed-tl-score">' + inc.homeScore + '-' + inc.awayScore + '</span>';
+          }
+          if (inc.goalType === "ownGoal") detail += ' <span class="ed-tl-assist">(OG)</span>';
+          if (inc.goalType === "penalty") detail += ' <span class="ed-tl-assist">(Pen)</span>';
+        } else if (itype === "card") {
+          icon = inc.incidentClass === "red" ? "\uD83D\uDFE5" : "\uD83D\uDFE8";
+          detail = '<span class="ed-tl-player">' + escH(inc.player) + '</span>';
+        } else if (itype === "substitution") {
+          icon = "\uD83D\uDD04";
+          detail = '<span class="ed-tl-sub-in">\u25B2 ' + escH(inc.playerIn || "") + '</span>';
+          detail += '<br><span class="ed-tl-sub-out">\u25BC ' + escH(inc.playerOut || "") + '</span>';
+        } else if (itype === "period") {
+          icon = "\u23F1";
+          detail = '<span class="ed-tl-player">' + escH(inc.text || "Period") + '</span>';
+          sideCls = " ed-tl-neutral";
+        } else if (itype === "varDecision") {
+          icon = "\uD83D\uDCFA";
+          detail = '<span class="ed-tl-player">VAR: ' + escH(inc.text || inc.incidentClass || "") + '</span>';
+        } else {
+          if (!inc.player && !inc.text) continue;
+          icon = "\u2022";
+          detail = escH(inc.player || inc.text || itype);
+        }
+        h += '<div class="ed-tl-item' + sideCls + '">';
+        h += '<div class="ed-tl-time">' + minute + '</div>';
+        h += '<div class="ed-tl-icon">' + icon + '</div>';
+        h += '<div class="ed-tl-detail">' + detail + '</div>';
         h += '</div>';
       }
+      h += '</div>';
+    }
+    // ── Lineups panel ────────────────────────────────────────
+    if (hasLineups) {
+      h += '<div class="ed-sb-panel' + (!hasStats && !hasTimeline ? ' active' : '') + '" data-panel="lineups">';
+      for (var side = 0; side < 2; side++) {
+        var key = side === 0 ? "home" : "away";
+        var teamName = side === 0 ? home : away;
+        var lu = lineups[key] || {};
+        var players = lu.players || [];
+        var formation = lu.formation || "";
+        h += '<div class="ed-stats-title">' + escH(teamName) + '</div>';
+        if (formation) h += '<div class="ed-lu-formation">' + escH(formation) + '</div>';
+        var starters = players.filter(function(p) { return !p.substitute; });
+        var subs = players.filter(function(p) { return p.substitute; });
+        if (starters.length) {
+          h += '<div class="ed-lu-section">Starting XI</div>';
+          for (var pi = 0; pi < starters.length; pi++) {
+            var p = starters[pi];
+            h += '<div class="ed-lu-player">';
+            h += '<div class="ed-lu-num">' + (p.jerseyNumber != null ? p.jerseyNumber : "") + '</div>';
+            h += '<div class="ed-lu-name">' + escH(p.name) + (p.captain ? ' <span class="ed-lu-captain">(C)</span>' : '') + '</div>';
+            h += '<div class="ed-lu-pos">' + escH(p.position || "") + '</div>';
+            h += '</div>';
+          }
+        }
+        if (subs.length) {
+          h += '<div class="ed-lu-section">Substitutes</div>';
+          for (var si2 = 0; si2 < subs.length; si2++) {
+            var sub = subs[si2];
+            h += '<div class="ed-lu-player">';
+            h += '<div class="ed-lu-num">' + (sub.jerseyNumber != null ? sub.jerseyNumber : "") + '</div>';
+            h += '<div class="ed-lu-name">' + escH(sub.name) + '</div>';
+            h += '<div class="ed-lu-pos">' + escH(sub.position || "") + '</div>';
+            h += '</div>';
+          }
+        }
+      }
+      h += '</div>';
     }
     panel.innerHTML = h;
   } catch (ex) {
@@ -3315,6 +3447,20 @@ async function hydrateGameStats(evTicker) {
     console.error("hydrateGameStats error", ex);
   }
 }
+
+window.switchSBTab = function(btn) {
+  var panel = btn.closest(".ed-stats-panel");
+  if (!panel) return;
+  var target = btn.getAttribute("data-panel");
+  var tabs = panel.querySelectorAll(".ed-sb-tab");
+  for (var i = 0; i < tabs.length; i++) {
+    tabs[i].classList.toggle("active", tabs[i].getAttribute("data-panel") === target);
+  }
+  var panels = panel.querySelectorAll(".ed-sb-panel");
+  for (var j = 0; j < panels.length; j++) {
+    panels[j].classList.toggle("active", panels[j].getAttribute("data-panel") === target);
+  }
+};
 
 function renderEventDetail(ev) {
   var sport = ev._sport || "";
