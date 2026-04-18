@@ -4367,9 +4367,18 @@ def get_event_stats(ticker: str, debug: bool = False):
                                 "substitute": p.get("substitute", False),
                                 "captain": p.get("captain", False),
                             })
+                        # Manager / head coach — SofaScore nests it
+                        # under a "manager" object with name, country.
+                        manager_obj = team.get("manager") or {}
+                        manager_name = (
+                            manager_obj.get("shortName")
+                            or manager_obj.get("name")
+                            or ""
+                        )
                         lineups[side] = {
                             "formation": formation,
                             "players": parsed_players,
+                            "manager": manager_name,
                         }
             except Exception:
                 pass

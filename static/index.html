@@ -313,7 +313,9 @@ html,body{overscroll-behavior:none}
 .ed-tl-home{border-left:3px solid var(--green);padding-left:8px}
 .ed-tl-away{border-left:3px solid var(--red);padding-left:8px}
 .ed-tl-neutral{border-left:3px solid var(--border);padding-left:8px}
-.ed-lu-formation{text-align:center;font-size:12px;font-weight:700;color:var(--green);margin-bottom:8px;letter-spacing:0.5px}
+.ed-lu-formation{text-align:center;font-size:12px;font-weight:700;color:var(--green);margin-bottom:4px;letter-spacing:0.5px}
+.ed-lu-manager{text-align:center;font-size:10px;color:var(--text-dim);margin-bottom:8px}
+.ed-lu-manager-label{color:var(--text-muted);text-transform:uppercase;letter-spacing:0.4px;font-weight:700;font-size:9px}
 .ed-lu-section{font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;color:var(--text-muted);margin:10px 0 4px;padding-top:6px;border-top:1px solid var(--border)}
 .ed-lu-section:first-child{border-top:0;margin-top:0;padding-top:0}
 .ed-lu-player{display:flex;align-items:center;gap:6px;padding:3px 0;font-size:11px}
@@ -3430,6 +3432,10 @@ async function hydrateGameStats(evTicker) {
         var formation = lu.formation || "";
         h += '<div class="ed-stats-title">' + escH(teamName) + '</div>';
         if (formation) h += '<div class="ed-lu-formation">' + escH(formation) + '</div>';
+        if (lu.manager) {
+          h += '<div class="ed-lu-manager"><span class="ed-lu-manager-label">Manager:</span> '
+             + escH(lu.manager) + '</div>';
+        }
         var starters = players.filter(function(p) { return !p.substitute; });
         var subs = players.filter(function(p) { return p.substitute; });
         if (starters.length) {
