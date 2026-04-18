@@ -430,15 +430,15 @@ html,body{overscroll-behavior:none}
 .ed-markets-table tr:last-child td{border-bottom:0}
 .ed-markets-table .ed-mk-label{color:var(--text);font-weight:600;text-align:left;cursor:pointer}
 .ed-markets-table .ed-mk-label:hover{color:var(--green);text-decoration:underline}
-/* Order book modal */
-.ob-backdrop{position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.7);z-index:1000;display:none;align-items:center;justify-content:center;padding:20px}
-.ob-backdrop.open{display:flex}
-.ob-modal{background:var(--bg2);border:1px solid var(--border);border-radius:10px;width:100%;max-width:640px;max-height:90vh;overflow-y:auto;padding:18px}
+/* Order book inline section */
+.ob-section{margin-top:20px;background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:14px}
 .ob-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px}
 .ob-title{font-size:13px;font-weight:700;color:var(--text)}
-.ob-close{background:transparent;border:0;color:var(--text-muted);font-size:20px;cursor:pointer;padding:0 4px;line-height:1}
-.ob-close:hover{color:var(--text)}
-.ob-ticker{font-size:10px;color:var(--text-muted);font-family:monospace;margin-bottom:12px}
+.ob-ticker{font-size:10px;color:var(--text-muted);font-family:monospace;margin-bottom:4px}
+.ob-outcomes{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px}
+.ob-outcome-btn{padding:5px 10px;background:var(--bg3);border:1px solid var(--border);color:var(--text-dim);font-family:inherit;font-size:10px;font-weight:700;border-radius:5px;cursor:pointer;transition:background 0.12s,border-color 0.12s}
+.ob-outcome-btn:hover{color:var(--text);border-color:var(--text-muted)}
+.ob-outcome-btn.active{color:var(--text);border-color:var(--green);background:rgba(0,200,83,0.08)}
 .ob-tabs{display:flex;gap:0;border-bottom:1px solid var(--border);margin-bottom:14px}
 .ob-tab{padding:8px 14px;background:transparent;border:0;border-bottom:2px solid transparent;color:var(--text-muted);font-family:inherit;font-size:12px;font-weight:700;letter-spacing:0.4px;cursor:pointer;transition:color 0.12s,border-color 0.12s}
 .ob-tab:hover{color:var(--text-dim)}
@@ -553,24 +553,6 @@ html,body{overscroll-behavior:none}
     </div>
     <div id="cards-grid"></div>
     <div id="event-detail"></div>
-    <div id="ob-backdrop" class="ob-backdrop" onclick="window.closeOrderbook(event)">
-      <div class="ob-modal" onclick="event.stopPropagation()">
-        <div class="ob-header">
-          <div>
-            <div class="ob-title" id="ob-title">Order Book</div>
-            <div class="ob-ticker" id="ob-ticker"></div>
-          </div>
-          <button class="ob-close" onclick="window.closeOrderbook()">&times;</button>
-        </div>
-        <div class="ob-tabs">
-          <button class="ob-tab active" data-side="yes" onclick="window.switchObTab(this)">Trade Yes</button>
-          <button class="ob-tab ob-tab-no" data-side="no" onclick="window.switchObTab(this)">Trade No</button>
-        </div>
-        <div class="ob-body" id="ob-body">
-          <div class="ob-loading">Loading order book&hellip;</div>
-        </div>
-      </div>
-    </div>
     <div id="loader"><div class="spinner"></div></div>
     <div id="count-bar"></div>
     <div id="sentinel"></div>
@@ -2268,6 +2250,8 @@ function showEventDetail(ticker, skipHistory) {
           }
         }, 100);
       }
+      // Auto-load the first outcome's order book.
+      hydrateOrderbook();
     })
     .catch(function(ex) {
       document.getElementById("loader").style.display = "none";
@@ -3539,43 +3523,74 @@ window.switchSBTab = function(btn) {
   }
 };
 
-// ── Order book modal ──────────────────────────────────────────
+// ── Order book inline section ──────────────────────────────────
 var _obData = null;
 var _obActiveSide = "yes";
+var _obActiveOutcome = null;
 
-window.openOrderbook = function(el) {
-  var ticker = el.getAttribute("data-mk-ticker");
-  var label = el.getAttribute("data-mk-label");
-  if (!ticker) return;
-  var backdrop = document.getElementById("ob-backdrop");
-  document.getElementById("ob-title").textContent = label || "Order Book";
-  document.getElementById("ob-ticker").textContent = ticker;
-  document.getElementById("ob-body").innerHTML =
-    '<div class="ob-loading">Loading order book&hellip;</div>';
-  // Reset to Yes tab on open.
-  _obActiveSide = "yes";
-  var tabs = document.querySelectorAll(".ob-tab");
-  for (var i = 0; i < tabs.length; i++) {
-    tabs[i].classList.toggle("active", tabs[i].getAttribute("data-side") === "yes");
+// Render order book section placeholder. Called by renderEventDetail
+// right after the markets table.
+function renderOrderbookSection(outcomes) {
+  if (!outcomes || !outcomes.length) return "";
+  var h = '<div class="ob-section">';
+  h += '<div class="ed-section-title">Order Book</div>';
+  h += '<div class="ob-outcomes">';
+  for (var i = 0; i < outcomes.length; i++) {
+    var o = outcomes[i];
+    if (!o.ticker) continue;
+    h += '<button class="ob-outcome-btn' + (i === 0 ? ' active' : '') + '"'
+       + ' data-ob-ticker="' + escH(o.ticker) + '"'
+       + ' data-ob-label="' + escH(o.label) + '"'
+       + ' onclick="window.selectObOutcome(this)">'
+       + escH(o.label) + '</button>';
   }
-  backdrop.classList.add("open");
-  document.body.style.overflow = "hidden";
+  h += '</div>';
+  h += '<div class="ob-tabs">';
+  h += '<button class="ob-tab active" data-side="yes" onclick="window.switchObTab(this)">Trade Yes</button>';
+  h += '<button class="ob-tab ob-tab-no" data-side="no" onclick="window.switchObTab(this)">Trade No</button>';
+  h += '</div>';
+  h += '<div class="ob-body" id="ob-body">';
+  h += '<div class="ob-loading">Select an outcome above to view the order book.</div>';
+  h += '</div>';
+  h += '</div>';
+  return h;
+}
+
+window.selectObOutcome = function(btn) {
+  var section = btn.closest(".ob-section");
+  if (!section) return;
+  var btns = section.querySelectorAll(".ob-outcome-btn");
+  for (var i = 0; i < btns.length; i++) {
+    btns[i].classList.toggle("active", btns[i] === btn);
+  }
+  var ticker = btn.getAttribute("data-ob-ticker");
+  _obActiveOutcome = ticker;
+  _obActiveSide = "yes";
+  var tabs = section.querySelectorAll(".ob-tab");
+  for (var j = 0; j < tabs.length; j++) {
+    tabs[j].classList.toggle("active", tabs[j].getAttribute("data-side") === "yes");
+  }
+  var body = section.querySelector(".ob-body");
+  if (body) body.innerHTML = '<div class="ob-loading">Loading order book&hellip;</div>';
   fetchOrderbook(ticker);
 };
 
-window.closeOrderbook = function(ev) {
-  if (ev && ev.target && ev.target.id !== "ob-backdrop") return;
-  var backdrop = document.getElementById("ob-backdrop");
-  backdrop.classList.remove("open");
-  document.body.style.overflow = "";
-  _obData = null;
-};
+// Auto-load first outcome on page render.
+function hydrateOrderbook() {
+  var firstBtn = document.querySelector(".ob-outcome-btn.active");
+  if (firstBtn) {
+    window.selectObOutcome(firstBtn);
+  }
+}
 
 window.switchObTab = function(btn) {
   _obActiveSide = btn.getAttribute("data-side");
-  var tabs = document.querySelectorAll(".ob-tab");
-  for (var i = 0; i < tabs.length; i++) {
-    tabs[i].classList.toggle("active", tabs[i] === btn);
+  var section = btn.closest(".ob-section");
+  if (section) {
+    var tabs = section.querySelectorAll(".ob-tab");
+    for (var i = 0; i < tabs.length; i++) {
+      tabs[i].classList.toggle("active", tabs[i] === btn);
+    }
   }
   renderOrderbook();
 };
@@ -3860,6 +3875,7 @@ function renderEventDetail(ev) {
       h += renderPriceHistoryPanel(g2.event_ticker || ticker, _outcomeLabels(g2.outcomes || []));
       h += marketsSectionTitle(live);
       h += renderMarketsTable(g2.outcomes || [], live);
+      h += renderOrderbookSection(g2.outcomes || []);
       h += renderMarketDataGrid(g2.event_ticker || ticker);
       h += renderSettlementRules(g2.outcomes || []);
       h += '</div>';
@@ -3870,6 +3886,7 @@ function renderEventDetail(ev) {
     h += renderPriceHistoryPanel(ticker, _outcomeLabels(ev.outcomes || []));
     h += marketsSectionTitle(live);
     h += renderMarketsTable(ev.outcomes || [], live);
+    h += renderOrderbookSection(ev.outcomes || []);
     h += renderMarketDataGrid(ticker);
     h += renderSettlementRules(ev.outcomes || []);
   }

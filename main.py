@@ -3966,7 +3966,7 @@ def _analytics_snippet() -> str:
 
 
 @app.get("/api/market/{ticker}/orderbook")
-def get_market_orderbook(ticker: str, depth: int = 10):
+def get_market_orderbook(ticker: str, depth: int = 10, debug: bool = False):
     """Fetch the full order book for a single market (outcome) ticker
     from Kalshi's /markets/{ticker}/orderbook endpoint. Returns
     structured asks + bids for both Trade Yes and Trade No views.
@@ -4023,6 +4023,13 @@ def get_market_orderbook(ticker: str, depth: int = 10):
                     "body": r.text[:400],
                 }
             data = r.json() or {}
+            if debug:
+                return {
+                    "ticker": ticker,
+                    "status": r.status_code,
+                    "raw_keys": list(data.keys()),
+                    "raw_preview": str(data)[:1500],
+                }
             ob = data.get("orderbook") or {}
             yes_raw = ob.get("yes") or []
             no_raw = ob.get("no") or []
