@@ -11,11 +11,8 @@
 html,body{background:var(--bg);color:var(--text);font-family:Helvetica,Arial,sans-serif}
 :root{--header-h:110px}
 #header{position:fixed;top:0;left:0;right:0;z-index:100;background:#000;border-bottom:1px solid var(--border);padding:12px 24px 0}
-/* Fixed black band below the header that preserves the breathing
-   room between the main app header and sticky elements like the
-   screener filter sidebar and sortable table header. Content
-   scrolling upward slides invisibly behind this curtain. */
-#header::after{content:"";position:fixed;top:var(--header-h);left:0;right:0;height:16px;background:#000;z-index:99;pointer-events:none}
+/* Removed the ::after black band — it caused a visible gap on
+   page load. The header's border-bottom is sufficient. */
 html,body{overscroll-behavior:none}
 @media (max-width:900px){:root{--header-h:100px}}
 @media (max-width:600px){:root{--header-h:90px}}

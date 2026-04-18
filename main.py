@@ -4442,13 +4442,23 @@ def get_event_stats(ticker: str, debug: bool = False):
                                 "captain": p.get("captain", False),
                             })
                         # Manager / head coach — SofaScore nests it
-                        # under a "manager" object with name, country.
-                        manager_obj = team.get("manager") or {}
-                        manager_name = (
-                            manager_obj.get("shortName")
-                            or manager_obj.get("name")
-                            or ""
-                        )
+                        # under various field names depending on the
+                        # endpoint version: "manager", "headCoach",
+                        # "coach". Try all.
+                        manager_name = ""
+                        for _mk in ("manager", "headCoach", "coach"):
+                            mobj = team.get(_mk)
+                            if isinstance(mobj, dict):
+                                manager_name = (
+                                    mobj.get("shortName")
+                                    or mobj.get("name")
+                                    or ""
+                                )
+                                if manager_name:
+                                    break
+                            elif isinstance(mobj, str) and mobj:
+                                manager_name = mobj
+                                break
                         lineups[side] = {
                             "formation": formation,
                             "players": parsed_players,
@@ -4456,6 +4466,28 @@ def get_event_stats(ticker: str, debug: bool = False):
                         }
             except Exception:
                 pass
+            # If lineups lack manager names, try the event detail
+            # endpoint where SofaScore nests them under
+            # homeTeam.manager / awayTeam.manager.
+            if lineups and (not lineups.get("home", {}).get("manager") or
+                            not lineups.get("away", {}).get("manager")):
+                try:
+                    evr = client.get(base)
+                    if evr.status_code == 200:
+                        evd = (evr.json() or {}).get("event") or {}
+                        for _side, _tkey in [("home","homeTeam"),("away","awayTeam")]:
+                            if lineups.get(_side) and not lineups[_side].get("manager"):
+                                mgr = (evd.get(_tkey) or {}).get("manager") or {}
+                                if isinstance(mgr, dict):
+                                    mn = mgr.get("shortName") or mgr.get("name") or ""
+                                elif isinstance(mgr, str):
+                                    mn = mgr
+                                else:
+                                    mn = ""
+                                if mn:
+                                    lineups[_side]["manager"] = mn
+                except Exception:
+                    pass
             return {
                 "stats": stats,
                 "incidents": incidents,
