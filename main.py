@@ -4178,6 +4178,55 @@ def get_event_stats(ticker: str):
                         away_name = parts[1].strip()
         except Exception:
             pass
+    # Last-resort fallback: direct SofaScore search-events with loose
+    # matching. lookup_aggregate_sync is 2-leg-tie specific and can
+    # miss regular fixtures.
+    if not sofa_id:
+        try:
+            import re as _re2
+            import httpx as _httpx2
+            parts = _re2.split(r'\s+(?:vs\.?|v|at)\s+', title, maxsplit=1, flags=_re2.IGNORECASE)
+            if len(parts) == 2:
+                t_home = parts[0].strip().lower()
+                t_away = parts[1].strip().lower()
+                search_headers = {
+                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                                  "AppleWebKit/537.36 (KHTML, like Gecko) "
+                                  "Chrome/125.0.0.0 Safari/537.36",
+                    "Accept": "application/json, text/plain, */*",
+                    "Referer": "https://www.sofascore.com/",
+                    "Origin": "https://www.sofascore.com",
+                }
+                q = (parts[0].strip() + " " + parts[1].strip()).strip()
+                with _httpx2.Client(headers=search_headers, timeout=10.0,
+                                    follow_redirects=True) as sc:
+                    sr = sc.get("https://api.sofascore.com/api/v1/search/events",
+                                params={"q": q, "page": 0})
+                    if sr.status_code == 200:
+                        srd = sr.json() or {}
+                        for item in (srd.get("results") or []):
+                            if not isinstance(item, dict):
+                                continue
+                            if item.get("type") != "event":
+                                continue
+                            ent = item.get("entity") or {}
+                            hn = (ent.get("homeTeam") or {}).get("name", "").lower()
+                            an = (ent.get("awayTeam") or {}).get("name", "").lower()
+                            # Loose match: each Kalshi team name should
+                            # appear in ONE of the SofaScore team names
+                            # (handles "Brentford" vs "Brentford FC"
+                            # and order-swapped fixtures).
+                            h_hit = (t_home in hn) or (t_home in an) or (hn in t_home) or (an in t_home)
+                            a_hit = (t_away in hn) or (t_away in an) or (hn in t_away) or (an in t_away)
+                            if h_hit and a_hit:
+                                sofa_id = ent.get("id")
+                                if not home_name:
+                                    home_name = (ent.get("homeTeam") or {}).get("name") or parts[0].strip()
+                                if not away_name:
+                                    away_name = (ent.get("awayTeam") or {}).get("name") or parts[1].strip()
+                                break
+        except Exception:
+            pass
     if not sofa_id:
         return {"error": "no SofaScore match found for this event", "sport": sport}
     # Fetch statistics from SofaScore.
