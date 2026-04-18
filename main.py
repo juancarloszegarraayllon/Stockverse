@@ -3965,6 +3965,117 @@ def _analytics_snippet() -> str:
     )
 
 
+@app.get("/api/market/{ticker}/orderbook")
+def get_market_orderbook(ticker: str, depth: int = 10):
+    """Fetch the full order book for a single market (outcome) ticker
+    from Kalshi's /markets/{ticker}/orderbook endpoint. Returns
+    structured asks + bids for both Trade Yes and Trade No views.
+
+    Kalshi's orderbook response contains two arrays:
+      - yes[]: [price, quantity] pairs representing offers to buy YES
+      - no[]:  [price, quantity] pairs representing offers to buy NO
+
+    For Trade Yes view:
+      Asks (what you pay to buy YES)   = (100 - no_price, no_qty)
+      Bids (what you receive for YES)  = yes entries as-is
+
+    For Trade No view:
+      Asks (what you pay to buy NO)    = (100 - yes_price, yes_qty)
+      Bids (what you receive for NO)   = no entries as-is
+    """
+    ticker = (ticker or "").strip().upper()
+    if not ticker:
+        return {"error": "ticker required"}
+    try:
+        from cryptography.hazmat.primitives import hashes, serialization
+        from cryptography.hazmat.primitives.asymmetric import padding
+        import base64, httpx as _httpx
+        key_str = os.environ.get("KALSHI_PRIVATE_KEY", "")
+        key_id = os.environ.get("KALSHI_API_KEY_ID", "")
+        if not key_str or not key_id:
+            return {"error": "KALSHI credentials not configured"}
+        private_key = serialization.load_pem_private_key(
+            key_str.encode(), password=None,
+        )
+        ts_ms = str(int(time.time() * 1000))
+        path = f"/trade-api/v2/markets/{ticker}/orderbook"
+        msg = (ts_ms + "GET" + path).encode()
+        sig = private_key.sign(
+            msg,
+            padding.PSS(
+                mgf=padding.MGF1(hashes.SHA256()),
+                salt_length=padding.PSS.DIGEST_LENGTH,
+            ),
+            hashes.SHA256(),
+        )
+        headers = {
+            "KALSHI-ACCESS-KEY": key_id,
+            "KALSHI-ACCESS-TIMESTAMP": ts_ms,
+            "KALSHI-ACCESS-SIGNATURE": base64.b64encode(sig).decode(),
+            "Accept": "application/json",
+        }
+        url = f"https://api.elections.kalshi.com{path}"
+        with _httpx.Client(timeout=10.0) as client:
+            r = client.get(url, headers=headers, params={"depth": depth})
+            if r.status_code != 200:
+                return {
+                    "error": f"Kalshi returned HTTP {r.status_code}",
+                    "body": r.text[:400],
+                }
+            data = r.json() or {}
+            ob = data.get("orderbook") or {}
+            yes_raw = ob.get("yes") or []
+            no_raw = ob.get("no") or []
+            # Parse into [price, quantity] pairs, dropping any
+            # malformed entries.
+            def _parse(levels):
+                out = []
+                for lv in levels or []:
+                    if not isinstance(lv, (list, tuple)) or len(lv) < 2:
+                        continue
+                    try:
+                        p = int(lv[0])
+                        q = float(lv[1])
+                    except Exception:
+                        continue
+                    out.append({"price": p, "qty": q})
+                return out
+            yes_levels = _parse(yes_raw)
+            no_levels = _parse(no_raw)
+            # Build Trade Yes view.
+            yes_asks = [{"price": 100 - lv["price"], "qty": lv["qty"]}
+                        for lv in no_levels if lv["price"] < 100]
+            yes_asks.sort(key=lambda x: x["price"])  # ascending
+            yes_bids = sorted(yes_levels, key=lambda x: -x["price"])
+            # Build Trade No view.
+            no_asks = [{"price": 100 - lv["price"], "qty": lv["qty"]}
+                       for lv in yes_levels if lv["price"] < 100]
+            no_asks.sort(key=lambda x: x["price"])
+            no_bids = sorted(no_levels, key=lambda x: -x["price"])
+            # Add cumulative totals for display.
+            def _add_totals(levels):
+                running_qty = 0.0
+                for lv in levels:
+                    running_qty += lv["qty"]
+                    # Total cost in dollars (price is cents).
+                    lv["total"] = round(running_qty * lv["price"] / 100.0, 2)
+                    lv["cum_qty"] = round(running_qty, 2)
+                return levels
+            return {
+                "ticker": ticker,
+                "yes": {
+                    "asks": _add_totals(yes_asks),
+                    "bids": _add_totals(yes_bids),
+                },
+                "no": {
+                    "asks": _add_totals(no_asks),
+                    "bids": _add_totals(no_bids),
+                },
+            }
+    except Exception as e:
+        return {"error": str(e)}
+
+
 @app.get("/api/event/{ticker}/history")
 def get_event_history(ticker: str, hours: int = 24, period: int = 60, debug: bool = False):
     """Fetch historical candlestick data from Kalshi's REST API

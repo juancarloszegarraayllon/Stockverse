@@ -428,7 +428,44 @@ html,body{overscroll-behavior:none}
 .ed-markets-table th{text-align:left;font-size:10px;text-transform:uppercase;letter-spacing:0.5px;color:var(--text-muted);font-weight:700;padding:10px 12px;background:var(--bg3);border-bottom:1px solid var(--border)}
 .ed-markets-table td{padding:10px 12px;font-size:12px;color:var(--text-dim);border-bottom:1px solid var(--border);font-variant-numeric:tabular-nums}
 .ed-markets-table tr:last-child td{border-bottom:0}
-.ed-markets-table .ed-mk-label{color:var(--text);font-weight:600;text-align:left}
+.ed-markets-table .ed-mk-label{color:var(--text);font-weight:600;text-align:left;cursor:pointer}
+.ed-markets-table .ed-mk-label:hover{color:var(--green);text-decoration:underline}
+/* Order book modal */
+.ob-backdrop{position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.7);z-index:1000;display:none;align-items:center;justify-content:center;padding:20px}
+.ob-backdrop.open{display:flex}
+.ob-modal{background:var(--bg2);border:1px solid var(--border);border-radius:10px;width:100%;max-width:640px;max-height:90vh;overflow-y:auto;padding:18px}
+.ob-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px}
+.ob-title{font-size:13px;font-weight:700;color:var(--text)}
+.ob-close{background:transparent;border:0;color:var(--text-muted);font-size:20px;cursor:pointer;padding:0 4px;line-height:1}
+.ob-close:hover{color:var(--text)}
+.ob-ticker{font-size:10px;color:var(--text-muted);font-family:monospace;margin-bottom:12px}
+.ob-tabs{display:flex;gap:0;border-bottom:1px solid var(--border);margin-bottom:14px}
+.ob-tab{padding:8px 14px;background:transparent;border:0;border-bottom:2px solid transparent;color:var(--text-muted);font-family:inherit;font-size:12px;font-weight:700;letter-spacing:0.4px;cursor:pointer;transition:color 0.12s,border-color 0.12s}
+.ob-tab:hover{color:var(--text-dim)}
+.ob-tab.active{color:var(--text);border-bottom-color:var(--green)}
+.ob-tab.active.ob-tab-no{border-bottom-color:var(--red)}
+.ob-panel{display:none}
+.ob-panel.active{display:block}
+.ob-col-headers{display:grid;grid-template-columns:60px 1fr 1fr 1fr;gap:0;padding:6px 0;border-bottom:1px solid var(--border);font-size:10px;font-weight:700;letter-spacing:0.4px;text-transform:uppercase;color:var(--text-muted)}
+.ob-col-headers > div:nth-child(n+2){text-align:right;padding-right:12px}
+.ob-rows{display:flex;flex-direction:column}
+.ob-row{display:grid;grid-template-columns:60px 1fr 1fr 1fr;gap:0;padding:5px 0;font-size:11px;font-variant-numeric:tabular-nums;position:relative;align-items:center}
+.ob-row > div:nth-child(n+2){text-align:right;padding-right:12px;position:relative;z-index:1}
+.ob-side-label{padding-left:8px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.4px}
+.ob-ask-label{color:var(--red)}
+.ob-bid-label{color:var(--green)}
+.ob-price-ask{color:var(--red);font-weight:700}
+.ob-price-bid{color:var(--green);font-weight:700}
+.ob-qty,.ob-total{color:var(--text-dim)}
+.ob-depth{position:absolute;top:0;bottom:0;right:0;z-index:0;border-radius:2px}
+.ob-depth-ask{background:rgba(244,67,54,0.18)}
+.ob-depth-bid{background:rgba(76,175,80,0.18)}
+.ob-last{display:flex;align-items:center;justify-content:center;gap:8px;padding:10px 0;border-top:1px solid var(--border);border-bottom:1px solid var(--border);font-size:13px;font-weight:700}
+.ob-last.yes-color{color:var(--green)}
+.ob-last.no-color{color:var(--red)}
+.ob-last-price{color:var(--text-dim);font-weight:500;font-size:11px}
+.ob-empty{padding:20px;text-align:center;color:var(--text-muted);font-size:11px;font-style:italic}
+.ob-loading{padding:40px;text-align:center;color:var(--text-muted);font-size:12px;font-style:italic}
 .ed-mk-indicator{display:inline-block;width:8px;color:var(--green);font-size:8px;margin-right:6px;vertical-align:middle;line-height:1;animation:live-pulse 1.6s infinite ease-in-out}
 .ed-markets-table .ed-num{text-align:center}
 .ed-markets-table .ed-prob{text-align:center;font-weight:700;color:var(--text)}
@@ -516,6 +553,24 @@ html,body{overscroll-behavior:none}
     </div>
     <div id="cards-grid"></div>
     <div id="event-detail"></div>
+    <div id="ob-backdrop" class="ob-backdrop" onclick="window.closeOrderbook(event)">
+      <div class="ob-modal" onclick="event.stopPropagation()">
+        <div class="ob-header">
+          <div>
+            <div class="ob-title" id="ob-title">Order Book</div>
+            <div class="ob-ticker" id="ob-ticker"></div>
+          </div>
+          <button class="ob-close" onclick="window.closeOrderbook()">&times;</button>
+        </div>
+        <div class="ob-tabs">
+          <button class="ob-tab active" data-side="yes" onclick="window.switchObTab(this)">Trade Yes</button>
+          <button class="ob-tab ob-tab-no" data-side="no" onclick="window.switchObTab(this)">Trade No</button>
+        </div>
+        <div class="ob-body" id="ob-body">
+          <div class="ob-loading">Loading order book&hellip;</div>
+        </div>
+      </div>
+    </div>
     <div id="loader"><div class="spinner"></div></div>
     <div id="count-bar"></div>
     <div id="sentinel"></div>
@@ -3257,7 +3312,7 @@ function renderMarketsTable(markets, live) {
   for (var i = 0; i < markets.length; i++) {
     var m = markets[i];
     h += '<tr>';
-    h += '<td class="ed-mk-label">'
+    h += '<td class="ed-mk-label" data-mk-ticker="' + escH(m.ticker || "") + '" data-mk-label="' + escH(m.label || "") + '" onclick="window.openOrderbook(this)">'
        + (indicators[i] || '') + escH(m.label)
        + '</td>';
     h += '<td class="ed-prob">' + escH(m.chance) + '</td>';
@@ -3483,6 +3538,148 @@ window.switchSBTab = function(btn) {
     panels[j].classList.toggle("active", panels[j].getAttribute("data-panel") === target);
   }
 };
+
+// ── Order book modal ──────────────────────────────────────────
+var _obData = null;
+var _obActiveSide = "yes";
+
+window.openOrderbook = function(el) {
+  var ticker = el.getAttribute("data-mk-ticker");
+  var label = el.getAttribute("data-mk-label");
+  if (!ticker) return;
+  var backdrop = document.getElementById("ob-backdrop");
+  document.getElementById("ob-title").textContent = label || "Order Book";
+  document.getElementById("ob-ticker").textContent = ticker;
+  document.getElementById("ob-body").innerHTML =
+    '<div class="ob-loading">Loading order book&hellip;</div>';
+  // Reset to Yes tab on open.
+  _obActiveSide = "yes";
+  var tabs = document.querySelectorAll(".ob-tab");
+  for (var i = 0; i < tabs.length; i++) {
+    tabs[i].classList.toggle("active", tabs[i].getAttribute("data-side") === "yes");
+  }
+  backdrop.classList.add("open");
+  document.body.style.overflow = "hidden";
+  fetchOrderbook(ticker);
+};
+
+window.closeOrderbook = function(ev) {
+  if (ev && ev.target && ev.target.id !== "ob-backdrop") return;
+  var backdrop = document.getElementById("ob-backdrop");
+  backdrop.classList.remove("open");
+  document.body.style.overflow = "";
+  _obData = null;
+};
+
+window.switchObTab = function(btn) {
+  _obActiveSide = btn.getAttribute("data-side");
+  var tabs = document.querySelectorAll(".ob-tab");
+  for (var i = 0; i < tabs.length; i++) {
+    tabs[i].classList.toggle("active", tabs[i] === btn);
+  }
+  renderOrderbook();
+};
+
+async function fetchOrderbook(ticker) {
+  try {
+    var r = await fetch("/api/market/" + encodeURIComponent(ticker) + "/orderbook");
+    var d = await r.json();
+    if (d.error) {
+      document.getElementById("ob-body").innerHTML =
+        '<div class="ob-empty">Failed to load order book: ' + escH(d.error) + '</div>';
+      return;
+    }
+    _obData = d;
+    renderOrderbook();
+  } catch (ex) {
+    document.getElementById("ob-body").innerHTML =
+      '<div class="ob-empty">Failed to load order book.</div>';
+    console.error("fetchOrderbook error", ex);
+  }
+}
+
+function renderOrderbook() {
+  if (!_obData) return;
+  var body = document.getElementById("ob-body");
+  var side = _obActiveSide || "yes";
+  var data = _obData[side] || {};
+  var asks = data.asks || [];
+  var bids = data.bids || [];
+  // Show the top N levels closest to the spread.
+  var N = 5;
+  var asksShown = asks.slice(0, N).reverse();  // bottom = best ask
+  var bidsShown = bids.slice(0, N);             // top = best bid
+  // Max quantity across both sides for depth-bar normalization.
+  var maxQty = 0;
+  for (var i = 0; i < asksShown.length; i++) maxQty = Math.max(maxQty, asksShown[i].qty);
+  for (var j = 0; j < bidsShown.length; j++) maxQty = Math.max(maxQty, bidsShown[j].qty);
+  if (maxQty <= 0) maxQty = 1;
+  var priceCls = side === "yes" ? "ob-price-bid" : "ob-price-ask";
+  var priceClsAsk = side === "yes" ? "ob-price-ask" : "ob-price-bid";
+  var depthAsk = side === "yes" ? "ob-depth-ask" : "ob-depth-bid";
+  var depthBid = side === "yes" ? "ob-depth-bid" : "ob-depth-ask";
+  var askLabel = side === "yes" ? "ob-ask-label" : "ob-bid-label";
+  var bidLabel = side === "yes" ? "ob-bid-label" : "ob-ask-label";
+  // Last-traded price (from either side's best — Kalshi's last
+  // price isn't in orderbook, so use mid of top levels as hint).
+  var topAsk = asks.length ? asks[0].price : null;
+  var topBid = bids.length ? bids[0].price : null;
+  var h = '';
+  // Column header row.
+  h += '<div class="ob-col-headers">'
+     + '<div></div><div>Price</div><div>Contracts</div><div>Total</div>'
+     + '</div>';
+  // Asks section (above the spread line).
+  h += '<div class="ob-rows">';
+  if (asksShown.length === 0) {
+    h += '<div class="ob-empty">No asks.</div>';
+  } else {
+    for (var a = 0; a < asksShown.length; a++) {
+      var ask = asksShown[a];
+      var width = (ask.qty / maxQty * 100).toFixed(1);
+      var labelCell = (a === asksShown.length - 1)
+        ? '<div class="ob-side-label ' + askLabel + '">Asks</div>'
+        : '<div></div>';
+      h += '<div class="ob-row">';
+      h += '<div class="ob-depth ' + depthAsk + '" style="width:' + width + '%"></div>';
+      h += labelCell;
+      h += '<div class="' + priceClsAsk + '">' + ask.price + '&cent;</div>';
+      h += '<div class="ob-qty">' + fmtNum(ask.qty) + '</div>';
+      h += '<div class="ob-total">$' + (ask.total != null ? ask.total.toLocaleString() : '0') + '</div>';
+      h += '</div>';
+    }
+  }
+  h += '</div>';
+  // Spread divider with "Last" price.
+  var lastPriceHint = "";
+  if (topAsk != null && topBid != null) {
+    lastPriceHint = '<span class="ob-last-price">Spread ' + topBid + '&cent; &ndash; ' + topAsk + '&cent;</span>';
+  }
+  var lastCls = side === "yes" ? "yes-color" : "no-color";
+  h += '<div class="ob-last ' + lastCls + '">Trade ' + (side === "yes" ? "Yes" : "No") + ' ' + lastPriceHint + '</div>';
+  // Bids section (below the spread line).
+  h += '<div class="ob-rows">';
+  if (bidsShown.length === 0) {
+    h += '<div class="ob-empty">No bids.</div>';
+  } else {
+    for (var b = 0; b < bidsShown.length; b++) {
+      var bid = bidsShown[b];
+      var widthB = (bid.qty / maxQty * 100).toFixed(1);
+      var labelCell2 = (b === 0)
+        ? '<div class="ob-side-label ' + bidLabel + '">Bids</div>'
+        : '<div></div>';
+      h += '<div class="ob-row">';
+      h += '<div class="ob-depth ' + depthBid + '" style="width:' + widthB + '%"></div>';
+      h += labelCell2;
+      h += '<div class="' + priceCls + '">' + bid.price + '&cent;</div>';
+      h += '<div class="ob-qty">' + fmtNum(bid.qty) + '</div>';
+      h += '<div class="ob-total">$' + (bid.total != null ? bid.total.toLocaleString() : '0') + '</div>';
+      h += '</div>';
+    }
+  }
+  h += '</div>';
+  body.innerHTML = h;
+}
 
 function renderEventDetail(ev) {
   var sport = ev._sport || "";
