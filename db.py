@@ -346,6 +346,26 @@ _flush_health: dict = {
 PRICE_RETENTION_HOURS = int(os.environ.get("PRICE_RETENTION_HOURS", "6"))
 
 
+_snapshots_table_ensured = False
+
+
+async def _ensure_snapshots_table():
+    """Idempotently create the snapshots table. Self-heals when a
+    container started up before models.py was updated to include
+    Snapshot, so init_db() ran without it."""
+    global _snapshots_table_ensured
+    if _snapshots_table_ensured or engine is None:
+        return
+    try:
+        from models import Snapshot
+        async with engine.begin() as conn:
+            await conn.run_sync(Snapshot.__table__.create, checkfirst=True)
+        _snapshots_table_ensured = True
+        log.info("snapshots table ensured")
+    except Exception as e:
+        log.warning("ensure snapshots table failed: %s", e)
+
+
 async def create_snapshot(section: str, data: dict, event_ticker: str = "",
                           ttl_days: int = 30):
     """Persist a snapshot and return (slug, None) on success or
@@ -353,6 +373,7 @@ async def create_snapshot(section: str, data: dict, event_ticker: str = "",
     real error instead of swallowing it."""
     if not DATABASE_URL or async_session is None:
         return None, "database not configured (DATABASE_URL missing)"
+    await _ensure_snapshots_table()
     try:
         import secrets
         from datetime import datetime as _dt, timezone as _tz, timedelta as _td
@@ -379,6 +400,7 @@ async def get_snapshot(slug: str):
     event_ticker} or None if not found / expired."""
     if not DATABASE_URL or async_session is None:
         return None
+    await _ensure_snapshots_table()
     try:
         from datetime import datetime as _dt, timezone as _tz
         from models import Snapshot
