@@ -4094,9 +4094,11 @@ def get_market_orderbook(ticker: str, depth: int = 10, debug: bool = False):
 
 
 @app.get("/api/market/{ticker}/trades")
-def get_market_trades(ticker: str, limit: int = 200, min_amount: float = 1000):
-    """Fetch recent trades for a market from Kalshi and return whale-sized
-    trades (>= min_amount dollars) with YES/NO split for sentiment."""
+def get_market_trades(ticker: str, limit: int = 1000, min_amount: float = 1000):
+    """Fetch recent trades for a market from Kalshi and return
+    large-capital trades (>= min_amount dollars) with YES/NO split
+    for sentiment. Stats reflect whale-sized trades only so the
+    totals match the displayed list."""
     ticker = (ticker or "").strip().upper()
     if not ticker:
         return {"error": "ticker required"}
@@ -4129,68 +4131,104 @@ def get_market_trades(ticker: str, limit: int = 200, min_amount: float = 1000):
             "Accept": "application/json",
         }
         url = f"https://api.elections.kalshi.com{path}"
+        # Paginate through up to `limit` trades. Kalshi caps a single
+        # page at 1000, so we loop on the cursor for events with heavy
+        # flow.
+        trades_raw = []
+        cursor = None
+        remaining = max(1, min(int(limit), 10000))
         with _httpx.Client(timeout=15.0) as client:
-            r = client.get(url, headers=headers, params={
-                "ticker": ticker,
-                "limit": min(limit, 1000),
+            while remaining > 0:
+                params = {"ticker": ticker, "limit": min(remaining, 1000)}
+                if cursor:
+                    params["cursor"] = cursor
+                # Re-sign per request (timestamps must be fresh).
+                ts_ms = str(int(time.time() * 1000))
+                msg = (ts_ms + "GET" + path).encode()
+                sig = private_key.sign(
+                    msg,
+                    _pad.PSS(
+                        mgf=_pad.MGF1(hashes.SHA256()),
+                        salt_length=_pad.PSS.DIGEST_LENGTH,
+                    ),
+                    hashes.SHA256(),
+                )
+                headers["KALSHI-ACCESS-TIMESTAMP"] = ts_ms
+                headers["KALSHI-ACCESS-SIGNATURE"] = base64.b64encode(sig).decode()
+                r = client.get(url, headers=headers, params=params)
+                if r.status_code != 200:
+                    if not trades_raw:
+                        return {"error": f"Kalshi returned HTTP {r.status_code}",
+                                "body": r.text[:400]}
+                    break
+                data = r.json() or {}
+                page = data.get("trades") or []
+                if not page:
+                    break
+                trades_raw.extend(page)
+                remaining -= len(page)
+                cursor = data.get("cursor")
+                if not cursor:
+                    break
+        whale_trades = []
+        yes_volume = 0.0
+        no_volume = 0.0
+        yes_count = 0
+        no_count = 0
+        total_all_trades_volume = 0.0
+        total_all_trades_count = len(trades_raw)
+        for t in trades_raw:
+            count = t.get("count", 1) or 0
+            yes_price = t.get("yes_price", 0)
+            no_price = t.get("no_price", 0)
+            taker_side = t.get("taker_side", "")
+            created = t.get("created_time", "")
+            if isinstance(yes_price, str):
+                yes_price = float(yes_price)
+            if isinstance(no_price, str):
+                no_price = float(no_price)
+            if yes_price > 1:
+                yes_price = yes_price / 100.0
+            if no_price > 1:
+                no_price = no_price / 100.0
+            if taker_side == "yes":
+                cost = yes_price * count
+                side = "YES"
+                price_cents = int(round(yes_price * 100))
+            else:
+                cost = no_price * count
+                side = "NO"
+                price_cents = int(round(no_price * 100))
+            total_all_trades_volume += cost
+            if cost < min_amount:
+                continue
+            if side == "YES":
+                yes_volume += cost
+                yes_count += 1
+            else:
+                no_volume += cost
+                no_count += 1
+            whale_trades.append({
+                "side": side,
+                "price": price_cents,
+                "contracts": count,
+                "cost": round(cost, 2),
+                "time": created,
             })
-            if r.status_code != 200:
-                return {"error": f"Kalshi returned HTTP {r.status_code}",
-                        "body": r.text[:400]}
-            data = r.json() or {}
-            trades_raw = data.get("trades") or []
-            trades = []
-            yes_volume = 0.0
-            no_volume = 0.0
-            yes_count = 0
-            no_count = 0
-            for t in trades_raw:
-                count = t.get("count", 1)
-                yes_price = t.get("yes_price", 0)
-                no_price = t.get("no_price", 0)
-                taker_side = t.get("taker_side", "")
-                created = t.get("created_time", "")
-                if isinstance(yes_price, str):
-                    yes_price = float(yes_price)
-                if isinstance(no_price, str):
-                    no_price = float(no_price)
-                if yes_price > 1:
-                    yes_price = yes_price / 100.0
-                if no_price > 1:
-                    no_price = no_price / 100.0
-                if taker_side == "yes":
-                    cost = yes_price * count
-                    side = "YES"
-                else:
-                    cost = no_price * count
-                    side = "NO"
-                if side == "YES":
-                    yes_volume += cost
-                    yes_count += 1
-                else:
-                    no_volume += cost
-                    no_count += 1
-                price_cents = int(round((yes_price if side == "YES" else no_price) * 100))
-                trades.append({
-                    "side": side,
-                    "price": price_cents,
-                    "contracts": count,
-                    "cost": round(cost, 2),
-                    "time": created,
-                })
-            whale_trades = [t for t in trades if t["cost"] >= min_amount]
-            total = yes_volume + no_volume
-            return {
-                "ticker": ticker,
-                "total_volume": round(total, 2),
-                "yes_volume": round(yes_volume, 2),
-                "no_volume": round(no_volume, 2),
-                "yes_count": yes_count,
-                "no_count": no_count,
-                "whale_count": len(whale_trades),
-                "sentiment": "Bullish" if yes_volume > no_volume else "Bearish" if no_volume > yes_volume else "Neutral",
-                "trades": whale_trades,
-            }
+        total = yes_volume + no_volume
+        return {
+            "ticker": ticker,
+            "total_volume": round(total, 2),
+            "yes_volume": round(yes_volume, 2),
+            "no_volume": round(no_volume, 2),
+            "yes_count": yes_count,
+            "no_count": no_count,
+            "whale_count": len(whale_trades),
+            "total_trades_scanned": total_all_trades_count,
+            "total_volume_all": round(total_all_trades_volume, 2),
+            "sentiment": "Bullish" if yes_volume > no_volume else "Bearish" if no_volume > yes_volume else "Neutral",
+            "trades": whale_trades,
+        }
     except Exception as e:
         return {"error": str(e)}
 

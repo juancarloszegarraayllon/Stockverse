@@ -3764,7 +3764,7 @@ function renderWhaleSentimentSection(outcomes) {
   if (!outcomes || !outcomes.length) return "";
   var h = '<div class="ws-section">';
   h += '<button class="ws-toggle" aria-expanded="false" onclick="window.toggleWsSection(this)">';
-  h += '<span>Whale Sentiment</span>';
+  h += '<span>Large Capital Flow</span>';
   h += '<span class="ws-chevron">\u25BE</span>';
   h += '</button>';
   h += '<div class="ws-inner" hidden>';
@@ -3904,7 +3904,7 @@ function renderWhaleSentiment() {
   if (trades.length === 0) {
     h += '<div class="ws-empty">No trades above $' + _wsMinAmount.toLocaleString() + '.</div>';
   } else {
-    h += '<div style="font-size:12px;font-weight:700;color:var(--text-dim);margin-bottom:8px">Recent Whale Trades</div>';
+    h += '<div style="font-size:12px;font-weight:700;color:var(--text-dim);margin-bottom:8px">Recent Large Trades</div>';
     h += '<div class="ws-trades-list">';
     for (var i = 0; i < trades.length; i++) {
       var t = trades[i];
