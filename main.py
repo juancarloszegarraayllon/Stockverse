@@ -964,6 +964,51 @@ _rebuild_lock = threading.Lock()
 _rebuilding = {"active": False}
 
 
+# ── Per-market response cache ─────────────────────────────────────
+# Short-TTL in-memory cache for expensive per-ticker endpoints
+# (orderbook, trades). When 10 users view the same market at the
+# same time, we hit Kalshi once and fan the result out to all 10.
+# Prevents hammering Kalshi's signed API and cuts response times
+# from 300-1500 ms (round-trip to Kalshi) to <5 ms (dict lookup).
+_mk_cache = {}            # key -> (expires_ts, value)
+_mk_cache_locks = {}      # key -> threading.Lock()
+_mk_cache_meta_lock = threading.Lock()
+
+
+def _mk_cache_get(key):
+    entry = _mk_cache.get(key)
+    if entry is None:
+        return None
+    expires, value = entry
+    if expires <= time.time():
+        return None
+    return value
+
+
+def _mk_cache_set(key, value, ttl_seconds):
+    _mk_cache[key] = (time.time() + ttl_seconds, value)
+    # Soft cap to keep memory bounded on long-running processes —
+    # evict expired entries when the dict grows beyond 2000 keys.
+    if len(_mk_cache) > 2000:
+        now = time.time()
+        for k in list(_mk_cache.keys()):
+            exp, _ = _mk_cache[k]
+            if exp <= now:
+                _mk_cache.pop(k, None)
+
+
+def _mk_cache_lock_for(key):
+    """Per-key lock so a cache miss serializes concurrent requests
+    for the same ticker. First caller fetches from Kalshi; everyone
+    else waits a few ms and pulls from the now-populated cache."""
+    with _mk_cache_meta_lock:
+        lock = _mk_cache_locks.get(key)
+        if lock is None:
+            lock = threading.Lock()
+            _mk_cache_locks[key] = lock
+    return lock
+
+
 def _rebuild_cache_async():
     """Kick off a non-blocking cache rebuild if one isn't already
     in progress. Uses a lock so concurrent stale requests don't each
@@ -4108,111 +4153,130 @@ def get_market_orderbook(ticker: str, depth: int = 10, debug: bool = False):
     ticker = (ticker or "").strip().upper()
     if not ticker:
         return {"error": "ticker required"}
-    try:
-        from cryptography.hazmat.primitives import hashes, serialization
-        from cryptography.hazmat.primitives.asymmetric import padding
-        import base64, httpx as _httpx
-        key_str = os.environ.get("KALSHI_PRIVATE_KEY", "")
-        key_id = os.environ.get("KALSHI_API_KEY_ID", "")
-        if not key_str or not key_id:
-            return {"error": "KALSHI credentials not configured"}
-        private_key = serialization.load_pem_private_key(
-            key_str.encode(), password=None,
-        )
-        ts_ms = str(int(time.time() * 1000))
-        path = f"/trade-api/v2/markets/{ticker}/orderbook"
-        msg = (ts_ms + "GET" + path).encode()
-        sig = private_key.sign(
-            msg,
-            padding.PSS(
-                mgf=padding.MGF1(hashes.SHA256()),
-                salt_length=padding.PSS.DIGEST_LENGTH,
-            ),
-            hashes.SHA256(),
-        )
-        headers = {
-            "KALSHI-ACCESS-KEY": key_id,
-            "KALSHI-ACCESS-TIMESTAMP": ts_ms,
-            "KALSHI-ACCESS-SIGNATURE": base64.b64encode(sig).decode(),
-            "Accept": "application/json",
-        }
-        url = f"https://api.elections.kalshi.com{path}"
-        with _httpx.Client(timeout=10.0) as client:
-            r = client.get(url, headers=headers, params={"depth": depth})
-            if r.status_code != 200:
-                return {
-                    "error": f"Kalshi returned HTTP {r.status_code}",
-                    "body": r.text[:400],
-                }
-            data = r.json() or {}
-            if debug:
-                return {
-                    "ticker": ticker,
-                    "status": r.status_code,
-                    "raw_keys": list(data.keys()),
-                    "raw_preview": str(data)[:1500],
-                }
-            # Kalshi responses use orderbook_fp with *_dollars arrays
-            # on newer API versions, and orderbook with yes/no arrays
-            # on older. Accept both.
-            ob = data.get("orderbook_fp") or data.get("orderbook") or {}
-            yes_raw = ob.get("yes_dollars") or ob.get("yes") or []
-            no_raw = ob.get("no_dollars") or ob.get("no") or []
-            # Parse into [price, quantity] pairs in cents.
-            # Dollar-format rows look like ["0.88", "337.25"] — convert
-            # price to cents (int) and qty to float. Cent-format rows
-            # (older API) look like [88, 337] — pass through.
-            def _parse(levels):
-                out = []
-                for lv in levels or []:
-                    if not isinstance(lv, (list, tuple)) or len(lv) < 2:
-                        continue
-                    try:
-                        raw_p = lv[0]
-                        if isinstance(raw_p, str):
-                            # Dollar string → cents
-                            p = int(round(float(raw_p) * 100))
-                        else:
-                            p = int(raw_p)
-                        q = float(lv[1])
-                    except Exception:
-                        continue
-                    out.append({"price": p, "qty": q})
-                return out
-            yes_levels = _parse(yes_raw)
-            no_levels = _parse(no_raw)
-            # Build Trade Yes view.
-            yes_asks = [{"price": 100 - lv["price"], "qty": lv["qty"]}
-                        for lv in no_levels if lv["price"] < 100]
-            yes_asks.sort(key=lambda x: x["price"])  # ascending
-            yes_bids = sorted(yes_levels, key=lambda x: -x["price"])
-            # Build Trade No view.
-            no_asks = [{"price": 100 - lv["price"], "qty": lv["qty"]}
-                       for lv in yes_levels if lv["price"] < 100]
-            no_asks.sort(key=lambda x: x["price"])
-            no_bids = sorted(no_levels, key=lambda x: -x["price"])
-            # Add cumulative totals for display.
-            def _add_totals(levels):
-                running_qty = 0.0
-                for lv in levels:
-                    running_qty += lv["qty"]
-                    # Total cost in dollars (price is cents).
-                    lv["total"] = round(running_qty * lv["price"] / 100.0, 2)
-                    lv["cum_qty"] = round(running_qty, 2)
-                return levels
-            return {
-                "ticker": ticker,
-                "yes": {
-                    "asks": _add_totals(yes_asks),
-                    "bids": _add_totals(yes_bids),
-                },
-                "no": {
-                    "asks": _add_totals(no_asks),
-                    "bids": _add_totals(no_bids),
-                },
+    # Short-TTL cache shared across users. 3 s keeps the book fresh
+    # enough for retail UX (it auto-refreshes on the client every 3 s
+    # anyway) while ensuring we hit Kalshi at most once per ticker per
+    # 3 s regardless of concurrent viewer count. Debug mode bypasses.
+    cache_key = f"ob:{ticker}:{depth}"
+    if not debug:
+        cached = _mk_cache_get(cache_key)
+        if cached is not None:
+            return cached
+    lock = _mk_cache_lock_for(cache_key)
+    with lock:
+        # Double-check after acquiring lock — another request may have
+        # populated the cache while we were waiting.
+        if not debug:
+            cached = _mk_cache_get(cache_key)
+            if cached is not None:
+                return cached
+        try:
+            from cryptography.hazmat.primitives import hashes, serialization
+            from cryptography.hazmat.primitives.asymmetric import padding
+            import base64, httpx as _httpx
+            key_str = os.environ.get("KALSHI_PRIVATE_KEY", "")
+            key_id = os.environ.get("KALSHI_API_KEY_ID", "")
+            if not key_str or not key_id:
+                return {"error": "KALSHI credentials not configured"}
+            private_key = serialization.load_pem_private_key(
+                key_str.encode(), password=None,
+            )
+            ts_ms = str(int(time.time() * 1000))
+            path = f"/trade-api/v2/markets/{ticker}/orderbook"
+            msg = (ts_ms + "GET" + path).encode()
+            sig = private_key.sign(
+                msg,
+                padding.PSS(
+                    mgf=padding.MGF1(hashes.SHA256()),
+                    salt_length=padding.PSS.DIGEST_LENGTH,
+                ),
+                hashes.SHA256(),
+            )
+            headers = {
+                "KALSHI-ACCESS-KEY": key_id,
+                "KALSHI-ACCESS-TIMESTAMP": ts_ms,
+                "KALSHI-ACCESS-SIGNATURE": base64.b64encode(sig).decode(),
+                "Accept": "application/json",
             }
-    except Exception as e:
-        return {"error": str(e)}
+            url = f"https://api.elections.kalshi.com{path}"
+            with _httpx.Client(timeout=10.0) as client:
+                r = client.get(url, headers=headers, params={"depth": depth})
+                if r.status_code != 200:
+                    return {
+                        "error": f"Kalshi returned HTTP {r.status_code}",
+                        "body": r.text[:400],
+                    }
+                data = r.json() or {}
+                if debug:
+                    return {
+                        "ticker": ticker,
+                        "status": r.status_code,
+                        "raw_keys": list(data.keys()),
+                        "raw_preview": str(data)[:1500],
+                    }
+                # Kalshi responses use orderbook_fp with *_dollars arrays
+                # on newer API versions, and orderbook with yes/no arrays
+                # on older. Accept both.
+                ob = data.get("orderbook_fp") or data.get("orderbook") or {}
+                yes_raw = ob.get("yes_dollars") or ob.get("yes") or []
+                no_raw = ob.get("no_dollars") or ob.get("no") or []
+                # Parse into [price, quantity] pairs in cents.
+                # Dollar-format rows look like ["0.88", "337.25"] — convert
+                # price to cents (int) and qty to float. Cent-format rows
+                # (older API) look like [88, 337] — pass through.
+                def _parse(levels):
+                    out = []
+                    for lv in levels or []:
+                        if not isinstance(lv, (list, tuple)) or len(lv) < 2:
+                            continue
+                        try:
+                            raw_p = lv[0]
+                            if isinstance(raw_p, str):
+                                # Dollar string → cents
+                                p = int(round(float(raw_p) * 100))
+                            else:
+                                p = int(raw_p)
+                            q = float(lv[1])
+                        except Exception:
+                            continue
+                        out.append({"price": p, "qty": q})
+                    return out
+                yes_levels = _parse(yes_raw)
+                no_levels = _parse(no_raw)
+                # Build Trade Yes view.
+                yes_asks = [{"price": 100 - lv["price"], "qty": lv["qty"]}
+                            for lv in no_levels if lv["price"] < 100]
+                yes_asks.sort(key=lambda x: x["price"])  # ascending
+                yes_bids = sorted(yes_levels, key=lambda x: -x["price"])
+                # Build Trade No view.
+                no_asks = [{"price": 100 - lv["price"], "qty": lv["qty"]}
+                           for lv in yes_levels if lv["price"] < 100]
+                no_asks.sort(key=lambda x: x["price"])
+                no_bids = sorted(no_levels, key=lambda x: -x["price"])
+                # Add cumulative totals for display.
+                def _add_totals(levels):
+                    running_qty = 0.0
+                    for lv in levels:
+                        running_qty += lv["qty"]
+                        # Total cost in dollars (price is cents).
+                        lv["total"] = round(running_qty * lv["price"] / 100.0, 2)
+                        lv["cum_qty"] = round(running_qty, 2)
+                    return levels
+                result = {
+                    "ticker": ticker,
+                    "yes": {
+                        "asks": _add_totals(yes_asks),
+                        "bids": _add_totals(yes_bids),
+                    },
+                    "no": {
+                        "asks": _add_totals(no_asks),
+                        "bids": _add_totals(no_bids),
+                    },
+                }
+                _mk_cache_set(cache_key, result, ttl_seconds=3)
+                return result
+        except Exception as e:
+            return {"error": str(e)}
 
 
 @app.get("/api/market/{ticker}/trades")
@@ -4224,172 +4288,188 @@ def get_market_trades(ticker: str, limit: int = 10000, min_amount: float = 1000,
     ticker = (ticker or "").strip().upper()
     if not ticker:
         return {"error": "ticker required"}
-    try:
-        from cryptography.hazmat.primitives import hashes, serialization
-        from cryptography.hazmat.primitives.asymmetric import padding as _pad
-        import base64, httpx as _httpx
-        key_str = os.environ.get("KALSHI_PRIVATE_KEY", "")
-        key_id = os.environ.get("KALSHI_API_KEY_ID", "")
-        if not key_str or not key_id:
-            return {"error": "KALSHI credentials not configured"}
-        private_key = serialization.load_pem_private_key(
-            key_str.encode(), password=None,
-        )
-        path = f"/trade-api/v2/markets/trades"
-        ts_ms = str(int(time.time() * 1000))
-        msg = (ts_ms + "GET" + path).encode()
-        sig = private_key.sign(
-            msg,
-            _pad.PSS(
-                mgf=_pad.MGF1(hashes.SHA256()),
-                salt_length=_pad.PSS.DIGEST_LENGTH,
-            ),
-            hashes.SHA256(),
-        )
-        headers = {
-            "KALSHI-ACCESS-KEY": key_id,
-            "KALSHI-ACCESS-TIMESTAMP": ts_ms,
-            "KALSHI-ACCESS-SIGNATURE": base64.b64encode(sig).decode(),
-            "Accept": "application/json",
-        }
-        url = f"https://api.elections.kalshi.com{path}"
-        # Paginate through up to `limit` trades. Kalshi caps a single
-        # page at 1000, so we loop on the cursor for events with heavy
-        # flow.
-        trades_raw = []
-        cursor = None
-        remaining = max(1, min(int(limit), 50000))
-        # Optional time floor (epoch seconds). When > 0 we cap paging
-        # once trades drift older than the window.
-        min_ts = 0
-        if hours and hours > 0:
-            min_ts = int(time.time()) - (hours * 3600)
-        with _httpx.Client(timeout=20.0) as client:
-            while remaining > 0:
-                params = {"ticker": ticker, "limit": min(remaining, 1000)}
-                if cursor:
-                    params["cursor"] = cursor
-                if min_ts:
-                    params["min_ts"] = min_ts
-                # Re-sign per request (timestamps must be fresh).
-                ts_ms = str(int(time.time() * 1000))
-                msg = (ts_ms + "GET" + path).encode()
-                sig = private_key.sign(
-                    msg,
-                    _pad.PSS(
-                        mgf=_pad.MGF1(hashes.SHA256()),
-                        salt_length=_pad.PSS.DIGEST_LENGTH,
-                    ),
-                    hashes.SHA256(),
-                )
-                headers["KALSHI-ACCESS-TIMESTAMP"] = ts_ms
-                headers["KALSHI-ACCESS-SIGNATURE"] = base64.b64encode(sig).decode()
-                r = client.get(url, headers=headers, params=params)
-                if r.status_code != 200:
-                    if not trades_raw:
-                        return {"error": f"Kalshi returned HTTP {r.status_code}",
-                                "body": r.text[:400]}
-                    break
-                data = r.json() or {}
-                if debug and not trades_raw:
-                    return {
-                        "ticker": ticker,
-                        "status": r.status_code,
-                        "raw_keys": list(data.keys()),
-                        "raw_preview": str(data)[:2000],
-                    }
-                page = data.get("trades") or []
-                if not page:
-                    break
-                trades_raw.extend(page)
-                remaining -= len(page)
-                # When a time floor is set, stop once the oldest
-                # trade on this page pre-dates the window — even if
-                # Kalshi returns a cursor.
-                if min_ts:
-                    last_ts = page[-1].get("created_time", "")
-                    if last_ts:
-                        try:
-                            # created_time is ISO-8601 UTC with Z.
-                            from datetime import datetime, timezone
-                            dt = datetime.fromisoformat(last_ts.replace("Z", "+00:00"))
-                            if dt.timestamp() < min_ts:
-                                break
-                        except Exception:
-                            pass
-                cursor = data.get("cursor")
-                if not cursor:
-                    break
-        whale_trades = []
-        yes_volume = 0.0
-        no_volume = 0.0
-        yes_count = 0
-        no_count = 0
-        total_all_trades_volume = 0.0
-        total_all_trades_count = len(trades_raw)
-        for t in trades_raw:
-            # Kalshi newer API: count_fp (string), *_dollars (strings).
-            # Older API: count (int), yes_price/no_price (cents int).
-            count = t.get("count_fp") or t.get("count") or 0
-            if isinstance(count, str):
-                count = float(count)
-            yes_price = t.get("yes_price_dollars")
-            if yes_price is None:
-                yes_price = t.get("yes_price", 0)
-            no_price = t.get("no_price_dollars")
-            if no_price is None:
-                no_price = t.get("no_price", 0)
-            taker_side = t.get("taker_side", "")
-            created = t.get("created_time", "")
-            if isinstance(yes_price, str):
-                yes_price = float(yes_price)
-            if isinstance(no_price, str):
-                no_price = float(no_price)
-            # If the price looks like cents (integer > 1), convert.
-            if yes_price > 1:
-                yes_price = yes_price / 100.0
-            if no_price > 1:
-                no_price = no_price / 100.0
-            if taker_side == "yes":
-                cost = yes_price * count
-                side = "YES"
-                price_cents = int(round(yes_price * 100))
-            else:
-                cost = no_price * count
-                side = "NO"
-                price_cents = int(round(no_price * 100))
-            total_all_trades_volume += cost
-            if cost < min_amount:
-                continue
-            if side == "YES":
-                yes_volume += cost
-                yes_count += 1
-            else:
-                no_volume += cost
-                no_count += 1
-            whale_trades.append({
-                "side": side,
-                "price": price_cents,
-                "contracts": count,
-                "cost": round(cost, 2),
-                "time": created,
-            })
-        total = yes_volume + no_volume
-        return {
-            "ticker": ticker,
-            "total_volume": round(total, 2),
-            "yes_volume": round(yes_volume, 2),
-            "no_volume": round(no_volume, 2),
-            "yes_count": yes_count,
-            "no_count": no_count,
-            "whale_count": len(whale_trades),
-            "total_trades_scanned": total_all_trades_count,
-            "total_volume_all": round(total_all_trades_volume, 2),
-            "sentiment": "Bullish" if yes_volume > no_volume else "Bearish" if no_volume > yes_volume else "Neutral",
-            "trades": whale_trades,
-        }
-    except Exception as e:
-        return {"error": str(e)}
+    # Trades are expensive: pagination can fetch up to 50k rows from
+    # Kalshi (10+ seconds of work). Cache for 10 s so N simultaneous
+    # viewers of the same market hit Kalshi once, not N times.
+    cache_key = f"tr:{ticker}:{int(min_amount)}:{int(hours)}:{int(limit)}"
+    if not debug:
+        cached = _mk_cache_get(cache_key)
+        if cached is not None:
+            return cached
+    lock = _mk_cache_lock_for(cache_key)
+    with lock:
+        if not debug:
+            cached = _mk_cache_get(cache_key)
+            if cached is not None:
+                return cached
+        try:
+            from cryptography.hazmat.primitives import hashes, serialization
+            from cryptography.hazmat.primitives.asymmetric import padding as _pad
+            import base64, httpx as _httpx
+            key_str = os.environ.get("KALSHI_PRIVATE_KEY", "")
+            key_id = os.environ.get("KALSHI_API_KEY_ID", "")
+            if not key_str or not key_id:
+                return {"error": "KALSHI credentials not configured"}
+            private_key = serialization.load_pem_private_key(
+                key_str.encode(), password=None,
+            )
+            path = f"/trade-api/v2/markets/trades"
+            ts_ms = str(int(time.time() * 1000))
+            msg = (ts_ms + "GET" + path).encode()
+            sig = private_key.sign(
+                msg,
+                _pad.PSS(
+                    mgf=_pad.MGF1(hashes.SHA256()),
+                    salt_length=_pad.PSS.DIGEST_LENGTH,
+                ),
+                hashes.SHA256(),
+            )
+            headers = {
+                "KALSHI-ACCESS-KEY": key_id,
+                "KALSHI-ACCESS-TIMESTAMP": ts_ms,
+                "KALSHI-ACCESS-SIGNATURE": base64.b64encode(sig).decode(),
+                "Accept": "application/json",
+            }
+            url = f"https://api.elections.kalshi.com{path}"
+            # Paginate through up to `limit` trades. Kalshi caps a single
+            # page at 1000, so we loop on the cursor for events with heavy
+            # flow.
+            trades_raw = []
+            cursor = None
+            remaining = max(1, min(int(limit), 50000))
+            # Optional time floor (epoch seconds). When > 0 we cap paging
+            # once trades drift older than the window.
+            min_ts = 0
+            if hours and hours > 0:
+                min_ts = int(time.time()) - (hours * 3600)
+            with _httpx.Client(timeout=20.0) as client:
+                while remaining > 0:
+                    params = {"ticker": ticker, "limit": min(remaining, 1000)}
+                    if cursor:
+                        params["cursor"] = cursor
+                    if min_ts:
+                        params["min_ts"] = min_ts
+                    # Re-sign per request (timestamps must be fresh).
+                    ts_ms = str(int(time.time() * 1000))
+                    msg = (ts_ms + "GET" + path).encode()
+                    sig = private_key.sign(
+                        msg,
+                        _pad.PSS(
+                            mgf=_pad.MGF1(hashes.SHA256()),
+                            salt_length=_pad.PSS.DIGEST_LENGTH,
+                        ),
+                        hashes.SHA256(),
+                    )
+                    headers["KALSHI-ACCESS-TIMESTAMP"] = ts_ms
+                    headers["KALSHI-ACCESS-SIGNATURE"] = base64.b64encode(sig).decode()
+                    r = client.get(url, headers=headers, params=params)
+                    if r.status_code != 200:
+                        if not trades_raw:
+                            return {"error": f"Kalshi returned HTTP {r.status_code}",
+                                    "body": r.text[:400]}
+                        break
+                    data = r.json() or {}
+                    if debug and not trades_raw:
+                        return {
+                            "ticker": ticker,
+                            "status": r.status_code,
+                            "raw_keys": list(data.keys()),
+                            "raw_preview": str(data)[:2000],
+                        }
+                    page = data.get("trades") or []
+                    if not page:
+                        break
+                    trades_raw.extend(page)
+                    remaining -= len(page)
+                    # When a time floor is set, stop once the oldest
+                    # trade on this page pre-dates the window — even if
+                    # Kalshi returns a cursor.
+                    if min_ts:
+                        last_ts = page[-1].get("created_time", "")
+                        if last_ts:
+                            try:
+                                # created_time is ISO-8601 UTC with Z.
+                                from datetime import datetime, timezone
+                                dt = datetime.fromisoformat(last_ts.replace("Z", "+00:00"))
+                                if dt.timestamp() < min_ts:
+                                    break
+                            except Exception:
+                                pass
+                    cursor = data.get("cursor")
+                    if not cursor:
+                        break
+            whale_trades = []
+            yes_volume = 0.0
+            no_volume = 0.0
+            yes_count = 0
+            no_count = 0
+            total_all_trades_volume = 0.0
+            total_all_trades_count = len(trades_raw)
+            for t in trades_raw:
+                # Kalshi newer API: count_fp (string), *_dollars (strings).
+                # Older API: count (int), yes_price/no_price (cents int).
+                count = t.get("count_fp") or t.get("count") or 0
+                if isinstance(count, str):
+                    count = float(count)
+                yes_price = t.get("yes_price_dollars")
+                if yes_price is None:
+                    yes_price = t.get("yes_price", 0)
+                no_price = t.get("no_price_dollars")
+                if no_price is None:
+                    no_price = t.get("no_price", 0)
+                taker_side = t.get("taker_side", "")
+                created = t.get("created_time", "")
+                if isinstance(yes_price, str):
+                    yes_price = float(yes_price)
+                if isinstance(no_price, str):
+                    no_price = float(no_price)
+                # If the price looks like cents (integer > 1), convert.
+                if yes_price > 1:
+                    yes_price = yes_price / 100.0
+                if no_price > 1:
+                    no_price = no_price / 100.0
+                if taker_side == "yes":
+                    cost = yes_price * count
+                    side = "YES"
+                    price_cents = int(round(yes_price * 100))
+                else:
+                    cost = no_price * count
+                    side = "NO"
+                    price_cents = int(round(no_price * 100))
+                total_all_trades_volume += cost
+                if cost < min_amount:
+                    continue
+                if side == "YES":
+                    yes_volume += cost
+                    yes_count += 1
+                else:
+                    no_volume += cost
+                    no_count += 1
+                whale_trades.append({
+                    "side": side,
+                    "price": price_cents,
+                    "contracts": count,
+                    "cost": round(cost, 2),
+                    "time": created,
+                })
+            total = yes_volume + no_volume
+            result = {
+                "ticker": ticker,
+                "total_volume": round(total, 2),
+                "yes_volume": round(yes_volume, 2),
+                "no_volume": round(no_volume, 2),
+                "yes_count": yes_count,
+                "no_count": no_count,
+                "whale_count": len(whale_trades),
+                "total_trades_scanned": total_all_trades_count,
+                "total_volume_all": round(total_all_trades_volume, 2),
+                "sentiment": "Bullish" if yes_volume > no_volume else "Bearish" if no_volume > yes_volume else "Neutral",
+                "trades": whale_trades,
+            }
+            _mk_cache_set(cache_key, result, ttl_seconds=10)
+            return result
+        except Exception as e:
+            return {"error": str(e)}
 
 
 @app.get("/api/event/{ticker}/history")
