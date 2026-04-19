@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Query, Request
+from fastapi import FastAPI, Query, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse, FileResponse, Response, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
@@ -3940,6 +3940,102 @@ def memory_status():
     except Exception:
         info["espn_games"] = None
     return info
+
+# ── Real-time price stream to connected browsers ──────────────────
+@app.websocket("/ws/prices")
+async def ws_prices(websocket: WebSocket):
+    """Push real-time Kalshi price updates to the browser. Wire
+    format:
+
+      Client → Server (subscribe):
+        {"action": "subscribe", "tickers": ["KX...-XXX", ...]}
+
+      Client → Server (unsubscribe):
+        {"action": "unsubscribe", "tickers": [...]}
+
+      Server → Client (price delta):
+        {"type": "price", "ticker": "KX...", "data": {
+            "yes_bid": 87, "yes_ask": 88, "no_bid": 12, "no_ask": 13,
+            "last_price": 87, "volume": 12345, ...
+        }}
+
+      Server → Client (hello):
+        {"type": "hello", "ts": 1729300000000}
+    """
+    await websocket.accept()
+    try:
+        from kalshi_ws import (
+            BrowserSubscriber, register_browser, unregister_browser,
+            LIVE_PRICES,
+        )
+    except Exception as e:
+        await websocket.close(code=1011)
+        return
+    sub = BrowserSubscriber()
+    register_browser(sub)
+    await websocket.send_json({"type": "hello", "ts": int(time.time() * 1000)})
+
+    async def _reader():
+        """Accept subscribe/unsubscribe messages from the client."""
+        try:
+            while True:
+                msg = await websocket.receive_json()
+                action = msg.get("action")
+                tickers = msg.get("tickers") or []
+                if action == "subscribe":
+                    sub.subscribe([t.upper() for t in tickers if t])
+                    # Send any prices we already have for these
+                    # tickers so the UI paints live state immediately.
+                    snapshot = []
+                    for t in tickers:
+                        t = (t or "").upper()
+                        if t in LIVE_PRICES:
+                            snapshot.append({
+                                "type": "price",
+                                "ticker": t,
+                                "data": LIVE_PRICES[t],
+                            })
+                    if snapshot:
+                        await websocket.send_json({
+                            "type": "snapshot",
+                            "updates": snapshot,
+                        })
+                elif action == "unsubscribe":
+                    sub.unsubscribe([t.upper() for t in tickers if t])
+                elif action == "ping":
+                    await websocket.send_json({"type": "pong"})
+        except WebSocketDisconnect:
+            pass
+        except Exception:
+            pass
+
+    async def _writer():
+        """Forward broadcast messages from the subscriber queue."""
+        try:
+            while True:
+                payload = await sub.queue.get()
+                await websocket.send_json(payload)
+        except WebSocketDisconnect:
+            pass
+        except Exception:
+            pass
+
+    reader_task = asyncio.create_task(_reader())
+    writer_task = asyncio.create_task(_writer())
+    try:
+        done, pending = await asyncio.wait(
+            {reader_task, writer_task},
+            return_when=asyncio.FIRST_COMPLETED,
+        )
+        for task in pending:
+            task.cancel()
+    finally:
+        unregister_browser(sub)
+        try:
+            await websocket.close()
+        except Exception:
+            pass
+
 
 # ── Serve frontend ─────────────────────────────────────────────────────────────
 import os as _os

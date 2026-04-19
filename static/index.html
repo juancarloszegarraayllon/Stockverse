@@ -431,6 +431,20 @@ html,body{overscroll-behavior:none}
 .ed-markets-table .ed-mk-label{color:var(--text);font-weight:600;text-align:left;cursor:pointer}
 .ed-markets-table .ed-mk-label:hover{color:var(--green);text-decoration:underline}
 /* Order book inline section */
+/* Real-time row flash on price update */
+@keyframes mk-flash-anim{0%{background:rgba(76,175,80,0.18)}100%{background:transparent}}
+.ed-markets-table tr.mk-flash td{animation:mk-flash-anim 0.4s ease-out}
+/* Snap / export controls */
+.snap-controls{display:inline-flex;align-items:center;gap:6px;font-weight:400;text-transform:none;letter-spacing:normal}
+.snap-btn{display:inline-flex;align-items:center;gap:5px;padding:3px 9px;background:var(--bg3);border:1px solid var(--border);color:var(--text-dim);font-family:inherit;font-size:10px;font-weight:700;border-radius:4px;cursor:pointer}
+.snap-btn:hover{color:var(--text)}
+.snap-btn.snapped{background:rgba(244,67,54,0.12);border-color:rgba(244,67,54,0.4);color:#f44336}
+.snap-dot{width:6px;height:6px;border-radius:50%;background:#4caf50;animation:live-dot-pulse 1.6s infinite ease-in-out}
+.snap-btn.snapped .snap-dot{background:#f44336;animation:none}
+@keyframes live-dot-pulse{0%,100%{opacity:0.4}50%{opacity:1}}
+.snap-ts{font-size:10px;color:var(--text-muted);font-family:monospace}
+.snap-export{padding:3px 8px;background:var(--bg3);border:1px solid var(--border);color:var(--text-dim);font-family:inherit;font-size:10px;font-weight:700;border-radius:4px;cursor:pointer}
+.snap-export:hover{color:var(--text);border-color:var(--text-muted)}
 .ob-section{margin-top:20px;background:var(--bg2);border:1px solid var(--border);border-radius:10px;overflow:hidden}
 .ob-toggle{width:100%;display:flex;align-items:center;justify-content:space-between;padding:14px 18px;background:transparent;border:0;color:var(--text);font-family:inherit;font-size:13px;font-weight:700;letter-spacing:0.4px;text-transform:uppercase;cursor:pointer;transition:background 0.12s}
 .ob-toggle:hover{background:var(--bg3)}
@@ -2283,6 +2297,27 @@ function showEventDetail(ticker, skipHistory) {
         return;
       }
       ed.innerHTML = renderEventDetail(d.event);
+      // Subscribe to live price updates for every market shown on
+      // this event. The WebSocket client applies deltas to the DOM
+      // as they arrive (typically <200ms after a Kalshi tick).
+      try {
+        var subTickers = [];
+        var gs = d.event.market_groups;
+        if (Array.isArray(gs) && gs.length > 1) {
+          for (var gi = 0; gi < gs.length; gi++) {
+            var outs = gs[gi]._outcomes || gs[gi].outcomes || [];
+            for (var oi = 0; oi < outs.length; oi++) {
+              if (outs[oi].ticker) subTickers.push(outs[oi].ticker);
+            }
+          }
+        } else {
+          var outs2 = d.event.outcomes || [];
+          for (var oj = 0; oj < outs2.length; oj++) {
+            if (outs2[oj].ticker) subTickers.push(outs2[oj].ticker);
+          }
+        }
+        if (subTickers.length) PriceStream.subscribe(subTickers);
+      } catch (ex) { console.warn("ws subscribe error", ex); }
       // Populate the price-history chart asynchronously. The
       // event detail page shows a loading placeholder until this
       // fetch completes.
@@ -3300,7 +3335,19 @@ function marketsSectionTitle(live) {
   } else if (live && live.state === "post") {
     pill = ' <span class="ed-final-pill">FINAL</span>';
   }
-  return '<div class="ed-section-title">Markets' + pill + '</div>';
+  var snap = ' <span class="snap-controls" data-snap-section="markets">'
+           + '<button class="snap-btn" onclick="window.toggleSnap(this)">'
+           +   '<span class="snap-dot"></span>'
+           +   '<span class="snap-label">Live</span>'
+           + '</button>'
+           + '<span class="snap-ts" hidden></span>'
+           + '<button class="snap-export" onclick="window.exportSnap(this,\'csv\')" hidden>CSV</button>'
+           + '<button class="snap-export" onclick="window.exportSnap(this,\'json\')" hidden>JSON</button>'
+           + '</span>';
+  return '<div class="ed-section-title" style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">'
+       + '<span>Markets' + pill + '</span>'
+       + snap
+       + '</div>';
 }
 
 // Compute per-row "indicator" based on the live state — used only
@@ -3352,17 +3399,18 @@ function renderMarketsTable(markets, live) {
   h += '</tr></thead><tbody>';
   for (var i = 0; i < markets.length; i++) {
     var m = markets[i];
-    h += '<tr>';
-    h += '<td class="ed-mk-label" data-mk-ticker="' + escH(m.ticker || "") + '" data-mk-label="' + escH(m.label || "") + '" onclick="window.openOrderbook(this)">'
+    var tk = m.ticker || "";
+    h += '<tr data-mk-row="' + escH(tk) + '">';
+    h += '<td class="ed-mk-label" data-mk-ticker="' + escH(tk) + '" data-mk-label="' + escH(m.label || "") + '" onclick="window.openOrderbook(this)">'
        + (indicators[i] || '') + escH(m.label)
        + '</td>';
-    h += '<td class="ed-prob">' + escH(m.chance) + '</td>';
-    h += '<td class="ed-yes">' + escH(m.yes) + '</td>';
-    h += '<td class="ed-no">' + escH(m.no) + '</td>';
-    h += '<td class="ed-num">' + (m.last_price != null ? (m.last_price + "¢") : "—") + '</td>';
-    h += '<td class="ed-num">' + fmtNum(m.volume_24h) + '</td>';
-    h += '<td class="ed-num">' + fmtNum(m.volume) + '</td>';
-    h += '<td class="ed-num">' + fmtNum(m.open_interest) + '</td>';
+    h += '<td class="ed-prob" data-mk-field="chance">' + escH(m.chance) + '</td>';
+    h += '<td class="ed-yes" data-mk-field="yes">' + escH(m.yes) + '</td>';
+    h += '<td class="ed-no" data-mk-field="no">' + escH(m.no) + '</td>';
+    h += '<td class="ed-num" data-mk-field="last">' + (m.last_price != null ? (m.last_price + "¢") : "—") + '</td>';
+    h += '<td class="ed-num" data-mk-field="vol24">' + fmtNum(m.volume_24h) + '</td>';
+    h += '<td class="ed-num" data-mk-field="vol">' + fmtNum(m.volume) + '</td>';
+    h += '<td class="ed-num" data-mk-field="oi">' + fmtNum(m.open_interest) + '</td>';
     h += '</tr>';
   }
   h += '</tbody></table>';
@@ -3595,6 +3643,13 @@ function renderOrderbookSection(outcomes) {
   h += '<span class="ob-chevron">\u25BE</span>';
   h += '</button>';
   h += '<div class="ob-inner" hidden>';
+  h += '<div class="snap-controls" data-snap-section="orderbook" style="margin-bottom:10px">'
+     + '<button class="snap-btn" onclick="window.toggleSnap(this)">'
+     + '<span class="snap-dot"></span><span class="snap-label">Live</span></button>'
+     + '<span class="snap-ts" hidden></span>'
+     + '<button class="snap-export" onclick="window.exportSnap(this,\'csv\')" hidden>CSV</button>'
+     + '<button class="snap-export" onclick="window.exportSnap(this,\'json\')" hidden>JSON</button>'
+     + '</div>';
   h += '<div class="ob-outcomes">';
   for (var i = 0; i < outcomes.length; i++) {
     var o = outcomes[i];
@@ -3671,6 +3726,7 @@ window.switchObTab = function(btn) {
   renderOrderbook();
 };
 
+var _obRefreshTimer = null;
 async function fetchOrderbook(ticker) {
   try {
     var r = await fetch("/api/market/" + encodeURIComponent(ticker) + "/orderbook");
@@ -3687,6 +3743,14 @@ async function fetchOrderbook(ticker) {
       '<div class="ob-empty">Failed to load order book.</div>';
     console.error("fetchOrderbook error", ex);
   }
+  // Auto-refresh every 3s while live + section visible + same outcome.
+  if (_obRefreshTimer) clearTimeout(_obRefreshTimer);
+  _obRefreshTimer = setTimeout(function() {
+    if (window._obPaused) { _obRefreshTimer = null; return; }
+    if (_obActiveOutcome !== ticker) { _obRefreshTimer = null; return; }
+    if (!document.getElementById("ob-body")) { _obRefreshTimer = null; return; }
+    fetchOrderbook(ticker);
+  }, 3000);
 }
 
 function renderOrderbook() {
@@ -3781,6 +3845,13 @@ function renderWhaleSentimentSection(outcomes) {
   h += '<span class="ws-chevron">\u25BE</span>';
   h += '</button>';
   h += '<div class="ws-inner" hidden>';
+  h += '<div class="snap-controls" data-snap-section="capflow" style="margin-bottom:10px">'
+     + '<button class="snap-btn" onclick="window.toggleSnap(this)">'
+     + '<span class="snap-dot"></span><span class="snap-label">Live</span></button>'
+     + '<span class="snap-ts" hidden></span>'
+     + '<button class="snap-export" onclick="window.exportSnap(this,\'csv\')" hidden>CSV</button>'
+     + '<button class="snap-export" onclick="window.exportSnap(this,\'json\')" hidden>JSON</button>'
+     + '</div>';
   h += '<div class="ws-outcomes">';
   for (var i = 0; i < outcomes.length; i++) {
     var o = outcomes[i];
@@ -3873,6 +3944,7 @@ window.selectWsWindow = function(btn) {
   if (_wsActiveOutcome) fetchWhaleTrades(_wsActiveOutcome);
 };
 
+var _wsRefreshTimer = null;
 async function fetchWhaleTrades(ticker) {
   try {
     var r = await fetch("/api/market/" + encodeURIComponent(ticker) + "/trades?min_amount=" + _wsMinAmount + "&hours=" + _wsHours);
@@ -3889,6 +3961,14 @@ async function fetchWhaleTrades(ticker) {
       '<div class="ws-empty">Failed to load trades.</div>';
     console.error("fetchWhaleTrades error", ex);
   }
+  // Auto-refresh every 15s while live + section visible + same outcome.
+  if (_wsRefreshTimer) clearTimeout(_wsRefreshTimer);
+  _wsRefreshTimer = setTimeout(function() {
+    if (window._wsPaused) { _wsRefreshTimer = null; return; }
+    if (_wsActiveOutcome !== ticker) { _wsRefreshTimer = null; return; }
+    if (!document.getElementById("ws-body")) { _wsRefreshTimer = null; return; }
+    fetchWhaleTrades(ticker);
+  }, 15000);
 }
 
 function _fmtDollar(n) {
@@ -4207,6 +4287,310 @@ window.addEventListener("load", syncHeaderHeight);
 window.addEventListener("resize", syncHeaderHeight);
 setTimeout(syncHeaderHeight, 100);
 setTimeout(syncHeaderHeight, 500);
+
+// ── Browser ↔ server price WebSocket ───────────────────────────────
+// A single persistent connection replaces the 5s polling loop. The
+// server pushes every Kalshi price delta to the tickers we subscribe
+// to, so prices, probabilities, and volumes update in <200ms.
+var PriceStream = (function() {
+  var ws = null;
+  var subscribed = new Set();   // tickers we've asked for
+  var handlers = [];            // onUpdate callbacks
+  var paused = false;           // global pause; per-section is finer
+  var retry = 0;
+  var heartbeat = null;
+
+  function connect() {
+    try {
+      var proto = location.protocol === "https:" ? "wss:" : "ws:";
+      ws = new WebSocket(proto + "//" + location.host + "/ws/prices");
+    } catch (ex) {
+      scheduleReconnect();
+      return;
+    }
+    ws.onopen = function() {
+      retry = 0;
+      // Re-subscribe on reconnect.
+      if (subscribed.size > 0) {
+        ws.send(JSON.stringify({
+          action: "subscribe",
+          tickers: Array.from(subscribed),
+        }));
+      }
+      heartbeat = setInterval(function() {
+        try { ws.send(JSON.stringify({action: "ping"})); } catch(e) {}
+      }, 25000);
+    };
+    ws.onmessage = function(ev) {
+      if (paused) return;
+      var msg;
+      try { msg = JSON.parse(ev.data); } catch(e) { return; }
+      if (msg.type === "price") {
+        dispatch(msg.ticker, msg.data);
+      } else if (msg.type === "snapshot") {
+        var u = msg.updates || [];
+        for (var i = 0; i < u.length; i++) dispatch(u[i].ticker, u[i].data);
+      }
+    };
+    ws.onerror = function() { /* onclose will fire next */ };
+    ws.onclose = function() {
+      if (heartbeat) { clearInterval(heartbeat); heartbeat = null; }
+      scheduleReconnect();
+    };
+  }
+
+  function scheduleReconnect() {
+    retry = Math.min(retry + 1, 6);
+    var delay = Math.min(1000 * Math.pow(2, retry), 30000);
+    setTimeout(connect, delay);
+  }
+
+  function dispatch(ticker, data) {
+    for (var i = 0; i < handlers.length; i++) {
+      try { handlers[i](ticker, data); } catch(e) { console.warn(e); }
+    }
+  }
+
+  return {
+    connect: connect,
+    subscribe: function(tickers) {
+      var added = [];
+      for (var i = 0; i < tickers.length; i++) {
+        var t = String(tickers[i] || "").toUpperCase();
+        if (!t || subscribed.has(t)) continue;
+        subscribed.add(t);
+        added.push(t);
+      }
+      if (added.length && ws && ws.readyState === 1) {
+        ws.send(JSON.stringify({action: "subscribe", tickers: added}));
+      }
+    },
+    unsubscribe: function(tickers) {
+      var removed = [];
+      for (var i = 0; i < tickers.length; i++) {
+        var t = String(tickers[i] || "").toUpperCase();
+        if (subscribed.has(t)) { subscribed.delete(t); removed.push(t); }
+      }
+      if (removed.length && ws && ws.readyState === 1) {
+        ws.send(JSON.stringify({action: "unsubscribe", tickers: removed}));
+      }
+    },
+    onUpdate: function(cb) { handlers.push(cb); },
+    setPaused: function(p) { paused = !!p; },
+    isPaused: function() { return paused; },
+  };
+})();
+window.PriceStream = PriceStream;
+
+// Apply a price delta to any visible markets-table row for this
+// ticker. Gated by the markets-table-specific snap flag.
+PriceStream.onUpdate(function(ticker, data) {
+  if (window._mkPaused) return;
+  var row = document.querySelector('tr[data-mk-row="' + ticker + '"]');
+  if (!row) return;
+  var flash = false;
+  if (data.yes_bid != null && data.yes_ask != null) {
+    var yesCell = row.querySelector('[data-mk-field="yes"]');
+    if (yesCell) {
+      yesCell.textContent = data.yes_bid + '¢ / ' + data.yes_ask + '¢';
+      flash = true;
+    }
+  }
+  if (data.no_bid != null && data.no_ask != null) {
+    var noCell = row.querySelector('[data-mk-field="no"]');
+    if (noCell) noCell.textContent = data.no_bid + '¢ / ' + data.no_ask + '¢';
+  }
+  if (data.last_price != null) {
+    var lastCell = row.querySelector('[data-mk-field="last"]');
+    if (lastCell) lastCell.textContent = data.last_price + '¢';
+    var probCell = row.querySelector('[data-mk-field="chance"]');
+    if (probCell) probCell.textContent = Math.round(data.last_price) + '%';
+  }
+  if (data.volume != null) {
+    var volCell = row.querySelector('[data-mk-field="vol"]');
+    if (volCell) volCell.textContent = fmtNum(data.volume);
+  }
+  if (flash) {
+    row.classList.add('mk-flash');
+    setTimeout(function() { row.classList.remove('mk-flash'); }, 400);
+  }
+});
+
+PriceStream.connect();
+
+// ── Snap/Pause + Export (Bloomberg-style per-section freeze) ──────
+// Each section (markets, orderbook, capital flow) has its own snap
+// state. When snapped, the section stops receiving live updates
+// and shows CSV/JSON export buttons. Resume by clicking Live again.
+window._mkPaused = false;
+window._obPaused = false;
+window._wsPaused = false;
+var _snapState = { markets: null, orderbook: null, capflow: null };
+
+function _snapTs() {
+  var d = new Date();
+  var pad = function(n) { return n < 10 ? "0" + n : String(n); };
+  return d.getFullYear() + "-" + pad(d.getMonth()+1) + "-" + pad(d.getDate())
+       + " " + pad(d.getHours()) + ":" + pad(d.getMinutes()) + ":" + pad(d.getSeconds());
+}
+
+window.toggleSnap = function(btn) {
+  var wrap = btn.closest(".snap-controls");
+  if (!wrap) return;
+  var section = wrap.getAttribute("data-snap-section");
+  var label = btn.querySelector(".snap-label");
+  var tsEl = wrap.querySelector(".snap-ts");
+  var exports = wrap.querySelectorAll(".snap-export");
+  var isSnapped = btn.classList.contains("snapped");
+  if (isSnapped) {
+    // Resume
+    btn.classList.remove("snapped");
+    if (label) label.textContent = "Live";
+    if (tsEl) { tsEl.hidden = true; tsEl.textContent = ""; }
+    for (var i = 0; i < exports.length; i++) exports[i].hidden = true;
+    _setSectionPaused(section, false);
+    _snapState[section] = null;
+  } else {
+    // Snap — capture current data
+    var snap = _captureSnapshot(section);
+    _snapState[section] = snap;
+    btn.classList.add("snapped");
+    if (label) label.textContent = "Snapped";
+    if (tsEl) { tsEl.textContent = _snapTs(); tsEl.hidden = false; }
+    for (var j = 0; j < exports.length; j++) exports[j].hidden = false;
+    _setSectionPaused(section, true);
+  }
+};
+
+function _setSectionPaused(section, paused) {
+  if (section === "markets") window._mkPaused = paused;
+  else if (section === "orderbook") window._obPaused = paused;
+  else if (section === "capflow") window._wsPaused = paused;
+}
+
+function _captureSnapshot(section) {
+  if (section === "markets") {
+    var rows = document.querySelectorAll(".ed-markets-table tbody tr[data-mk-row]");
+    var out = [];
+    for (var i = 0; i < rows.length; i++) {
+      var r = rows[i];
+      out.push({
+        ticker: r.getAttribute("data-mk-row"),
+        outcome: (r.querySelector(".ed-mk-label") || {}).textContent || "",
+        probability: (r.querySelector('[data-mk-field="chance"]') || {}).textContent || "",
+        yes: (r.querySelector('[data-mk-field="yes"]') || {}).textContent || "",
+        no: (r.querySelector('[data-mk-field="no"]') || {}).textContent || "",
+        last: (r.querySelector('[data-mk-field="last"]') || {}).textContent || "",
+        volume_24h: (r.querySelector('[data-mk-field="vol24"]') || {}).textContent || "",
+        volume: (r.querySelector('[data-mk-field="vol"]') || {}).textContent || "",
+        open_interest: (r.querySelector('[data-mk-field="oi"]') || {}).textContent || "",
+      });
+    }
+    return { section: "markets", taken_at: _snapTs(), rows: out };
+  }
+  if (section === "orderbook") {
+    return {
+      section: "orderbook",
+      taken_at: _snapTs(),
+      ticker: _obActiveOutcome || "",
+      side: _obActiveSide || "yes",
+      data: _obData ? JSON.parse(JSON.stringify(_obData)) : null,
+    };
+  }
+  if (section === "capflow") {
+    return {
+      section: "capflow",
+      taken_at: _snapTs(),
+      ticker: _wsActiveOutcome || "",
+      min_amount: _wsMinAmount,
+      hours: _wsHours,
+      data: _wsData ? JSON.parse(JSON.stringify(_wsData)) : null,
+    };
+  }
+  return null;
+}
+
+function _toCSV(section, snap) {
+  if (!snap) return "";
+  var lines = [];
+  lines.push("# OddsIQ snapshot - " + section);
+  lines.push("# Taken at: " + snap.taken_at);
+  lines.push("");
+  if (section === "markets") {
+    lines.push("ticker,outcome,probability,yes,no,last,volume_24h,volume,open_interest");
+    for (var i = 0; i < snap.rows.length; i++) {
+      var r = snap.rows[i];
+      lines.push([r.ticker, r.outcome, r.probability, r.yes, r.no, r.last, r.volume_24h, r.volume, r.open_interest]
+        .map(_csvEscape).join(","));
+    }
+  } else if (section === "orderbook") {
+    lines.push("# ticker: " + snap.ticker + " side: " + snap.side);
+    lines.push("side,price_cents,qty,cumulative_qty,total_dollars");
+    var sides = ["yes", "no"];
+    if (snap.data) {
+      for (var s = 0; s < sides.length; s++) {
+        var v = snap.data[sides[s]] || {};
+        var asks = v.asks || [], bids = v.bids || [];
+        for (var a = 0; a < asks.length; a++) {
+          lines.push([sides[s]+"_ask", asks[a].price, asks[a].qty, asks[a].cum_qty || "", asks[a].total || ""].map(_csvEscape).join(","));
+        }
+        for (var b = 0; b < bids.length; b++) {
+          lines.push([sides[s]+"_bid", bids[b].price, bids[b].qty, bids[b].cum_qty || "", bids[b].total || ""].map(_csvEscape).join(","));
+        }
+      }
+    }
+  } else if (section === "capflow") {
+    lines.push("# ticker: " + snap.ticker + " min_amount: $" + snap.min_amount + " window: " + (snap.hours || "all") + "h");
+    var d = snap.data || {};
+    lines.push("# sentiment: " + (d.sentiment || ""));
+    lines.push("# total_volume: $" + (d.total_volume || 0));
+    lines.push("# yes_volume: $" + (d.yes_volume || 0));
+    lines.push("# no_volume: $" + (d.no_volume || 0));
+    lines.push("");
+    lines.push("side,price_cents,contracts,cost_dollars,time");
+    var tr = d.trades || [];
+    for (var t = 0; t < tr.length; t++) {
+      lines.push([tr[t].side, tr[t].price, tr[t].contracts, tr[t].cost, tr[t].time].map(_csvEscape).join(","));
+    }
+  }
+  return lines.join("\n");
+}
+
+function _csvEscape(v) {
+  if (v == null) return "";
+  var s = String(v);
+  if (s.indexOf(",") >= 0 || s.indexOf('"') >= 0 || s.indexOf("\n") >= 0) {
+    s = '"' + s.replace(/"/g, '""') + '"';
+  }
+  return s;
+}
+
+window.exportSnap = function(btn, format) {
+  var wrap = btn.closest(".snap-controls");
+  if (!wrap) return;
+  var section = wrap.getAttribute("data-snap-section");
+  var snap = _snapState[section];
+  if (!snap) return;
+  var blob, filename;
+  var tsPart = (snap.taken_at || _snapTs()).replace(/[: ]/g, "-");
+  if (format === "csv") {
+    blob = new Blob([_toCSV(section, snap)], {type: "text/csv;charset=utf-8"});
+    filename = "oddsiq-" + section + "-" + tsPart + ".csv";
+  } else {
+    blob = new Blob([JSON.stringify(snap, null, 2)], {type: "application/json"});
+    filename = "oddsiq-" + section + "-" + tsPart + ".json";
+  }
+  var url = URL.createObjectURL(blob);
+  var a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(function() {
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }, 100);
+};
 
 boot();
 </script>

@@ -64,6 +64,54 @@ STATUS = {
 RAW_SAMPLES = deque(maxlen=30)
 
 
+# ── Browser pub/sub ─────────────────────────────────────────────────
+# Each browser WebSocket client registers its own asyncio.Queue here
+# with the set of tickers it cares about. When a Kalshi price update
+# arrives, we fan-out the delta to every queue whose ticker set
+# overlaps. The main.py /ws/prices endpoint owns the queue lifetime —
+# it creates one on connect, subscribes to tickers, and drops it on
+# disconnect.
+class BrowserSubscriber:
+    def __init__(self, tickers: set = None):
+        self.tickers: set = tickers or set()
+        self.queue: asyncio.Queue = asyncio.Queue(maxsize=500)
+
+    def subscribe(self, tickers):
+        self.tickers.update(tickers)
+
+    def unsubscribe(self, tickers):
+        self.tickers.difference_update(tickers)
+
+
+_browser_subscribers: set = set()
+
+
+def register_browser(sub: "BrowserSubscriber"):
+    _browser_subscribers.add(sub)
+
+
+def unregister_browser(sub: "BrowserSubscriber"):
+    _browser_subscribers.discard(sub)
+
+
+def _broadcast_to_browsers(ticker: str, update: dict):
+    """Non-blocking fan-out of a single-ticker update to every browser
+    subscriber that cares about this ticker. Drops the message on any
+    subscriber whose queue is full (slow consumer protection)."""
+    if not _browser_subscribers:
+        return
+    payload = {"type": "price", "ticker": ticker, "data": update}
+    for sub in list(_browser_subscribers):
+        if ticker not in sub.tickers:
+            continue
+        try:
+            sub.queue.put_nowait(payload)
+        except asyncio.QueueFull:
+            # Slow consumer — drop this tick. Client will pick up on
+            # the next update (or resync via REST if badly behind).
+            pass
+
+
 def _load_private_key():
     key_str = os.environ.get("KALSHI_PRIVATE_KEY")
     if not key_str or serialization is None:
@@ -337,6 +385,12 @@ async def run_ws_client(get_tickers):
                             else:
                                 cur.update(upd)
                             STATUS["updates"] += 1
+                            # Push the delta to every browser
+                            # subscriber watching this ticker.
+                            try:
+                                _broadcast_to_browsers(tk, upd)
+                            except Exception as e:
+                                log.debug("browser broadcast failed: %s", e)
                             # Buffer for DB price history
                             _price_buffer.append({
                                 "market_ticker": tk,
