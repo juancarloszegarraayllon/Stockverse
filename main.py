@@ -2970,20 +2970,40 @@ def get_sports(live: bool = False):
 # ── Shareable snapshots ──────────────────────────────────────────
 @app.get("/api/admin/vacuum_prices")
 async def vacuum_prices_endpoint():
-    """Run VACUUM on the prices table to reclaim disk space after a
-    prune. Postgres marks deleted rows as dead until VACUUM lets
-    other tables reuse those pages — without this, a freshly-pruned
-    DB can still report itself as full."""
+    """Run VACUUM FULL on the prices table to reclaim disk space.
+    Without FULL, Neon doesn't return pages to the OS — the DB stays
+    "full" even after deleting rows. FULL rewrites the table from
+    scratch, which locks it briefly."""
     try:
         from db import engine
         from sqlalchemy import text as _text
         if engine is None:
             return {"error": "database not configured"}
-        # VACUUM cannot run inside a transaction.
+        async with engine.connect() as conn:
+            # VACUUM FULL cannot run inside a transaction.
+            await conn.execute(_text("COMMIT"))
+            await conn.execute(_text("VACUUM FULL prices"))
+        return {"status": "ok", "message": "VACUUM FULL prices completed"}
+    except Exception as e:
+        return JSONResponse({"error": str(e)[:400]}, status_code=500)
+
+
+@app.get("/api/admin/truncate_prices")
+async def truncate_prices_endpoint():
+    """NUCLEAR OPTION — wipes all rows in the prices table and
+    instantly returns the disk to Neon. Charts that depend on the
+    1H / 6H DB-backed windows will be empty until WS flushes refill
+    them (~1 hour). 24H+ chart windows are unaffected (they fetch
+    from Kalshi's REST API, not the DB)."""
+    try:
+        from db import engine
+        from sqlalchemy import text as _text
+        if engine is None:
+            return {"error": "database not configured"}
         async with engine.connect() as conn:
             await conn.execute(_text("COMMIT"))
-            await conn.execute(_text("VACUUM (ANALYZE) prices"))
-        return {"status": "ok", "message": "VACUUM (ANALYZE) prices completed"}
+            await conn.execute(_text("TRUNCATE TABLE prices"))
+        return {"status": "ok", "message": "prices table truncated — DB instantly freed"}
     except Exception as e:
         return JSONResponse({"error": str(e)[:400]}, status_code=500)
 
