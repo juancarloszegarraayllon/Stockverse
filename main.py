@@ -1000,8 +1000,34 @@ def get_data():
     if have_cache and age < CACHE_STALE_TTL:
         _rebuild_cache_async()
         return _cache["data"]
-    # Cold or too stale — block on a full rebuild.
-    _build_cache()
+    # Cold or too stale. Serialize rebuilds on the same lock the
+    # async path uses so concurrent cold-start requests (the first
+    # user, the startup-priming thread, etc.) never duplicate the
+    # 20-40 s Kalshi fetch. acquire(blocking=True, timeout=60) makes
+    # the first caller build and every other caller wait on the
+    # same in-progress build, then all return with fresh data.
+    acquired = _rebuild_lock.acquire(timeout=60)
+    if not acquired:
+        # Build took too long — give up and return whatever we have
+        # (likely empty). Caller can retry; we don't want to hang.
+        return _cache.get("data") or []
+    try:
+        # Double-check after acquiring: a previous waiter may have
+        # just finished building, in which case we're done.
+        age = time.time() - _cache.get("ts", 0)
+        have_cache = _cache.get("data") is not None
+        if have_cache and age < CACHE_TTL:
+            return _cache["data"]
+        _rebuilding["active"] = True
+        try:
+            _build_cache()
+        finally:
+            _rebuilding["active"] = False
+    finally:
+        try:
+            _rebuild_lock.release()
+        except RuntimeError:
+            pass
     return _cache.get("data") or []
 
 
