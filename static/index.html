@@ -431,7 +431,52 @@ html,body{overscroll-behavior:none}
 .ed-markets-table .ed-mk-label{color:var(--text);font-weight:600;text-align:left;cursor:pointer}
 .ed-markets-table .ed-mk-label:hover{color:var(--green);text-decoration:underline}
 /* Order book inline section */
-.ob-section{margin-top:20px;background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:14px}
+.ob-section{margin-top:20px;background:var(--bg2);border:1px solid var(--border);border-radius:10px;overflow:hidden}
+.ob-toggle{width:100%;display:flex;align-items:center;justify-content:space-between;padding:14px 18px;background:transparent;border:0;color:var(--text);font-family:inherit;font-size:13px;font-weight:700;letter-spacing:0.4px;text-transform:uppercase;cursor:pointer;transition:background 0.12s}
+.ob-toggle:hover{background:var(--bg3)}
+.ob-toggle .ob-chevron{color:var(--text-muted);font-size:11px;transition:transform 0.2s}
+.ob-toggle.open .ob-chevron{transform:rotate(180deg)}
+.ob-inner{padding:0 14px 14px}
+/* Whale Sentiment */
+.ws-section{margin-top:20px;background:var(--bg2);border:1px solid var(--border);border-radius:10px;overflow:hidden}
+.ws-toggle{width:100%;display:flex;align-items:center;justify-content:space-between;padding:14px 18px;background:transparent;border:0;color:var(--text);font-family:inherit;font-size:13px;font-weight:700;letter-spacing:0.4px;text-transform:uppercase;cursor:pointer;transition:background 0.12s}
+.ws-toggle:hover{background:var(--bg3)}
+.ws-toggle .ws-chevron{color:var(--text-muted);font-size:11px;transition:transform 0.2s}
+.ws-toggle.open .ws-chevron{transform:rotate(180deg)}
+.ws-inner{padding:0 18px 18px}
+.ws-summary{background:var(--bg3);border-radius:8px;padding:14px 18px;margin-bottom:14px}
+.ws-sentiment-row{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px}
+.ws-sentiment-badge{display:inline-block;padding:3px 10px;border-radius:4px;font-size:11px;font-weight:700}
+.ws-sentiment-badge.bullish{background:rgba(76,175,80,0.15);color:#4caf50}
+.ws-sentiment-badge.bearish{background:rgba(244,67,54,0.15);color:#f44336}
+.ws-sentiment-badge.neutral{background:rgba(255,255,255,0.1);color:var(--text-muted)}
+.ws-total{font-size:18px;font-weight:700;color:var(--text)}
+.ws-whale-count{font-size:10px;color:var(--text-muted)}
+.ws-bar-row{display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;font-size:11px;font-weight:600}
+.ws-bar-yes{color:#4caf50}
+.ws-bar-no{color:#f44336}
+.ws-bar{height:10px;border-radius:5px;display:flex;overflow:hidden;margin-bottom:4px}
+.ws-bar-fill-yes{background:#4caf50;height:100%}
+.ws-bar-fill-no{background:#f44336;height:100%}
+.ws-pct-row{display:flex;justify-content:space-between;font-size:10px;color:var(--text-muted);margin-bottom:8px}
+.ws-filter-row{display:flex;align-items:center;gap:8px;margin-bottom:10px}
+.ws-filter-row label{font-size:11px;color:var(--text-muted);white-space:nowrap}
+.ws-filter-input{width:90px;padding:4px 8px;background:var(--bg3);border:1px solid var(--border);border-radius:4px;color:var(--text);font-size:11px;font-family:inherit}
+.ws-trades-list{max-height:260px;overflow-y:auto}
+.ws-trade{display:grid;grid-template-columns:auto 1fr auto auto;gap:8px;align-items:center;padding:8px 0;border-bottom:1px solid var(--border);font-size:12px}
+.ws-trade:last-child{border-bottom:0}
+.ws-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+.ws-dot.yes{background:#4caf50}
+.ws-dot.no{background:#f44336}
+.ws-cost{font-weight:700}
+.ws-cost.yes{color:#4caf50}
+.ws-cost.no{color:#f44336}
+.ws-side-badge{display:inline-block;padding:1px 6px;border-radius:3px;font-size:9px;font-weight:700;text-transform:uppercase}
+.ws-side-badge.yes{background:rgba(76,175,80,0.15);color:#4caf50}
+.ws-side-badge.no{background:rgba(244,67,54,0.15);color:#f44336}
+.ws-trade-meta{text-align:right;color:var(--text-muted);font-size:11px;white-space:nowrap}
+.ws-trade-price{margin-right:10px}
+.ws-empty{padding:20px;text-align:center;color:var(--text-muted);font-size:11px;font-style:italic}
 .ob-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px}
 .ob-title{font-size:13px;font-weight:700;color:var(--text)}
 .ob-ticker{font-size:10px;color:var(--text-muted);font-family:monospace;margin-bottom:4px}
@@ -2250,8 +2295,7 @@ function showEventDetail(ticker, skipHistory) {
           }
         }, 100);
       }
-      // Auto-load the first outcome's order book.
-      hydrateOrderbook();
+      // Order book + whale sentiment are lazy-loaded when expanded.
     })
     .catch(function(ex) {
       document.getElementById("loader").style.display = "none";
@@ -3533,7 +3577,11 @@ var _obActiveOutcome = null;
 function renderOrderbookSection(outcomes) {
   if (!outcomes || !outcomes.length) return "";
   var h = '<div class="ob-section">';
-  h += '<div class="ed-section-title">Order Book</div>';
+  h += '<button class="ob-toggle" aria-expanded="false" onclick="window.toggleObSection(this)">';
+  h += '<span>Order Book</span>';
+  h += '<span class="ob-chevron">\u25BE</span>';
+  h += '</button>';
+  h += '<div class="ob-inner" hidden>';
   h += '<div class="ob-outcomes">';
   for (var i = 0; i < outcomes.length; i++) {
     var o = outcomes[i];
@@ -3550,11 +3598,26 @@ function renderOrderbookSection(outcomes) {
   h += '<button class="ob-tab ob-tab-no" data-side="no" onclick="window.switchObTab(this)">Trade No</button>';
   h += '</div>';
   h += '<div class="ob-body" id="ob-body">';
-  h += '<div class="ob-loading">Select an outcome above to view the order book.</div>';
+  h += '<div class="ob-loading">Click an outcome to view the order book.</div>';
+  h += '</div>';
   h += '</div>';
   h += '</div>';
   return h;
 }
+
+window.toggleObSection = function(btn) {
+  var body = btn.nextElementSibling;
+  if (!body) return;
+  var open = body.hidden;
+  body.hidden = !open;
+  btn.setAttribute("aria-expanded", open ? "true" : "false");
+  btn.classList.toggle("open", open);
+  if (open && !btn.dataset.hydrated) {
+    btn.dataset.hydrated = "1";
+    var firstBtn = body.querySelector(".ob-outcome-btn.active");
+    if (firstBtn) window.selectObOutcome(firstBtn);
+  }
+};
 
 window.selectObOutcome = function(btn) {
   var section = btn.closest(".ob-section");
@@ -3693,6 +3756,170 @@ function renderOrderbook() {
     }
   }
   h += '</div>';
+  body.innerHTML = h;
+}
+
+// ── Whale Sentiment section ───────────────────────────────────
+function renderWhaleSentimentSection(outcomes) {
+  if (!outcomes || !outcomes.length) return "";
+  var h = '<div class="ws-section">';
+  h += '<button class="ws-toggle" aria-expanded="false" onclick="window.toggleWsSection(this)">';
+  h += '<span>Whale Sentiment</span>';
+  h += '<span class="ws-chevron">\u25BE</span>';
+  h += '</button>';
+  h += '<div class="ws-inner" hidden>';
+  h += '<div class="ws-outcomes">';
+  for (var i = 0; i < outcomes.length; i++) {
+    var o = outcomes[i];
+    if (!o.ticker) continue;
+    h += '<button class="ob-outcome-btn' + (i === 0 ? ' active' : '') + '"'
+       + ' data-ws-ticker="' + escH(o.ticker) + '"'
+       + ' data-ws-label="' + escH(o.label) + '"'
+       + ' onclick="window.selectWsOutcome(this)">'
+       + escH(o.label) + '</button>';
+  }
+  h += '</div>';
+  h += '<div class="ws-filter-row">';
+  h += '<label>Min trade size: $</label>';
+  h += '<input class="ws-filter-input" type="number" value="1000" min="0" step="100" onchange="window.applyWsFilter(this)">';
+  h += '</div>';
+  h += '<div class="ws-body" id="ws-body">';
+  h += '<div class="ws-empty">Click an outcome to view whale trades.</div>';
+  h += '</div>';
+  h += '</div>';
+  h += '</div>';
+  return h;
+}
+
+var _wsData = null;
+var _wsActiveOutcome = null;
+var _wsMinAmount = 1000;
+
+window.toggleWsSection = function(btn) {
+  var body = btn.nextElementSibling;
+  if (!body) return;
+  var open = body.hidden;
+  body.hidden = !open;
+  btn.setAttribute("aria-expanded", open ? "true" : "false");
+  btn.classList.toggle("open", open);
+  if (open && !btn.dataset.hydrated) {
+    btn.dataset.hydrated = "1";
+    var firstBtn = body.querySelector(".ob-outcome-btn.active");
+    if (firstBtn) window.selectWsOutcome(firstBtn);
+  }
+};
+
+window.selectWsOutcome = function(btn) {
+  var section = btn.closest(".ws-section");
+  if (!section) return;
+  var btns = section.querySelectorAll(".ob-outcome-btn");
+  for (var i = 0; i < btns.length; i++) {
+    btns[i].classList.toggle("active", btns[i] === btn);
+  }
+  var ticker = btn.getAttribute("data-ws-ticker");
+  _wsActiveOutcome = ticker;
+  var body = section.querySelector(".ws-body");
+  if (body) body.innerHTML = '<div class="ws-empty">Loading whale trades\u2026</div>';
+  fetchWhaleTrades(ticker);
+};
+
+window.applyWsFilter = function(input) {
+  _wsMinAmount = parseFloat(input.value) || 0;
+  if (_wsActiveOutcome) fetchWhaleTrades(_wsActiveOutcome);
+};
+
+async function fetchWhaleTrades(ticker) {
+  try {
+    var r = await fetch("/api/market/" + encodeURIComponent(ticker) + "/trades?min_amount=" + _wsMinAmount);
+    var d = await r.json();
+    if (d.error) {
+      document.getElementById("ws-body").innerHTML =
+        '<div class="ws-empty">Failed: ' + escH(d.error) + '</div>';
+      return;
+    }
+    _wsData = d;
+    renderWhaleSentiment();
+  } catch (ex) {
+    document.getElementById("ws-body").innerHTML =
+      '<div class="ws-empty">Failed to load trades.</div>';
+    console.error("fetchWhaleTrades error", ex);
+  }
+}
+
+function _fmtDollar(n) {
+  if (n >= 1000) return '$' + (n / 1000).toFixed(1).replace(/\.0$/, '') + 'K';
+  return '$' + Math.round(n).toLocaleString();
+}
+
+function _timeAgo(ts) {
+  if (!ts) return "";
+  var d = new Date(ts);
+  var now = Date.now();
+  var diffS = Math.floor((now - d.getTime()) / 1000);
+  if (diffS < 60) return diffS + "s ago";
+  var diffM = Math.floor(diffS / 60);
+  if (diffM < 60) return diffM + "m ago";
+  var diffH = Math.floor(diffM / 60);
+  if (diffH < 24) return diffH + "h ago";
+  var diffD = Math.floor(diffH / 24);
+  return diffD + "d ago";
+}
+
+function renderWhaleSentiment() {
+  if (!_wsData) return;
+  var body = document.getElementById("ws-body");
+  if (!body) return;
+  var d = _wsData;
+  var total = d.total_volume || 0;
+  var yesVol = d.yes_volume || 0;
+  var noVol = d.no_volume || 0;
+  var yesPct = total > 0 ? Math.round(yesVol / total * 100) : 0;
+  var noPct = 100 - yesPct;
+  var sentiment = d.sentiment || "Neutral";
+  var sentClass = sentiment === "Bullish" ? "bullish" : sentiment === "Bearish" ? "bearish" : "neutral";
+  var whaleCount = d.whale_count || 0;
+  var trades = d.trades || [];
+
+  var h = '<div class="ws-summary">';
+  h += '<div class="ws-sentiment-row">';
+  h += '<span class="ws-sentiment-badge ' + sentClass + '">' + sentiment + '</span>';
+  h += '<div style="text-align:right">';
+  h += '<div class="ws-total">' + _fmtDollar(total) + '</div>';
+  h += '<div class="ws-whale-count">' + whaleCount + ' whale trade' + (whaleCount !== 1 ? 's' : '') + '</div>';
+  h += '</div></div>';
+  h += '<div class="ws-bar-row">';
+  h += '<span class="ws-bar-yes">YES ' + _fmtDollar(yesVol) + '</span>';
+  h += '<span class="ws-bar-no">NO ' + _fmtDollar(noVol) + '</span>';
+  h += '</div>';
+  h += '<div class="ws-bar">';
+  h += '<div class="ws-bar-fill-yes" style="width:' + yesPct + '%"></div>';
+  h += '<div class="ws-bar-fill-no" style="width:' + noPct + '%"></div>';
+  h += '</div>';
+  h += '<div class="ws-pct-row">';
+  h += '<span>' + yesPct + '% (' + (d.yes_count || 0) + ' trades)</span>';
+  h += '<span>' + noPct + '% (' + (d.no_count || 0) + ' trades)</span>';
+  h += '</div>';
+  h += '</div>';
+
+  if (trades.length === 0) {
+    h += '<div class="ws-empty">No trades above $' + _wsMinAmount.toLocaleString() + '.</div>';
+  } else {
+    h += '<div style="font-size:12px;font-weight:700;color:var(--text-dim);margin-bottom:8px">Recent Whale Trades</div>';
+    h += '<div class="ws-trades-list">';
+    for (var i = 0; i < trades.length; i++) {
+      var t = trades[i];
+      var sc = t.side === "YES" ? "yes" : "no";
+      h += '<div class="ws-trade">';
+      h += '<span class="ws-dot ' + sc + '"></span>';
+      h += '<span><span class="ws-cost ' + sc + '">' + _fmtDollar(t.cost) + '</span> ';
+      h += '<span class="ws-side-badge ' + sc + '">' + t.side + '</span></span>';
+      h += '<span class="ws-trade-price">@ ' + t.price + '\u00a2</span>';
+      h += '<span class="ws-trade-meta">' + _timeAgo(t.time) + '</span>';
+      h += '</div>';
+    }
+    h += '</div>';
+  }
+
   body.innerHTML = h;
 }
 
@@ -3876,6 +4103,7 @@ function renderEventDetail(ev) {
       h += marketsSectionTitle(live);
       h += renderMarketsTable(g2.outcomes || [], live);
       h += renderOrderbookSection(g2.outcomes || []);
+      h += renderWhaleSentimentSection(g2.outcomes || []);
       h += renderMarketDataGrid(g2.event_ticker || ticker);
       h += renderSettlementRules(g2.outcomes || []);
       h += '</div>';
@@ -3887,6 +4115,7 @@ function renderEventDetail(ev) {
     h += marketsSectionTitle(live);
     h += renderMarketsTable(ev.outcomes || [], live);
     h += renderOrderbookSection(ev.outcomes || []);
+    h += renderWhaleSentimentSection(ev.outcomes || []);
     h += renderMarketDataGrid(ticker);
     h += renderSettlementRules(ev.outcomes || []);
   }

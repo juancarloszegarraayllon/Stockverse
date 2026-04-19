@@ -4093,6 +4093,108 @@ def get_market_orderbook(ticker: str, depth: int = 10, debug: bool = False):
         return {"error": str(e)}
 
 
+@app.get("/api/market/{ticker}/trades")
+def get_market_trades(ticker: str, limit: int = 200, min_amount: float = 1000):
+    """Fetch recent trades for a market from Kalshi and return whale-sized
+    trades (>= min_amount dollars) with YES/NO split for sentiment."""
+    ticker = (ticker or "").strip().upper()
+    if not ticker:
+        return {"error": "ticker required"}
+    try:
+        from cryptography.hazmat.primitives import hashes, serialization
+        from cryptography.hazmat.primitives.asymmetric import padding as _pad
+        import base64, httpx as _httpx
+        key_str = os.environ.get("KALSHI_PRIVATE_KEY", "")
+        key_id = os.environ.get("KALSHI_API_KEY_ID", "")
+        if not key_str or not key_id:
+            return {"error": "KALSHI credentials not configured"}
+        private_key = serialization.load_pem_private_key(
+            key_str.encode(), password=None,
+        )
+        path = f"/trade-api/v2/markets/trades"
+        ts_ms = str(int(time.time() * 1000))
+        msg = (ts_ms + "GET" + path).encode()
+        sig = private_key.sign(
+            msg,
+            _pad.PSS(
+                mgf=_pad.MGF1(hashes.SHA256()),
+                salt_length=_pad.PSS.DIGEST_LENGTH,
+            ),
+            hashes.SHA256(),
+        )
+        headers = {
+            "KALSHI-ACCESS-KEY": key_id,
+            "KALSHI-ACCESS-TIMESTAMP": ts_ms,
+            "KALSHI-ACCESS-SIGNATURE": base64.b64encode(sig).decode(),
+            "Accept": "application/json",
+        }
+        url = f"https://api.elections.kalshi.com{path}"
+        with _httpx.Client(timeout=15.0) as client:
+            r = client.get(url, headers=headers, params={
+                "ticker": ticker,
+                "limit": min(limit, 1000),
+            })
+            if r.status_code != 200:
+                return {"error": f"Kalshi returned HTTP {r.status_code}",
+                        "body": r.text[:400]}
+            data = r.json() or {}
+            trades_raw = data.get("trades") or []
+            trades = []
+            yes_volume = 0.0
+            no_volume = 0.0
+            yes_count = 0
+            no_count = 0
+            for t in trades_raw:
+                count = t.get("count", 1)
+                yes_price = t.get("yes_price", 0)
+                no_price = t.get("no_price", 0)
+                taker_side = t.get("taker_side", "")
+                created = t.get("created_time", "")
+                if isinstance(yes_price, str):
+                    yes_price = float(yes_price)
+                if isinstance(no_price, str):
+                    no_price = float(no_price)
+                if yes_price > 1:
+                    yes_price = yes_price / 100.0
+                if no_price > 1:
+                    no_price = no_price / 100.0
+                if taker_side == "yes":
+                    cost = yes_price * count
+                    side = "YES"
+                else:
+                    cost = no_price * count
+                    side = "NO"
+                if side == "YES":
+                    yes_volume += cost
+                    yes_count += 1
+                else:
+                    no_volume += cost
+                    no_count += 1
+                price_cents = int(round((yes_price if side == "YES" else no_price) * 100))
+                trades.append({
+                    "side": side,
+                    "price": price_cents,
+                    "contracts": count,
+                    "cost": round(cost, 2),
+                    "time": created,
+                })
+            whale_trades = [t for t in trades if t["cost"] >= min_amount]
+            total = yes_volume + no_volume
+            return {
+                "ticker": ticker,
+                "total_volume": round(total, 2),
+                "yes_volume": round(yes_volume, 2),
+                "no_volume": round(no_volume, 2),
+                "yes_count": yes_count,
+                "no_count": no_count,
+                "whale_count": len(whale_trades),
+                "sentiment": "Bullish" if yes_volume > no_volume else "Bearish" if no_volume > yes_volume else "Neutral",
+                "trades": whale_trades,
+            }
+    except Exception as e:
+        return {"error": str(e)}
+
+
 @app.get("/api/event/{ticker}/history")
 def get_event_history(ticker: str, hours: int = 24, period: int = 60, debug: bool = False):
     """Fetch historical candlestick data from Kalshi's REST API
