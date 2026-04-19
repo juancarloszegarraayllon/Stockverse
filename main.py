@@ -4094,7 +4094,7 @@ def get_market_orderbook(ticker: str, depth: int = 10, debug: bool = False):
 
 
 @app.get("/api/market/{ticker}/trades")
-def get_market_trades(ticker: str, limit: int = 1000, min_amount: float = 1000):
+def get_market_trades(ticker: str, limit: int = 1000, min_amount: float = 1000, debug: bool = False):
     """Fetch recent trades for a market from Kalshi and return
     large-capital trades (>= min_amount dollars) with YES/NO split
     for sentiment. Stats reflect whale-sized trades only so the
@@ -4162,6 +4162,13 @@ def get_market_trades(ticker: str, limit: int = 1000, min_amount: float = 1000):
                                 "body": r.text[:400]}
                     break
                 data = r.json() or {}
+                if debug and not trades_raw:
+                    return {
+                        "ticker": ticker,
+                        "status": r.status_code,
+                        "raw_keys": list(data.keys()),
+                        "raw_preview": str(data)[:2000],
+                    }
                 page = data.get("trades") or []
                 if not page:
                     break

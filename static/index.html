@@ -459,9 +459,15 @@ html,body{overscroll-behavior:none}
 .ws-bar-fill-yes{background:#4caf50;height:100%}
 .ws-bar-fill-no{background:#f44336;height:100%}
 .ws-pct-row{display:flex;justify-content:space-between;font-size:10px;color:var(--text-muted);margin-bottom:8px}
+.ws-outcomes{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px}
 .ws-filter-row{display:flex;align-items:center;gap:8px;margin-bottom:10px}
 .ws-filter-row label{font-size:11px;color:var(--text-muted);white-space:nowrap}
 .ws-filter-input{width:90px;padding:4px 8px;background:var(--bg3);border:1px solid var(--border);border-radius:4px;color:var(--text);font-size:11px;font-family:inherit}
+.ws-filter-btn{padding:4px 10px;font-size:10px;font-weight:700;font-family:inherit;border-radius:4px;cursor:pointer;border:1px solid var(--border);transition:background 0.12s}
+.ws-filter-btn.apply{background:rgba(0,200,83,0.15);color:#4caf50;border-color:rgba(0,200,83,0.3)}
+.ws-filter-btn.apply:hover{background:rgba(0,200,83,0.25)}
+.ws-filter-btn.reset{background:var(--bg3);color:var(--text-muted)}
+.ws-filter-btn.reset:hover{background:var(--bg2);color:var(--text-dim)}
 .ws-trades-list{max-height:260px;overflow-y:auto}
 .ws-trade{display:grid;grid-template-columns:auto 1fr auto auto;gap:8px;align-items:center;padding:8px 0;border-bottom:1px solid var(--border);font-size:12px}
 .ws-trade:last-child{border-bottom:0}
@@ -3781,7 +3787,9 @@ function renderWhaleSentimentSection(outcomes) {
   h += '</div>';
   h += '<div class="ws-filter-row">';
   h += '<label>Min trade size: $</label>';
-  h += '<input class="ws-filter-input" type="number" value="1000" min="0" step="100" onchange="window.applyWsFilter(this)">';
+  h += '<input class="ws-filter-input" id="ws-filter-val" type="number" value="1000" min="0" step="100">';
+  h += '<button class="ws-filter-btn apply" onclick="window.applyWsFilter()">Apply</button>';
+  h += '<button class="ws-filter-btn reset" onclick="window.resetWsFilter()">Reset</button>';
   h += '</div>';
   h += '<div class="ws-body" id="ws-body">';
   h += '<div class="ws-empty">Click an outcome to view whale trades.</div>';
@@ -3823,8 +3831,16 @@ window.selectWsOutcome = function(btn) {
   fetchWhaleTrades(ticker);
 };
 
-window.applyWsFilter = function(input) {
-  _wsMinAmount = parseFloat(input.value) || 0;
+window.applyWsFilter = function() {
+  var input = document.getElementById("ws-filter-val");
+  if (input) _wsMinAmount = parseFloat(input.value) || 0;
+  if (_wsActiveOutcome) fetchWhaleTrades(_wsActiveOutcome);
+};
+
+window.resetWsFilter = function() {
+  _wsMinAmount = 1000;
+  var input = document.getElementById("ws-filter-val");
+  if (input) input.value = "1000";
   if (_wsActiveOutcome) fetchWhaleTrades(_wsActiveOutcome);
 };
 
