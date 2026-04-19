@@ -431,9 +431,9 @@ html,body{overscroll-behavior:none}
 .ed-markets-table .ed-mk-label{color:var(--text);font-weight:600;text-align:left;cursor:pointer}
 .ed-markets-table .ed-mk-label:hover{color:var(--green);text-decoration:underline}
 /* Order book inline section */
-/* Real-time row flash on price update */
-@keyframes mk-flash-anim{0%{background:rgba(76,175,80,0.18)}100%{background:transparent}}
-.ed-markets-table tr.mk-flash td{animation:mk-flash-anim 0.4s ease-out}
+/* Real-time cell flash on price update — same pattern as card grid */
+.ed-markets-table td.flash-up{animation:flash-up-bg 0.9s ease-out}
+.ed-markets-table td.flash-down{animation:flash-down-bg 0.9s ease-out}
 /* Snap / export controls */
 .snap-controls{display:inline-flex;align-items:center;gap:6px;font-weight:400;text-transform:none;letter-spacing:normal}
 .snap-btn{display:inline-flex;align-items:center;gap:5px;padding:3px 9px;background:var(--bg3);border:1px solid var(--border);color:var(--text-dim);font-family:inherit;font-size:10px;font-weight:700;border-radius:4px;cursor:pointer}
@@ -443,6 +443,8 @@ html,body{overscroll-behavior:none}
 .snap-btn.snapped .snap-dot{background:#f44336;animation:none}
 @keyframes live-dot-pulse{0%,100%{opacity:0.4}50%{opacity:1}}
 .snap-ts{font-size:10px;color:var(--text-muted);font-family:monospace}
+.snap-hint{font-size:10px;color:var(--text-muted);font-style:italic;font-weight:400;text-transform:none;letter-spacing:normal}
+.snap-controls.snapped .snap-hint{display:none}
 .snap-export{padding:3px 8px;background:var(--bg3);border:1px solid var(--border);color:var(--text-dim);font-family:inherit;font-size:10px;font-weight:700;border-radius:4px;cursor:pointer}
 .snap-export:hover{color:var(--text);border-color:var(--text-muted)}
 .ob-section{margin-top:20px;background:var(--bg2);border:1px solid var(--border);border-radius:10px;overflow:hidden}
@@ -2356,6 +2358,8 @@ window.exitEventDetail = function() {
   var prev = state._prevView;
   state._prevView = null;
   state._eventTicker = null;
+  // Drop live-chart cache so we don't redraw into detached DOM.
+  if (typeof _liveChartCache !== "undefined") _liveChartCache = {};
   document.getElementById("event-detail").style.display = "none";
   document.getElementById("event-detail").innerHTML = "";
   if (prev && prev.category != null) {
@@ -3175,6 +3179,83 @@ window.switchChartTimeframe = function(btn) {
 // hydrating. Used by the "Live · updated Xs ago" indicator that
 // ticks every second without triggering re-fetches.
 var _chartLastUpdate = {};
+// Live chart streaming: cache each rendered chart's series + hours so
+// we can append a new point when a WebSocket tick arrives for any of
+// its tickers. Redraws throttle at ~2 fps to avoid thrashing the SVG
+// on busy markets.
+var _liveChartCache = {};
+var _liveChartSeq = 0;
+var _liveChartRedrawTimer = null;
+function _scheduleLiveChartRedraw() {
+  if (_liveChartRedrawTimer) return;
+  _liveChartRedrawTimer = setTimeout(function() {
+    _liveChartRedrawTimer = null;
+    Object.keys(_liveChartCache).forEach(function(id) {
+      var c = _liveChartCache[id];
+      if (!c || !c.dirty) return;
+      c.dirty = false;
+      var body = c.el.querySelector(".ed-chart-body");
+      if (!body) return;
+      // Update the legend values for every window, regardless of
+      // whether we redraw the SVG.
+      var legendItems = body.querySelectorAll(".ed-chart-legend-item");
+      for (var s = 0; s < c.series.length; s++) {
+        var ser = c.series[s];
+        if (!ser.points || !ser.points.length) continue;
+        ser.last = ser.points[ser.points.length - 1].p;
+        var item = legendItems[s];
+        if (item) {
+          var valEl = item.querySelector(".ed-chart-legend-val");
+          if (valEl) valEl.textContent = ser.last.toFixed(0) + "¢";
+          var delta = ser.last - ser.first;
+          var dEl = item.querySelector(".ed-chart-legend-delta");
+          if (dEl) {
+            dEl.textContent = (delta >= 0 ? "+" : "") + delta.toFixed(0) + "¢";
+            dEl.classList.remove("up", "down");
+            dEl.classList.add(delta >= 0 ? "up" : "down");
+          }
+        }
+      }
+      if (c.allowRedraw) {
+        // For short windows, redraw the SVG in place so the line
+        // extends to the new tick. We preserve the legend DOM that
+        // we just mutated by only swapping the SVG child.
+        var newSvg = renderPriceChartSvg(c.series, c.hours, c.volume);
+        var oldSvg = body.querySelector("svg");
+        if (newSvg && oldSvg) {
+          var tmp = document.createElement("div");
+          tmp.innerHTML = newSvg;
+          oldSvg.replaceWith(tmp.firstChild);
+          wireChartHover(c.el);
+        }
+      }
+    });
+  }, 500);
+}
+
+// On every WebSocket tick, find any chart that plots this ticker
+// and append a new point. Registered below where PriceStream is
+// defined so the symbol order works.
+function _liveChartOnTick(ticker, data) {
+  if (window._mkPaused) return;
+  if (data.last_price == null) return;
+  var nowMs = Date.now();
+  Object.keys(_liveChartCache).forEach(function(id) {
+    var c = _liveChartCache[id];
+    if (!c) return;
+    for (var i = 0; i < c.series.length; i++) {
+      var ser = c.series[i];
+      if (ser.market_ticker !== ticker) continue;
+      ser.points = ser.points || [];
+      var lastPt = ser.points[ser.points.length - 1];
+      if (lastPt && lastPt.p === data.last_price && (nowMs - lastPt.t) < 2000) return;
+      ser.points.push({t: nowMs, p: data.last_price});
+      if (ser.points.length > 3000) ser.points.splice(0, ser.points.length - 3000);
+      c.dirty = true;
+    }
+  });
+  _scheduleLiveChartRedraw();
+}
 
 // Auto-refresh every 30 seconds: re-hydrate any chart that's
 // currently in the DOM. Skips when the detail page is hidden to
@@ -3312,6 +3393,19 @@ async function hydratePriceCharts() {
       legend += '</div>';
       body.innerHTML = svg + legend;
       _chartLastUpdate[tkr] = Date.now();
+      // Cache the series for live streaming — only for short windows
+      // where each new tick is visually meaningful. For 24H+ windows
+      // we still update the legend value/delta without redrawing the
+      // line (cheap, and a single tick on a day-long chart is a
+      // rounding error).
+      _liveChartCache[el.id || (el.id = "ed-chart-" + (++_liveChartSeq))] = {
+        el: el,
+        series: series,
+        hours: hours,
+        volume: d.volume,
+        allowRedraw: hours <= 6,
+        dirty: false,
+      };
       // Wire the hover crosshair/tooltip on every fresh render —
       // innerHTML replacement wiped the previous listeners.
       wireChartHover(el);
@@ -3340,6 +3434,7 @@ function marketsSectionTitle(live) {
            +   '<span class="snap-dot"></span>'
            +   '<span class="snap-label">Live</span>'
            + '</button>'
+           + '<span class="snap-hint">click to snap</span>'
            + '<span class="snap-ts" hidden></span>'
            + '<button class="snap-export" onclick="window.exportSnap(this,\'csv\')" hidden>CSV</button>'
            + '<button class="snap-export" onclick="window.exportSnap(this,\'json\')" hidden>JSON</button>'
@@ -3647,6 +3742,7 @@ function renderOrderbookSection(outcomes) {
   h += '<div class="snap-controls" data-snap-section="orderbook" style="margin-bottom:10px">'
      + '<button class="snap-btn" onclick="window.toggleSnap(this)">'
      + '<span class="snap-dot"></span><span class="snap-label">Live</span></button>'
+     + '<span class="snap-hint">click to snap</span>'
      + '<span class="snap-ts" hidden></span>'
      + '<button class="snap-export" onclick="window.exportSnap(this,\'csv\')" hidden>CSV</button>'
      + '<button class="snap-export" onclick="window.exportSnap(this,\'json\')" hidden>JSON</button>'
@@ -3850,6 +3946,7 @@ function renderWhaleSentimentSection(outcomes) {
   h += '<div class="snap-controls" data-snap-section="capflow" style="margin-bottom:10px">'
      + '<button class="snap-btn" onclick="window.toggleSnap(this)">'
      + '<span class="snap-dot"></span><span class="snap-label">Live</span></button>'
+     + '<span class="snap-hint">click to snap</span>'
      + '<span class="snap-ts" hidden></span>'
      + '<button class="snap-export" onclick="window.exportSnap(this,\'csv\')" hidden>CSV</button>'
      + '<button class="snap-export" onclick="window.exportSnap(this,\'json\')" hidden>JSON</button>'
@@ -4386,38 +4483,49 @@ var PriceStream = (function() {
 window.PriceStream = PriceStream;
 
 // Apply a price delta to any visible markets-table row for this
-// ticker. Gated by the markets-table-specific snap flag.
+// ticker. Gated by the markets-table-specific snap flag. Individual
+// cells flash green (up) / red (down) just like the card grid.
 PriceStream.onUpdate(function(ticker, data) {
   if (window._mkPaused) return;
   var row = document.querySelector('tr[data-mk-row="' + ticker + '"]');
   if (!row) return;
-  var flash = false;
   if (data.yes_bid != null && data.yes_ask != null) {
     var yesCell = row.querySelector('[data-mk-field="yes"]');
     if (yesCell) {
-      yesCell.textContent = data.yes_bid + '¢ / ' + data.yes_ask + '¢';
-      flash = true;
+      var newYes = data.yes_bid + '¢ / ' + data.yes_ask + '¢';
+      _flash(yesCell, yesCell.textContent, String(data.yes_bid));
+      yesCell.textContent = newYes;
     }
   }
   if (data.no_bid != null && data.no_ask != null) {
     var noCell = row.querySelector('[data-mk-field="no"]');
-    if (noCell) noCell.textContent = data.no_bid + '¢ / ' + data.no_ask + '¢';
+    if (noCell) {
+      var newNo = data.no_bid + '¢ / ' + data.no_ask + '¢';
+      _flash(noCell, noCell.textContent, String(data.no_bid));
+      noCell.textContent = newNo;
+    }
   }
   if (data.last_price != null) {
     var lastCell = row.querySelector('[data-mk-field="last"]');
-    if (lastCell) lastCell.textContent = data.last_price + '¢';
+    if (lastCell) {
+      _flash(lastCell, lastCell.textContent, String(data.last_price));
+      lastCell.textContent = data.last_price + '¢';
+    }
     var probCell = row.querySelector('[data-mk-field="chance"]');
-    if (probCell) probCell.textContent = Math.round(data.last_price) + '%';
+    if (probCell) {
+      var newProb = Math.round(data.last_price) + '%';
+      _flash(probCell, probCell.textContent, newProb);
+      probCell.textContent = newProb;
+    }
   }
   if (data.volume != null) {
     var volCell = row.querySelector('[data-mk-field="vol"]');
     if (volCell) volCell.textContent = fmtNum(data.volume);
   }
-  if (flash) {
-    row.classList.add('mk-flash');
-    setTimeout(function() { row.classList.remove('mk-flash'); }, 400);
-  }
 });
+
+// Register the live-chart tick handler now that PriceStream exists.
+PriceStream.onUpdate(_liveChartOnTick);
 
 PriceStream.connect();
 
@@ -4448,6 +4556,7 @@ window.toggleSnap = function(btn) {
   if (isSnapped) {
     // Resume
     btn.classList.remove("snapped");
+    wrap.classList.remove("snapped");
     if (label) label.textContent = "Live";
     if (tsEl) { tsEl.hidden = true; tsEl.textContent = ""; }
     for (var i = 0; i < exports.length; i++) exports[i].hidden = true;
@@ -4458,6 +4567,7 @@ window.toggleSnap = function(btn) {
     var snap = _captureSnapshot(section);
     _snapState[section] = snap;
     btn.classList.add("snapped");
+    wrap.classList.add("snapped");
     if (label) label.textContent = "Snapped";
     if (tsEl) { tsEl.textContent = _snapTs(); tsEl.hidden = false; }
     for (var j = 0; j < exports.length; j++) exports[j].hidden = false;
