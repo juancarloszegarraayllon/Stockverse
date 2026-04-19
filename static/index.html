@@ -468,7 +468,7 @@ html,body{overscroll-behavior:none}
 .ws-filter-btn.apply:hover{background:rgba(0,200,83,0.25)}
 .ws-filter-btn.reset{background:var(--bg3);color:var(--text-muted)}
 .ws-filter-btn.reset:hover{background:var(--bg2);color:var(--text-dim)}
-.ws-trades-list{max-height:260px;overflow-y:auto}
+.ws-trades-list{max-height:260px;overflow-y:auto;scrollbar-width:thin;scrollbar-color:var(--border) transparent}
 .ws-trade{display:grid;grid-template-columns:auto 1fr auto auto;gap:8px;align-items:center;padding:8px 0;border-bottom:1px solid var(--border);font-size:12px}
 .ws-trade:last-child{border-bottom:0}
 .ws-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
@@ -481,7 +481,9 @@ html,body{overscroll-behavior:none}
 .ws-side-badge.yes{background:rgba(76,175,80,0.15);color:#4caf50}
 .ws-side-badge.no{background:rgba(244,67,54,0.15);color:#f44336}
 .ws-trade-meta{text-align:right;color:var(--text-muted);font-size:11px;white-space:nowrap}
-.ws-trade-price{margin-right:10px}
+.ws-trade-price{margin-right:10px;font-weight:600}
+.ws-trade-price.yes{color:#4caf50}
+.ws-trade-price.no{color:#f44336}
 .ws-empty{padding:20px;text-align:center;color:var(--text-muted);font-size:11px;font-style:italic}
 .ob-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px}
 .ob-title{font-size:13px;font-weight:700;color:var(--text)}
@@ -3929,7 +3931,7 @@ function renderWhaleSentiment() {
       h += '<span class="ws-dot ' + sc + '"></span>';
       h += '<span><span class="ws-cost ' + sc + '">' + _fmtDollar(t.cost) + '</span> ';
       h += '<span class="ws-side-badge ' + sc + '">' + t.side + '</span></span>';
-      h += '<span class="ws-trade-price">@ ' + t.price + '\u00a2</span>';
+      h += '<span class="ws-trade-price ' + sc + '">' + t.price + '\u00a2</span>';
       h += '<span class="ws-trade-meta">' + _timeAgo(t.time) + '</span>';
       h += '</div>';
     }
