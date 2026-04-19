@@ -4094,7 +4094,7 @@ def get_market_orderbook(ticker: str, depth: int = 10, debug: bool = False):
 
 
 @app.get("/api/market/{ticker}/trades")
-def get_market_trades(ticker: str, limit: int = 1000, min_amount: float = 1000, debug: bool = False):
+def get_market_trades(ticker: str, limit: int = 10000, min_amount: float = 1000, hours: int = 0, debug: bool = False):
     """Fetch recent trades for a market from Kalshi and return
     large-capital trades (>= min_amount dollars) with YES/NO split
     for sentiment. Stats reflect whale-sized trades only so the
@@ -4136,12 +4136,19 @@ def get_market_trades(ticker: str, limit: int = 1000, min_amount: float = 1000, 
         # flow.
         trades_raw = []
         cursor = None
-        remaining = max(1, min(int(limit), 10000))
-        with _httpx.Client(timeout=15.0) as client:
+        remaining = max(1, min(int(limit), 50000))
+        # Optional time floor (epoch seconds). When > 0 we cap paging
+        # once trades drift older than the window.
+        min_ts = 0
+        if hours and hours > 0:
+            min_ts = int(time.time()) - (hours * 3600)
+        with _httpx.Client(timeout=20.0) as client:
             while remaining > 0:
                 params = {"ticker": ticker, "limit": min(remaining, 1000)}
                 if cursor:
                     params["cursor"] = cursor
+                if min_ts:
+                    params["min_ts"] = min_ts
                 # Re-sign per request (timestamps must be fresh).
                 ts_ms = str(int(time.time() * 1000))
                 msg = (ts_ms + "GET" + path).encode()
@@ -4174,6 +4181,20 @@ def get_market_trades(ticker: str, limit: int = 1000, min_amount: float = 1000, 
                     break
                 trades_raw.extend(page)
                 remaining -= len(page)
+                # When a time floor is set, stop once the oldest
+                # trade on this page pre-dates the window — even if
+                # Kalshi returns a cursor.
+                if min_ts:
+                    last_ts = page[-1].get("created_time", "")
+                    if last_ts:
+                        try:
+                            # created_time is ISO-8601 UTC with Z.
+                            from datetime import datetime, timezone
+                            dt = datetime.fromisoformat(last_ts.replace("Z", "+00:00"))
+                            if dt.timestamp() < min_ts:
+                                break
+                        except Exception:
+                            pass
                 cursor = data.get("cursor")
                 if not cursor:
                     break

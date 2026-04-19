@@ -460,6 +460,11 @@ html,body{overscroll-behavior:none}
 .ws-bar-fill-no{background:#f44336;height:100%}
 .ws-pct-row{display:flex;justify-content:space-between;font-size:10px;color:var(--text-muted);margin-bottom:8px}
 .ws-outcomes{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px}
+.ws-window-row{display:flex;align-items:center;gap:6px;margin-bottom:8px;flex-wrap:wrap}
+.ws-window-row label{font-size:11px;color:var(--text-muted);margin-right:4px}
+.ws-window-btn{padding:4px 10px;background:var(--bg3);border:1px solid var(--border);color:var(--text-dim);font-family:inherit;font-size:10px;font-weight:700;border-radius:4px;cursor:pointer;transition:background 0.12s,border-color 0.12s}
+.ws-window-btn:hover{color:var(--text);border-color:var(--text-muted)}
+.ws-window-btn.active{color:var(--text);border-color:var(--green);background:rgba(0,200,83,0.08)}
 .ws-filter-row{display:flex;align-items:center;gap:8px;margin-bottom:10px}
 .ws-filter-row label{font-size:11px;color:var(--text-muted);white-space:nowrap}
 .ws-filter-input{width:90px;padding:4px 8px;background:var(--bg3);border:1px solid var(--border);border-radius:4px;color:var(--text);font-size:11px;font-family:inherit}
@@ -3787,6 +3792,16 @@ function renderWhaleSentimentSection(outcomes) {
        + escH(o.label) + '</button>';
   }
   h += '</div>';
+  h += '<div class="ws-window-row">';
+  h += '<label>Window:</label>';
+  var windows = [{h:1,l:"1H"},{h:6,l:"6H"},{h:24,l:"24H"},{h:0,l:"All"}];
+  for (var w = 0; w < windows.length; w++) {
+    var wh = windows[w];
+    h += '<button class="ws-window-btn' + (wh.h === 24 ? ' active' : '') + '"'
+       + ' data-hours="' + wh.h + '"'
+       + ' onclick="window.selectWsWindow(this)">' + wh.l + '</button>';
+  }
+  h += '</div>';
   h += '<div class="ws-filter-row">';
   h += '<label>Min trade size: $</label>';
   h += '<input class="ws-filter-input" id="ws-filter-val" type="number" value="1000" min="0" step="100">';
@@ -3804,6 +3819,7 @@ function renderWhaleSentimentSection(outcomes) {
 var _wsData = null;
 var _wsActiveOutcome = null;
 var _wsMinAmount = 1000;
+var _wsHours = 24;
 
 window.toggleWsSection = function(btn) {
   var body = btn.nextElementSibling;
@@ -3846,9 +3862,20 @@ window.resetWsFilter = function() {
   if (_wsActiveOutcome) fetchWhaleTrades(_wsActiveOutcome);
 };
 
+window.selectWsWindow = function(btn) {
+  var section = btn.closest(".ws-section");
+  if (!section) return;
+  var btns = section.querySelectorAll(".ws-window-btn");
+  for (var i = 0; i < btns.length; i++) {
+    btns[i].classList.toggle("active", btns[i] === btn);
+  }
+  _wsHours = parseInt(btn.getAttribute("data-hours"), 10) || 0;
+  if (_wsActiveOutcome) fetchWhaleTrades(_wsActiveOutcome);
+};
+
 async function fetchWhaleTrades(ticker) {
   try {
-    var r = await fetch("/api/market/" + encodeURIComponent(ticker) + "/trades?min_amount=" + _wsMinAmount);
+    var r = await fetch("/api/market/" + encodeURIComponent(ticker) + "/trades?min_amount=" + _wsMinAmount + "&hours=" + _wsHours);
     var d = await r.json();
     if (d.error) {
       document.getElementById("ws-body").innerHTML =
