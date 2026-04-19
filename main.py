@@ -106,6 +106,34 @@ async def startup_event():
     # Phase 5: periodically prune old price rows to stay within
     # Neon free-tier storage limits (512 MB). Runs hourly.
     asyncio.create_task(_price_prune_loop())
+
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    """Graceful shutdown. Railway sends SIGTERM during a deploy and
+    waits up to 30 s for the process to exit cleanly. We flush any
+    pending DB buffers so in-flight WS price updates aren't lost,
+    and log so we can confirm clean exits in the Railway logs."""
+    log = logging.getLogger("oddsiq")
+    log.info("shutdown: starting graceful cleanup")
+    # Flush any buffered prices to the DB one last time so the
+    # final seconds of ticks aren't dropped on deploy.
+    try:
+        from kalshi_ws import _price_buffer as _pb
+        if _pb:
+            try:
+                from db import batch_insert_prices
+                snapshot = list(_pb)
+                _pb.clear()
+                await batch_insert_prices(snapshot)
+                log.info("shutdown: flushed %d buffered prices", len(snapshot))
+            except Exception as e:
+                log.warning("shutdown: price flush skipped: %s", e)
+    except Exception:
+        pass
+    log.info("shutdown: complete")
+
+
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 # Gzip compression on responses >= 500 bytes. Screener + events JSON
 # responses are typically 20-200KB uncompressed, usually 3-5x smaller
@@ -2938,6 +2966,30 @@ def get_sports(live: bool = False):
             if cnt > 0:
                 live_cats.append({"name": c, "count": cnt})
     return {"sports": sports, "soccer_comps": sorted(soccer_comps), "live_categories": live_cats}
+
+@app.get("/api/health")
+def get_health():
+    """Liveness / readiness probe for Railway and uptime monitors.
+    Returns 200 with status info even on a cold cache so the
+    container is considered healthy immediately after boot; the
+    response body reports whether heavy subsystems (cache, WS) are
+    ready separately, which is useful for alerting."""
+    info = {"status": "ok"}
+    try:
+        info["cache_primed"] = _cache.get("data") is not None
+        info["cache_records"] = len(_cache.get("data") or [])
+        info["cache_age_s"] = int(time.time() - _cache.get("ts", 0)) if _cache.get("ts") else None
+    except Exception:
+        info["cache_primed"] = False
+    try:
+        from kalshi_ws import STATUS as _ws_status, LIVE_PRICES as _lp
+        info["ws_connected"] = bool(_ws_status.get("connected"))
+        info["ws_subscribed"] = _ws_status.get("subscribed", 0)
+        info["live_prices"] = len(_lp)
+    except Exception:
+        info["ws_connected"] = False
+    return info
+
 
 @app.get("/api/meta")
 def get_meta():
