@@ -183,7 +183,12 @@ html,body{overscroll-behavior:none}
 
 /* ── Phone ──────────────────────────────────────────────────────────── */
 @media (max-width: 600px) {
-  #header{padding:8px 12px 0}
+  /* On phone, header is in normal flow (NOT position:fixed) so the
+     iOS rubber-band bounce doesn't detach it from the nav. Everything
+     scrolls together as one page. */
+  #header{position:static;padding:8px 12px 0}
+  /* Curtain was only useful when #header was fixed. */
+  #header::after{display:none}
   #logo{font-size:1.2rem;order:1;flex:0 0 auto}
   #controls{gap:6px;padding-bottom:8px}
   /* Row 1: Logo + Search. Row 2: Date + Sort + Market View + Grid/List. */
@@ -200,7 +205,9 @@ html,body{overscroll-behavior:none}
   #search-input{flex-basis:calc(100% - 80px)}
   /* No row break between date/sort/toggles — all on row 2 */
   .cat-tab{padding:8px 12px;font-size:13px}
-  #main{margin-top:var(--header-h);display:block}
+  /* Header is in normal flow now, so #main doesn't need a margin to
+     clear a fixed header. */
+  #main{margin-top:0;display:block}
   /* Sidebar on phone becomes a horizontal scroll strip that sticks
      just below the fixed header when the user scrolls. Opaque
      background + z-index above the screener sticky thead. */
