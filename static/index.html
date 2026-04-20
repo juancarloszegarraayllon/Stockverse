@@ -3527,9 +3527,9 @@ function renderMarketsTable(markets, live) {
     h += '<td class="ed-yes" data-mk-field="yes">' + escH(m.yes) + '</td>';
     h += '<td class="ed-no" data-mk-field="no">' + escH(m.no) + '</td>';
     h += '<td class="ed-num" data-mk-field="last">' + (m.last_price != null ? (m.last_price + "¢") : "—") + '</td>';
-    h += '<td class="ed-num" data-mk-field="vol24">' + fmtNum(m.volume_24h) + '</td>';
-    h += '<td class="ed-num" data-mk-field="vol">' + fmtNum(m.volume) + '</td>';
-    h += '<td class="ed-num" data-mk-field="oi">' + fmtNum(m.open_interest) + '</td>';
+    h += '<td class="ed-num" data-mk-field="vol24" data-raw="' + (m.volume_24h != null ? m.volume_24h : '') + '">' + fmtNum(m.volume_24h) + '</td>';
+    h += '<td class="ed-num" data-mk-field="vol" data-raw="' + (m.volume != null ? m.volume : '') + '">' + fmtNum(m.volume) + '</td>';
+    h += '<td class="ed-num" data-mk-field="oi" data-raw="' + (m.open_interest != null ? m.open_interest : '') + '">' + fmtNum(m.open_interest) + '</td>';
     h += '</tr>';
   }
   h += '</tbody></table>';
@@ -3549,12 +3549,38 @@ function summaryStats(markets) {
     nMarkets += 1;
   }
   var h = '<div class="ed-summary">';
-  h += '<div class="ed-stat"><div class="ed-stat-label">Markets</div><div class="ed-stat-val">' + nMarkets + '</div></div>';
-  h += '<div class="ed-stat"><div class="ed-stat-label">24h Volume</div><div class="ed-stat-val">' + fmtNum(tot24) + '</div></div>';
-  h += '<div class="ed-stat"><div class="ed-stat-label">Total Volume</div><div class="ed-stat-val">' + fmtNum(totVol) + '</div></div>';
-  h += '<div class="ed-stat"><div class="ed-stat-label">Open Interest</div><div class="ed-stat-val">' + fmtNum(totOI) + '</div></div>';
+  h += '<div class="ed-stat"><div class="ed-stat-label">Markets</div><div class="ed-stat-val" data-sum="markets">' + nMarkets + '</div></div>';
+  h += '<div class="ed-stat"><div class="ed-stat-label">24h Volume</div><div class="ed-stat-val" data-sum="vol24">' + fmtNum(tot24) + '</div></div>';
+  h += '<div class="ed-stat"><div class="ed-stat-label">Total Volume</div><div class="ed-stat-val" data-sum="vol">' + fmtNum(totVol) + '</div></div>';
+  h += '<div class="ed-stat"><div class="ed-stat-label">Open Interest</div><div class="ed-stat-val" data-sum="oi">' + fmtNum(totOI) + '</div></div>';
   h += '</div>';
   return h;
+}
+
+// Recompute the Markets summary stats (24h Volume, Total Volume,
+// Open Interest) from the current Markets table. Called whenever a
+// WebSocket price tick updates a row's volume so the aggregates at
+// the top of the event page don't lag behind.
+function _recomputeSummaryStats() {
+  var rows = document.querySelectorAll(".ed-markets-table tbody tr[data-mk-row]");
+  if (!rows.length) return;
+  var tot24 = 0, totVol = 0, totOI = 0;
+  for (var i = 0; i < rows.length; i++) {
+    var r = rows[i];
+    var c24 = r.querySelector('[data-mk-field="vol24"]');
+    var cVol = r.querySelector('[data-mk-field="vol"]');
+    var cOI = r.querySelector('[data-mk-field="oi"]');
+    if (c24 && c24.dataset.raw) tot24 += parseFloat(c24.dataset.raw) || 0;
+    if (cVol && cVol.dataset.raw) totVol += parseFloat(cVol.dataset.raw) || 0;
+    if (cOI && cOI.dataset.raw) totOI += parseFloat(cOI.dataset.raw) || 0;
+  }
+  var set = function(key, val) {
+    var el = document.querySelector('[data-sum="' + key + '"]');
+    if (el) el.textContent = fmtNum(val);
+  };
+  set("vol24", tot24);
+  set("vol", totVol);
+  set("oi", totOI);
 }
 
 // Render the stats sidebar placeholder.
@@ -4545,8 +4571,28 @@ PriceStream.onUpdate(function(ticker, data) {
   }
   if (data.volume != null) {
     var volCell = row.querySelector('[data-mk-field="vol"]');
-    if (volCell) volCell.textContent = fmtNum(data.volume);
+    if (volCell) {
+      volCell.dataset.raw = data.volume;
+      volCell.textContent = fmtNum(data.volume);
+    }
   }
+  if (data.volume_24h != null) {
+    var vol24Cell = row.querySelector('[data-mk-field="vol24"]');
+    if (vol24Cell) {
+      vol24Cell.dataset.raw = data.volume_24h;
+      vol24Cell.textContent = fmtNum(data.volume_24h);
+    }
+  }
+  if (data.open_interest != null) {
+    var oiCell = row.querySelector('[data-mk-field="oi"]');
+    if (oiCell) {
+      oiCell.dataset.raw = data.open_interest;
+      oiCell.textContent = fmtNum(data.open_interest);
+    }
+  }
+  // Recompute the top-of-page summary (24h Volume, Total Volume, OI)
+  // so the aggregate stats stay in sync with per-row WS updates.
+  _recomputeSummaryStats();
 });
 
 // Register the live-chart tick handler now that PriceStream exists.
