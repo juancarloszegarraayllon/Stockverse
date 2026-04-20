@@ -4354,7 +4354,7 @@ def root():
         _INDEX_HTML_CACHE["mtime"] = mtime
     return HTMLResponse(
         _INDEX_HTML_CACHE["html"],
-        headers={"Cache-Control": "private, no-cache, no-store, must-revalidate"},
+        headers={"Cache-Control": "public, max-age=60, must-revalidate"},
     )
 
 

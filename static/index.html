@@ -201,10 +201,8 @@ html,body{overscroll-behavior:none}
   /* No row break between date/sort/toggles — all on row 2 */
   .cat-tab{padding:8px 12px;font-size:13px}
   #main{margin-top:var(--header-h);display:block}
-  /* Subtab strip on phone: fixed below the header, always visible. */
-  /* #main reserves extra space via body.has-subnav rule below. */
-  #nav{position:fixed !important;top:var(--header-h) !important;left:0 !important;right:0 !important;z-index:101 !important;background:#000 !important;width:auto !important;min-width:0 !important;height:auto !important;max-height:none !important;border-right:none !important;border-bottom:1px solid var(--border) !important;padding:8px 12px !important;overflow-x:auto !important;overflow-y:hidden !important;white-space:nowrap !important;scrollbar-width:none !important;outline:2px solid magenta !important}
-  body.has-subnav #main{padding-top:var(--nav-h,48px)}
+  /* Sidebar on phone becomes a horizontal scroll strip above the cards */
+  #nav{position:relative;z-index:25;width:auto;min-width:0;height:auto;max-height:none;border-right:none;border-bottom:1px solid var(--border);padding:8px 12px;display:none;flex-wrap:nowrap;overflow-x:auto;overflow-y:hidden;white-space:nowrap;scrollbar-width:none}
   #nav::-webkit-scrollbar{display:none}
   #nav .nav-item{display:inline-block;width:auto;padding:6px 10px;margin-right:4px;font-size:12px;border:1px solid var(--border);border-radius:16px}
   #nav .nav-item.active{border-color:var(--green);background:rgba(0,170,0,0.1)}
@@ -4401,29 +4399,6 @@ window.addEventListener("load", syncHeaderHeight);
 window.addEventListener("resize", syncHeaderHeight);
 setTimeout(syncHeaderHeight, 100);
 setTimeout(syncHeaderHeight, 500);
-
-// Mobile subtab strip is position:fixed on phones. Track its visibility
-// so body.has-subnav + --nav-h reserve space in #main for the strip.
-function syncNavOffset() {
-  var nav = document.getElementById("nav");
-  if (!nav) return;
-  var visible = window.getComputedStyle(nav).display !== "none";
-  document.body.classList.toggle("has-subnav", visible);
-  if (visible) {
-    var h = nav.getBoundingClientRect().height;
-    if (h > 0) document.documentElement.style.setProperty("--nav-h", h + "px");
-  }
-}
-(function(){
-  var nav = document.getElementById("nav");
-  if (!nav) return;
-  new MutationObserver(syncNavOffset).observe(nav, { attributes:true, attributeFilter:["style","class"] });
-  syncNavOffset();
-})();
-window.addEventListener("load", syncNavOffset);
-window.addEventListener("resize", syncNavOffset);
-setTimeout(syncNavOffset, 150);
-setTimeout(syncNavOffset, 550);
 
 // ── Browser ↔ server price WebSocket ───────────────────────────────
 // A single persistent connection replaces the 5s polling loop. The
