@@ -173,7 +173,9 @@ def _extract_update(msg):
         v = body.get(k_dollars)
         if v is not None:
             try:
-                fields[k_out] = float(v) * 100
+                # Round to nearest cent to avoid IEEE-754 artifacts
+                # like float("0.14") * 100 == 14.000000000000002.
+                fields[k_out] = round(float(v) * 100)
             except Exception:
                 pass
     # Raw cents fields as a fallback.
@@ -183,7 +185,7 @@ def _extract_update(msg):
         v = body.get(k)
         if v is not None:
             try:
-                fields[k] = float(v)
+                fields[k] = round(float(v))
             except Exception:
                 pass
     if not fields:
