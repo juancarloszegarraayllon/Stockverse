@@ -4413,10 +4413,22 @@ function syncHeaderHeight() {
 }
 window.addEventListener("load", syncHeaderHeight);
 window.addEventListener("resize", syncHeaderHeight);
+window.addEventListener("orientationchange", syncHeaderHeight);
 setTimeout(syncHeaderHeight, 100);
 setTimeout(syncHeaderHeight, 500);
-// Re-measure whenever the nav's display/content changes (e.g. user
-// picks a different category or sport).
+// Continuously re-measure whenever the header or nav physically
+// resize (header wraps at different widths, category tabs scroll,
+// subtabs change when user picks a sport, etc.). ResizeObserver is
+// more reliable than MutationObserver for catching layout shifts.
+(function(){
+  if (typeof ResizeObserver === "undefined") return;
+  var ro = new ResizeObserver(syncHeaderHeight);
+  var h = document.getElementById("header");
+  var n = document.getElementById("nav");
+  if (h) ro.observe(h);
+  if (n) ro.observe(n);
+})();
+// Also listen for visibility changes on #nav (show/hide via JS).
 (function(){
   var n = document.getElementById("nav");
   if (!n) return;
