@@ -497,8 +497,85 @@ for sport, series_list in _SPORT_SERIES.items():
     for s in series_list:
         SERIES_SPORT[s] = sport
 
+# Prefix-based fallback: when a series like KXMLBPLAYEROTW or
+# KXITFMATCH isn't in our hardcoded SERIES_SPORT map, classify by
+# the well-known Kalshi ticker prefix family. Order matters — longer
+# prefixes check first so KXMLBF5 still matches MLB (not some
+# generic KX* rule). This is safer than entity-alias fallback, which
+# can misfire on generic words like "pro" / "of" / "week".
+_SPORT_PREFIX_FALLBACK = [
+    # Baseball
+    ("KXMLB", "Baseball"), ("KXNPB", "Baseball"), ("KXKBO", "Baseball"),
+    ("KXNCAABB", "Baseball"), ("KXNCAABASEBALL", "Baseball"),
+    # Basketball
+    ("KXNBA", "Basketball"), ("KXWNBA", "Basketball"),
+    ("KXNCAAMB", "Basketball"), ("KXNCAAWB", "Basketball"),
+    ("KXEUROLEAGUE", "Basketball"), ("KXBSL", "Basketball"),
+    ("KXBBL", "Basketball"), ("KXACB", "Basketball"),
+    ("KXISL", "Basketball"), ("KXABA", "Basketball"),
+    ("KXCBA", "Basketball"), ("KXBBSERIEA", "Basketball"),
+    ("KXJBLEAGUE", "Basketball"), ("KXLNBELITE", "Basketball"),
+    ("KXARGLNB", "Basketball"), ("KXVTB", "Basketball"),
+    # Football (American)
+    ("KXNFL", "Football"), ("KXUFL", "Football"),
+    ("KXNCAAF", "Football"), ("KXSB", "Football"),
+    # Hockey
+    ("KXNHL", "Hockey"), ("KXAHL", "Hockey"),
+    ("KXKHL", "Hockey"), ("KXSHL", "Hockey"),
+    ("KXLIIGA", "Hockey"), ("KXELH", "Hockey"),
+    ("KXNCAAHOCKEY", "Hockey"), ("KXDEL", "Hockey"),
+    # Tennis
+    ("KXATP", "Tennis"), ("KXWTA", "Tennis"), ("KXITF", "Tennis"),
+    ("KXGRANDSLAM", "Tennis"), ("KXMCMMEN", "Tennis"),
+    ("KXFOMEN", "Tennis"), ("KXFOWOMEN", "Tennis"),
+    # Golf
+    ("KXPGA", "Golf"), ("KXGOLFMAJORS", "Golf"),
+    ("KXRYDERCUP", "Golf"),
+    # MMA
+    ("KXUFC", "MMA"),
+    # Motorsport
+    ("KXF1", "Motorsport"), ("KXNASCAR", "Motorsport"),
+    ("KXMOTOGP", "Motorsport"), ("KXINDYCAR", "Motorsport"),
+    # Cricket
+    ("KXIPL", "Cricket"), ("KXPSL", "Cricket"), ("KXT20", "Cricket"),
+    # Boxing
+    ("KXBOXING", "Boxing"), ("KXWBC", "Boxing"),
+    # Esports
+    ("KXVALORANT", "Esports"), ("KXLOL", "Esports"),
+    ("KXR6", "Esports"), ("KXCS2", "Esports"),
+    ("KXDOTA2", "Esports"), ("KXOW", "Esports"),
+    # Rugby
+    ("KXRUGBY", "Rugby"), ("KXNRL", "Rugby"),
+    ("KXPREMRUGBY", "Rugby"), ("KXSLR", "Rugby"), ("KXFRA14", "Rugby"),
+    # Aussie Rules
+    ("KXAFL", "Aussie Rules"),
+    # Darts
+    ("KXDARTS", "Darts"), ("KXPREMDARTS", "Darts"),
+    # Lacrosse
+    ("KXNCAAMLAX", "Lacrosse"), ("KXNCAALAX", "Lacrosse"),
+    ("KXLAX", "Lacrosse"),
+    # Chess
+    ("KXCHESS", "Chess"),
+    # Soccer (must be last — highly specific prefixes only, since
+    # many of our Soccer prefixes are league codes. Generic KXSOCCER
+    # catches misc. soccer markets).
+    ("KXSOCCER", "Soccer"),
+]
+# Sort by prefix length descending so longest match wins.
+_SPORT_PREFIX_FALLBACK.sort(key=lambda p: -len(p[0]))
+
+
 def get_sport(series_ticker):
-    return SERIES_SPORT.get(str(series_ticker).upper(), "")
+    s = str(series_ticker).upper()
+    sport = SERIES_SPORT.get(s, "")
+    if sport:
+        return sport
+    # Prefix-based classification for series not yet in the hardcoded
+    # map (handles KXMLBPLAYEROTW, KXITFMATCH, etc.).
+    for prefix, sp in _SPORT_PREFIX_FALLBACK:
+        if s.startswith(prefix):
+            return sp
+    return ""
 
 
 # ── Game-market grouping ──────────────────────────────────────────────────────
