@@ -2023,9 +2023,11 @@ async function refreshVisible() {
             var go = gouts[gj];
             var gScoreEl = grow.querySelector(".outcome-score");
             if (gScoreEl && freshScoreMap) gScoreEl.textContent = matchScore(go.label, freshScoreMap);
-            // Price cells (chance/yes/no) are updated by the WebSocket
-            // in real-time. Don't overwrite them here with stale cache
-            // data — that causes visible bouncing.
+            var gChance = grow.querySelector(".outcome-chance");
+            _updateIfChanged(gChance, gChance, go.chance);
+            var gBoxes = grow.querySelectorAll(".odds-box");
+            _updateIfChanged(gBoxes[0], gBoxes[0], go.yes);
+            _updateIfChanged(gBoxes[1], gBoxes[1], go.no);
           }
         }
       } else {
@@ -2036,7 +2038,11 @@ async function refreshVisible() {
           var o = outs[j];
           var scoreEl = row.querySelector(".outcome-score");
           if (scoreEl && freshScoreMap) scoreEl.textContent = matchScore(o.label, freshScoreMap);
-          // Price cells left to WebSocket — see comment above.
+          var chanceEl = row.querySelector(".outcome-chance");
+          _updateIfChanged(chanceEl, chanceEl, o.chance);
+          var boxes = row.querySelectorAll(".odds-box");
+          _updateIfChanged(boxes[0], boxes[0], o.yes);
+          _updateIfChanged(boxes[1], boxes[1], o.no);
         }
       }
     }
@@ -4661,15 +4667,11 @@ PriceStream.onUpdate(function(ticker, data) {
       lastCell.textContent = data.last_price + '¢';
     }
   }
-  // Use bid/ask midpoint for probability (more stable than last_price
-  // which can be a stale trade at a very different level).
-  var wsProb = null;
+  // ONLY use bid/ask midpoint for probability. Never fall back to
+  // last_price — a single stale trade can be wildly different from
+  // the current market level and causes visible bouncing.
   if (data.yes_bid != null && data.yes_ask != null) {
-    wsProb = Math.round((data.yes_bid + data.yes_ask) / 2);
-  } else if (data.last_price != null) {
-    wsProb = Math.round(data.last_price);
-  }
-  if (wsProb != null) {
+    var wsProb = Math.round((data.yes_bid + data.yes_ask) / 2);
     var probCell = row.querySelector('[data-mk-field="chance"]');
     if (probCell) {
       var newProb = wsProb + '%';
