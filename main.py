@@ -2411,6 +2411,118 @@ def get_event_detail(ticker: str):
     return {"event": rc}
 
 
+@app.get("/api/event/{ticker}/live_prices")
+def get_event_live_prices(ticker: str):
+    """Fetch guaranteed-fresh prices for all markets in an event
+    directly from Kalshi's REST API. Bypasses the 30-min cache so
+    the event detail page shows current prices on load.
+
+    Returns { markets: { outcome_ticker: { yes_bid, yes_ask, ... } } }
+    that the frontend overlays onto the cached event data."""
+    ticker = (ticker or "").strip().upper()
+    if not ticker:
+        return {"error": "ticker required", "markets": {}}
+    # Find the outcome tickers for this event from the cache.
+    get_data()
+    records_all = _cache.get("data_all") or []
+    market_tickers = []
+    for r in records_all:
+        if r.get("event_ticker") == ticker:
+            for o in r.get("outcomes", []):
+                tk = o.get("ticker")
+                if tk:
+                    market_tickers.append(tk)
+            break
+    if not market_tickers:
+        return {"error": "event not found", "markets": {}}
+    # Fetch each market's current state from Kalshi. Use the existing
+    # signed-request pattern. Batch into one client session.
+    try:
+        from cryptography.hazmat.primitives import hashes, serialization
+        from cryptography.hazmat.primitives.asymmetric import padding
+        import base64, httpx as _httpx
+        key_str = os.environ.get("KALSHI_PRIVATE_KEY", "")
+        key_id = os.environ.get("KALSHI_API_KEY_ID", "")
+        if not key_str or not key_id:
+            return {"error": "credentials missing", "markets": {}}
+        private_key = serialization.load_pem_private_key(
+            key_str.encode(), password=None,
+        )
+        results = {}
+        with _httpx.Client(timeout=10.0) as client:
+            for mk in market_tickers:
+                path = f"/trade-api/v2/markets/{mk}"
+                ts_ms = str(int(time.time() * 1000))
+                msg = (ts_ms + "GET" + path).encode()
+                sig = private_key.sign(
+                    msg,
+                    padding.PSS(
+                        mgf=padding.MGF1(hashes.SHA256()),
+                        salt_length=padding.PSS.DIGEST_LENGTH,
+                    ),
+                    hashes.SHA256(),
+                )
+                headers = {
+                    "KALSHI-ACCESS-KEY": key_id,
+                    "KALSHI-ACCESS-TIMESTAMP": ts_ms,
+                    "KALSHI-ACCESS-SIGNATURE": base64.b64encode(sig).decode(),
+                    "Accept": "application/json",
+                }
+                url = f"https://api.elections.kalshi.com{path}"
+                try:
+                    r = client.get(url, headers=headers)
+                    if r.status_code == 200:
+                        d = r.json() or {}
+                        m = d.get("market") or {}
+                        yb = m.get("yes_bid") or m.get("yes_bid_dollars")
+                        ya = m.get("yes_ask") or m.get("yes_ask_dollars")
+                        nb = m.get("no_bid") or m.get("no_bid_dollars")
+                        na = m.get("no_ask") or m.get("no_ask_dollars")
+                        lp = m.get("last_price") or m.get("last_price_dollars")
+                        vol = m.get("volume") or m.get("volume_fp")
+                        vol24 = m.get("volume_24h") or m.get("volume_24h_fp")
+                        oi = m.get("open_interest") or m.get("open_interest_fp")
+                        def _to_cents(v):
+                            if v is None: return None
+                            if isinstance(v, str):
+                                try: return round(float(v) * 100)
+                                except: return None
+                            if isinstance(v, (int, float)):
+                                return round(v * 100) if v <= 1 else round(v)
+                            return None
+                        def _to_num(v):
+                            if v is None: return None
+                            try: return round(float(v))
+                            except: return None
+                        results[mk] = {
+                            "yes_bid": _to_cents(yb),
+                            "yes_ask": _to_cents(ya),
+                            "no_bid": _to_cents(nb),
+                            "no_ask": _to_cents(na),
+                            "last_price": _to_cents(lp),
+                            "volume": _to_num(vol),
+                            "volume_24h": _to_num(vol24),
+                            "open_interest": _to_num(oi),
+                        }
+                        # Also update LIVE_PRICES so subsequent
+                        # renders don't show stale data.
+                        try:
+                            from kalshi_ws import LIVE_PRICES
+                            cur = LIVE_PRICES.get(mk)
+                            upd = {k: v for k, v in results[mk].items() if v is not None}
+                            if cur is None:
+                                LIVE_PRICES[mk] = upd
+                            else:
+                                cur.update(upd)
+                        except Exception:
+                            pass
+                except Exception:
+                    pass
+        return {"markets": results}
+    except Exception as e:
+        return {"error": str(e), "markets": {}}
+
+
 @app.get("/api/event/{ticker}/prices")
 async def get_event_prices(ticker: str, hours: int = 24, max_points: int = 120):
     """Return time-series price history for every market under an

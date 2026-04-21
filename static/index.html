@@ -2343,6 +2343,13 @@ function showEventDetail(ticker, skipHistory) {
         }
         if (subTickers.length) PriceStream.subscribe(subTickers);
       } catch (ex) { console.warn("ws subscribe error", ex); }
+      // Fetch guaranteed-fresh prices from Kalshi REST (bypasses
+      // the 30-min cache) so the Markets table shows current prices
+      // immediately on page load. Updates apply to the already-
+      // rendered DOM cells.
+      if (d.event && d.event.event_ticker) {
+        _fetchLivePrices(d.event.event_ticker);
+      }
       // Populate the price-history chart asynchronously. The
       // event detail page shows a loading placeholder until this
       // fetch completes.
@@ -4454,6 +4461,65 @@ window.addEventListener("load", syncHeaderHeight);
 window.addEventListener("resize", syncHeaderHeight);
 setTimeout(syncHeaderHeight, 100);
 setTimeout(syncHeaderHeight, 500);
+
+// ── Fresh price fetch on event load ─────────────────────────────────
+// The REST cache can be up to 30 min stale. When the user opens an
+// event, fetch guaranteed-fresh prices from /api/event/{ticker}/live_prices
+// (which calls Kalshi's REST API directly) and update the Markets table.
+async function _fetchLivePrices(eventTicker) {
+  try {
+    var r = await fetch("/api/event/" + encodeURIComponent(eventTicker) + "/live_prices");
+    var d = await r.json();
+    if (!d.markets) return;
+    for (var tk in d.markets) {
+      var m = d.markets[tk];
+      var row = document.querySelector('tr[data-mk-row="' + tk + '"]');
+      if (!row) continue;
+      if (m.yes_bid != null && m.yes_ask != null) {
+        var yesCell = row.querySelector('[data-mk-field="yes"]');
+        if (yesCell) {
+          _flash(yesCell, yesCell.textContent, String(m.yes_bid));
+          yesCell.textContent = m.yes_bid + '¢ / ' + m.yes_ask + '¢';
+        }
+      }
+      if (m.no_bid != null && m.no_ask != null) {
+        var noCell = row.querySelector('[data-mk-field="no"]');
+        if (noCell) {
+          _flash(noCell, noCell.textContent, String(m.no_bid));
+          noCell.textContent = m.no_bid + '¢ / ' + m.no_ask + '¢';
+        }
+      }
+      if (m.last_price != null) {
+        var lastCell = row.querySelector('[data-mk-field="last"]');
+        if (lastCell) {
+          _flash(lastCell, lastCell.textContent, String(m.last_price));
+          lastCell.textContent = m.last_price + '¢';
+        }
+        var probCell = row.querySelector('[data-mk-field="chance"]');
+        if (probCell) {
+          var newProb = Math.round(m.last_price) + '%';
+          _flash(probCell, probCell.textContent, newProb);
+          probCell.textContent = newProb;
+        }
+      }
+      if (m.volume != null) {
+        var volCell = row.querySelector('[data-mk-field="vol"]');
+        if (volCell) { volCell.dataset.raw = m.volume; volCell.textContent = fmtNum(m.volume); }
+      }
+      if (m.volume_24h != null) {
+        var vol24Cell = row.querySelector('[data-mk-field="vol24"]');
+        if (vol24Cell) { vol24Cell.dataset.raw = m.volume_24h; vol24Cell.textContent = fmtNum(m.volume_24h); }
+      }
+      if (m.open_interest != null) {
+        var oiCell = row.querySelector('[data-mk-field="oi"]');
+        if (oiCell) { oiCell.dataset.raw = m.open_interest; oiCell.textContent = fmtNum(m.open_interest); }
+      }
+    }
+    _recomputeSummaryStats();
+  } catch (ex) {
+    console.warn("live price fetch failed", ex);
+  }
+}
 
 // ── Browser ↔ server price WebSocket ───────────────────────────────
 // A single persistent connection replaces the 5s polling loop. The
