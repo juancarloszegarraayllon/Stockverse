@@ -4666,9 +4666,19 @@ PriceStream.onUpdate(function(ticker, data) {
       _flash(lastCell, lastCell.textContent, String(data.last_price));
       lastCell.textContent = data.last_price + '¢';
     }
+  }
+  // Use bid/ask midpoint for probability (more stable than last_price
+  // which can be a stale trade at a very different level).
+  var wsProb = null;
+  if (data.yes_bid != null && data.yes_ask != null) {
+    wsProb = Math.round((data.yes_bid + data.yes_ask) / 2);
+  } else if (data.last_price != null) {
+    wsProb = Math.round(data.last_price);
+  }
+  if (wsProb != null) {
     var probCell = row.querySelector('[data-mk-field="chance"]');
     if (probCell) {
-      var newProb = Math.round(data.last_price) + '%';
+      var newProb = wsProb + '%';
       _flash(probCell, probCell.textContent, newProb);
       probCell.textContent = newProb;
     }

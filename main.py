@@ -1076,8 +1076,8 @@ def _format_outcomes(stored_outcomes):
 #     caller on a synchronous rebuild. This only happens on the very
 #     first request after container startup.
 _cache = {"data": None, "ts": 0}  # cache cleared on startup
-CACHE_TTL = 1800           # 30 min — fresh
-CACHE_STALE_TTL = 7200     # 2 h   — hard expiry, beyond this we block
+CACHE_TTL = 300            # 5 min — fresh
+CACHE_STALE_TTL = 1800     # 30 min — hard expiry, beyond this we block
 _rebuild_lock = threading.Lock()
 _rebuilding = {"active": False}
 
