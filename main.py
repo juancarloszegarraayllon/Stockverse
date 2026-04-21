@@ -2109,7 +2109,44 @@ def get_events(
                 except Exception:
                     pass
         formatted.append(rc)
+    # Re-overlay LIVE_PRICES on every outcome in the response so
+    # cards always show current prices, not 5-min-old cache strings.
+    # Lightweight: at most 24 events × ~5 outcomes = ~120 lookups.
+    try:
+        from kalshi_ws import LIVE_PRICES as _LP
+    except Exception:
+        _LP = {}
+    if _LP:
+        for ev in formatted:
+            _overlay_live(ev.get("outcomes") or [], _LP)
+            for mg in (ev.get("market_groups") or []):
+                _overlay_live(mg.get("outcomes") or [], _LP)
     return {"total": total, "offset": offset, "limit": limit, "events": formatted}
+
+
+def _overlay_live(outcomes, lp):
+    """Re-compute chance/yes/no strings from LIVE_PRICES for a list
+    of outcome dicts. Mutates in place."""
+    for o in outcomes:
+        tk = o.get("ticker", "")
+        live = lp.get(tk)
+        if not live:
+            continue
+        yb = live.get("yes_bid")
+        ya = live.get("yes_ask")
+        nb = live.get("no_bid")
+        na = live.get("no_ask")
+        last = live.get("last_price")
+        if yb is not None and ya is not None and yb > 0 and ya > 0:
+            prob = round((yb + ya) / 2)
+            o["chance"] = f"{prob}%"
+            o["yes"] = f"{round(yb)}¢"
+        elif last is not None and last > 0:
+            o["chance"] = f"{round(last)}%"
+        if na is not None:
+            o["no"] = f"{round(na)}¢"
+        elif nb is not None:
+            o["no"] = f"{round(nb)}¢"
 
 
 def _kalshi_url(series_ticker: str, event_ticker: str) -> str:
