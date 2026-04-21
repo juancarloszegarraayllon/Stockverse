@@ -333,6 +333,22 @@ def _extract_update(msg):
         fields["no_ask"] = 100 - fields["yes_bid"]
     if "yes_ask" in fields and "no_bid" not in fields:
         fields["no_bid"] = 100 - fields["yes_ask"]
+    # Sanity check: Kalshi's WS can send a stale last_price from the
+    # subscription snapshot that's wildly off from the current bid/ask
+    # (e.g. last_price=68 when bid=12/ask=14, an old trade from before
+    # odds moved). If last_price is more than 25 cents away from the
+    # current yes_bid, reject it — it's stale snapshot data, not a
+    # real current trade.
+    if "last_price" in fields and "yes_bid" in fields:
+        lp = fields["last_price"]
+        yb = fields["yes_bid"]
+        if abs(lp - yb) > 25:
+            # Also allow if close to (100 - yes_bid) — a NO-side trade
+            # reports the NO price; we flip it to the YES equivalent.
+            if abs(lp - (100 - yb)) <= 5:
+                fields["last_price"] = 100 - lp
+            else:
+                fields.pop("last_price", None)
     # Volume & open interest — Kalshi's ticker channel sends
     # cumulative totals (not deltas). Field names vary by channel
     # version; try the common aliases.

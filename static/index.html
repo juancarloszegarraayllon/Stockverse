@@ -4660,18 +4660,18 @@ PriceStream.onUpdate(function(ticker, data) {
       noCell.textContent = newNo;
     }
   }
+  // Update Last + Probability from WS last_price in real-time.
+  // Stale snapshot values are now filtered server-side (values >25c
+  // away from yes_bid are rejected), so what reaches us is reliable.
   if (data.last_price != null) {
-    // Don't update Last cell from WS — the WS last_price can be
-    // a stale snapshot from subscription time. Let _fetchLivePrices
-    // (REST, on page load) and _overlay_live (via refreshVisible,
-    // every 5s) be the authoritative source for Last + Probability.
+    var lastCell = row.querySelector('[data-mk-field="last"]');
+    if (lastCell) {
+      _flash(lastCell, lastCell.textContent, String(data.last_price));
+      lastCell.textContent = data.last_price + '¢';
+    }
   }
-  // Probability and Last are updated by _fetchLivePrices (REST, on
-  // page load) and _overlay_live (via refreshVisible, every 5s) — not
-  // from WS ticks, which can carry stale snapshot values.
-  // Only update YES/NO bid/ask cells from WS (those are reliable).
-  if (false) {  // disabled — probability handled by REST
-    var wsProb = 0;
+  if (data.last_price != null) {
+    var wsProb = Math.round(data.last_price);
     var probCell = row.querySelector('[data-mk-field="chance"]');
     if (probCell) {
       var newProb = wsProb + '%';
