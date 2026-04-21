@@ -555,6 +555,17 @@ async def run_ws_client(get_tickers):
                                 _broadcast_to_browsers(tk, upd, "price")
                             except Exception as e:
                                 log.debug("browser broadcast failed: %s", e)
+                            # Buffer for DB price history
+                            _price_buffer.append({
+                                "market_ticker": tk,
+                                "yes_bid": upd.get("yes_bid"),
+                                "yes_ask": upd.get("yes_ask"),
+                                "no_bid": upd.get("no_bid"),
+                                "no_ask": upd.get("no_ask"),
+                                "last_price": upd.get("last_price"),
+                                "volume": upd.get("volume"),
+                                "open_interest": upd.get("open_interest"),
+                            })
                             handled = True
                         # 2) Orderbook delta channel
                         if not handled:
@@ -576,17 +587,6 @@ async def run_ws_client(get_tickers):
                                 except Exception as e:
                                     log.debug("trade broadcast failed: %s", e)
                                 handled = True
-                            # Buffer for DB price history
-                            _price_buffer.append({
-                                "market_ticker": tk,
-                                "yes_bid": upd.get("yes_bid"),
-                                "yes_ask": upd.get("yes_ask"),
-                                "no_bid": upd.get("no_bid"),
-                                "no_ask": upd.get("no_ask"),
-                                "last_price": upd.get("last_price"),
-                                "volume": upd.get("volume"),
-                                "open_interest": upd.get("open_interest"),
-                            })
                 finally:
                     refresh_task.cancel()
                     price_flush_task.cancel()
