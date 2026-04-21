@@ -63,6 +63,58 @@ STATUS = {
 # Kalshi WS message schema. Exposed via /api/ws_raw.
 RAW_SAMPLES = deque(maxlen=30)
 
+# Global reference to the active Kalshi WS connection so the browser
+# /ws/prices handler can trigger on-demand subscriptions to expensive
+# channels (orderbook_delta, trade) for specific tickers.
+_active_ws = None
+_active_next_id = [1000]  # separate ID range from ticker subs
+
+# On-demand channel subscriptions tracked per-ticker so we can
+# unsubscribe when no browser clients need them anymore.
+# Format: { (channel, ticker): set_of_browser_subscriber_ids }
+_ondemand_subs: dict = {}
+
+
+async def subscribe_ondemand(channel: str, ticker: str, sub_id: int):
+    """Subscribe to an expensive channel (orderbook_delta, trade) for
+    a single ticker. Called by the browser WS handler when a user
+    opens the Order Book or Large Capital Flow section. Reference-
+    counted: first subscriber triggers the Kalshi sub, subsequent ones
+    just piggyback. Last unsubscribe sends the Kalshi unsub."""
+    key = (channel, ticker.upper())
+    if key not in _ondemand_subs:
+        _ondemand_subs[key] = set()
+    _ondemand_subs[key].add(sub_id)
+    # First subscriber for this (channel, ticker) → subscribe on Kalshi
+    if len(_ondemand_subs[key]) == 1 and _active_ws:
+        try:
+            _active_next_id[0] = await _subscribe_batch(
+                _active_ws, [ticker.upper()], _active_next_id[0],
+                channels=[channel],
+            )
+            log.info("on-demand subscribe: %s / %s", channel, ticker)
+        except Exception as e:
+            log.warning("on-demand subscribe failed: %s", e)
+
+
+async def unsubscribe_ondemand(channel: str, ticker: str, sub_id: int):
+    """Unsubscribe from an expensive channel when the last browser
+    viewer closes the section."""
+    key = (channel, ticker.upper())
+    if key in _ondemand_subs:
+        _ondemand_subs[key].discard(sub_id)
+        if not _ondemand_subs[key]:
+            del _ondemand_subs[key]
+            if _active_ws:
+                try:
+                    _active_next_id[0] = await _unsubscribe_batch(
+                        _active_ws, [ticker.upper()], _active_next_id[0],
+                        channels=[channel],
+                    )
+                    log.info("on-demand unsubscribe: %s / %s", channel, ticker)
+                except Exception as e:
+                    log.warning("on-demand unsubscribe failed: %s", e)
+
 
 # ── Browser pub/sub ─────────────────────────────────────────────────
 # Each browser WebSocket client registers its own asyncio.Queue here
@@ -94,22 +146,105 @@ def unregister_browser(sub: "BrowserSubscriber"):
     _browser_subscribers.discard(sub)
 
 
-def _broadcast_to_browsers(ticker: str, update: dict):
+def _broadcast_to_browsers(ticker: str, update: dict, msg_type: str = "price"):
     """Non-blocking fan-out of a single-ticker update to every browser
     subscriber that cares about this ticker. Drops the message on any
     subscriber whose queue is full (slow consumer protection)."""
     if not _browser_subscribers:
         return
-    payload = {"type": "price", "ticker": ticker, "data": update}
+    payload = {"type": msg_type, "ticker": ticker, "data": update}
     for sub in list(_browser_subscribers):
         if ticker not in sub.tickers:
             continue
         try:
             sub.queue.put_nowait(payload)
         except asyncio.QueueFull:
-            # Slow consumer — drop this tick. Client will pick up on
-            # the next update (or resync via REST if badly behind).
             pass
+
+
+def _extract_orderbook_delta(msg):
+    """Parse an orderbook_delta message. Returns (ticker, delta_dict)
+    or None. Delta contains yes/no arrays of [price, qty] pairs
+    representing the NEW state at each price level (qty=0 means
+    remove that level)."""
+    if not isinstance(msg, dict):
+        return None
+    body = msg.get("msg") or msg.get("data") or msg
+    if not isinstance(body, dict):
+        return None
+    tk = body.get("market_ticker") or body.get("ticker")
+    if not tk:
+        return None
+    delta = {}
+    for side in ("yes", "no"):
+        raw = body.get(side) or body.get(f"{side}_dollars") or []
+        if raw:
+            levels = []
+            for lv in raw:
+                if isinstance(lv, (list, tuple)) and len(lv) >= 2:
+                    try:
+                        p = lv[0]
+                        if isinstance(p, str):
+                            p = round(float(p) * 100)
+                        else:
+                            p = round(float(p))
+                        q = float(lv[1])
+                        levels.append([p, q])
+                    except Exception:
+                        pass
+            if levels:
+                delta[side] = levels
+    if not delta:
+        return None
+    return (tk, delta)
+
+
+def _extract_trade(msg):
+    """Parse a trade channel message. Returns (ticker, trade_dict) or
+    None. The trade dict includes side, price (cents), count, cost,
+    and timestamp."""
+    if not isinstance(msg, dict):
+        return None
+    body = msg.get("msg") or msg.get("data") or msg
+    if not isinstance(body, dict):
+        return None
+    tk = body.get("market_ticker") or body.get("ticker")
+    if not tk:
+        return None
+    taker_side = body.get("taker_side", "")
+    count = body.get("count_fp") or body.get("count") or 0
+    if isinstance(count, str):
+        try:
+            count = float(count)
+        except Exception:
+            count = 0
+    yes_price = body.get("yes_price_dollars") or body.get("yes_price") or 0
+    no_price = body.get("no_price_dollars") or body.get("no_price") or 0
+    if isinstance(yes_price, str):
+        yes_price = float(yes_price)
+    if isinstance(no_price, str):
+        no_price = float(no_price)
+    if yes_price > 1:
+        yes_price = yes_price / 100.0
+    if no_price > 1:
+        no_price = no_price / 100.0
+    if taker_side == "yes":
+        cost = round(yes_price * count, 2)
+        price_cents = round(yes_price * 100)
+        side = "YES"
+    else:
+        cost = round(no_price * count, 2)
+        price_cents = round(no_price * 100)
+        side = "NO"
+    created = body.get("created_time") or body.get("trade_time") or ""
+    return (tk, {
+        "side": side,
+        "price": price_cents,
+        "contracts": count,
+        "cost": cost,
+        "time": created,
+        "trade_id": body.get("trade_id", ""),
+    })
 
 
 def _load_private_key():
@@ -219,8 +354,10 @@ def _extract_update(msg):
     return tk, fields
 
 
-async def _subscribe_batch(ws, market_tickers, start_id=1):
+async def _subscribe_batch(ws, market_tickers, start_id=1, channels=None):
     """Send one or more subscribe messages covering all given tickers."""
+    if channels is None:
+        channels = ["ticker"]
     sub_id = start_id
     for i in range(0, len(market_tickers), SUB_BATCH_SIZE):
         batch = market_tickers[i : i + SUB_BATCH_SIZE]
@@ -228,7 +365,26 @@ async def _subscribe_batch(ws, market_tickers, start_id=1):
             "id": sub_id,
             "cmd": "subscribe",
             "params": {
-                "channels": ["ticker"],
+                "channels": channels,
+                "market_tickers": batch,
+            },
+        }))
+        sub_id += 1
+    return sub_id
+
+
+async def _unsubscribe_batch(ws, market_tickers, start_id=1, channels=None):
+    """Unsubscribe from specific channels for specific tickers."""
+    if channels is None:
+        channels = ["ticker"]
+    sub_id = start_id
+    for i in range(0, len(market_tickers), SUB_BATCH_SIZE):
+        batch = market_tickers[i : i + SUB_BATCH_SIZE]
+        await ws.send(json.dumps({
+            "id": sub_id,
+            "cmd": "unsubscribe",
+            "params": {
+                "channels": channels,
                 "market_tickers": batch,
             },
         }))
@@ -352,6 +508,8 @@ async def run_ws_client(get_tickers):
                 ping_interval=15,
                 ping_timeout=10,
             ) as ws:
+                global _active_ws
+                _active_ws = ws
                 STATUS["connected"] = True
                 STATUS["connected_since"] = datetime.now(timezone.utc).isoformat()
                 STATUS["last_error"] = None
@@ -378,6 +536,12 @@ async def run_ws_client(get_tickers):
                         # Keep a rolling sample of what Kalshi actually
                         # sends so /api/ws_raw can show us the shape.
                         RAW_SAMPLES.append(msg)
+                        # Detect message type by channel hint or
+                        # content shape. Kalshi's WS doesn't always
+                        # include a "channel" field, so we try each
+                        # parser in priority order.
+                        handled = False
+                        # 1) Ticker channel (price updates)
                         parsed = _extract_update(msg)
                         if parsed:
                             tk, upd = parsed
@@ -387,12 +551,31 @@ async def run_ws_client(get_tickers):
                             else:
                                 cur.update(upd)
                             STATUS["updates"] += 1
-                            # Push the delta to every browser
-                            # subscriber watching this ticker.
                             try:
-                                _broadcast_to_browsers(tk, upd)
+                                _broadcast_to_browsers(tk, upd, "price")
                             except Exception as e:
                                 log.debug("browser broadcast failed: %s", e)
+                            handled = True
+                        # 2) Orderbook delta channel
+                        if not handled:
+                            ob_parsed = _extract_orderbook_delta(msg)
+                            if ob_parsed:
+                                tk, delta = ob_parsed
+                                try:
+                                    _broadcast_to_browsers(tk, delta, "orderbook_delta")
+                                except Exception as e:
+                                    log.debug("ob delta broadcast failed: %s", e)
+                                handled = True
+                        # 3) Trade channel
+                        if not handled:
+                            tr_parsed = _extract_trade(msg)
+                            if tr_parsed:
+                                tk, trade = tr_parsed
+                                try:
+                                    _broadcast_to_browsers(tk, trade, "trade")
+                                except Exception as e:
+                                    log.debug("trade broadcast failed: %s", e)
+                                handled = True
                             # Buffer for DB price history
                             _price_buffer.append({
                                 "market_ticker": tk,
@@ -416,10 +599,14 @@ async def run_ws_client(get_tickers):
                     except (asyncio.CancelledError, Exception):
                         pass
         except Exception as e:
+            _active_ws = None
+            _ondemand_subs.clear()
             STATUS["connected"] = False
             STATUS["last_error"] = f"{type(e).__name__}: {e}"
             log.error("ws error: %s — reconnecting in %ds", e, backoff)
         else:
+            _active_ws = None
+            _ondemand_subs.clear()
             STATUS["connected"] = False
 
         await asyncio.sleep(backoff)

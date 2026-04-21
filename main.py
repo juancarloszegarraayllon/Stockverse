@@ -4343,7 +4343,7 @@ async def ws_prices(websocket: WebSocket):
     try:
         from kalshi_ws import (
             BrowserSubscriber, register_browser, unregister_browser,
-            LIVE_PRICES,
+            LIVE_PRICES, subscribe_ondemand, unsubscribe_ondemand,
         )
     except Exception as e:
         await websocket.close(code=1011)
@@ -4361,8 +4361,6 @@ async def ws_prices(websocket: WebSocket):
                 tickers = msg.get("tickers") or []
                 if action == "subscribe":
                     sub.subscribe([t.upper() for t in tickers if t])
-                    # Send any prices we already have for these
-                    # tickers so the UI paints live state immediately.
                     snapshot = []
                     for t in tickers:
                         t = (t or "").upper()
@@ -4379,6 +4377,23 @@ async def ws_prices(websocket: WebSocket):
                         })
                 elif action == "unsubscribe":
                     sub.unsubscribe([t.upper() for t in tickers if t])
+                elif action == "subscribe_channel":
+                    # On-demand subscription to expensive channels
+                    # (orderbook_delta, trade) for specific tickers.
+                    channel = msg.get("channel", "")
+                    if channel in ("orderbook_delta", "trade"):
+                        for t in tickers:
+                            t = (t or "").upper()
+                            if t:
+                                sub.subscribe([t])
+                                await subscribe_ondemand(channel, t, id(sub))
+                elif action == "unsubscribe_channel":
+                    channel = msg.get("channel", "")
+                    if channel in ("orderbook_delta", "trade"):
+                        for t in tickers:
+                            t = (t or "").upper()
+                            if t:
+                                await unsubscribe_ondemand(channel, t, id(sub))
                 elif action == "ping":
                     await websocket.send_json({"type": "pong"})
         except WebSocketDisconnect:
@@ -4408,6 +4423,16 @@ async def ws_prices(websocket: WebSocket):
             task.cancel()
     finally:
         unregister_browser(sub)
+        # Clean up any on-demand channel subscriptions this browser had.
+        try:
+            from kalshi_ws import _ondemand_subs
+            sub_id = id(sub)
+            for key in list(_ondemand_subs.keys()):
+                if sub_id in _ondemand_subs.get(key, set()):
+                    channel, ticker = key
+                    await unsubscribe_ondemand(channel, ticker, sub_id)
+        except Exception:
+            pass
         try:
             await websocket.close()
         except Exception:

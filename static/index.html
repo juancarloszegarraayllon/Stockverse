@@ -3835,6 +3835,8 @@ window.toggleObSection = function(btn) {
   }
 };
 
+var _obWsPrevTicker = null;
+
 window.selectObOutcome = function(btn) {
   var section = btn.closest(".ob-section");
   if (!section) return;
@@ -3843,15 +3845,22 @@ window.selectObOutcome = function(btn) {
     btns[i].classList.toggle("active", btns[i] === btn);
   }
   var ticker = btn.getAttribute("data-ob-ticker");
+  // Unsubscribe from previous ticker's orderbook channel.
+  if (_obWsPrevTicker && _obWsPrevTicker !== ticker) {
+    PriceStream.unsubscribeChannel("orderbook_delta", [_obWsPrevTicker]);
+  }
   _obActiveOutcome = ticker;
   _obActiveSide = "yes";
+  _obWsPrevTicker = ticker;
   var tabs = section.querySelectorAll(".ob-tab");
   for (var j = 0; j < tabs.length; j++) {
     tabs[j].classList.toggle("active", tabs[j].getAttribute("data-side") === "yes");
   }
   var body = section.querySelector(".ob-body");
   if (body) body.innerHTML = '<div class="ob-loading">Loading order book&hellip;</div>';
+  // Initial fetch via REST, then subscribe to WS deltas.
   fetchOrderbook(ticker);
+  PriceStream.subscribeChannel("orderbook_delta", [ticker]);
 };
 
 // Auto-load first outcome on page render.
@@ -3885,6 +3894,7 @@ async function fetchOrderbook(ticker) {
       return;
     }
     _obData = d;
+    _seedObDepth(d);
     renderOrderbook();
   } catch (ex) {
     document.getElementById("ob-body").innerHTML =
@@ -4042,6 +4052,7 @@ var _wsData = null;
 var _wsActiveOutcome = null;
 var _wsMinAmount = 1000;
 var _wsHours = 24;
+var _wsWsPrevTicker = null;
 
 window.toggleWsSection = function(btn) {
   var body = btn.nextElementSibling;
@@ -4065,10 +4076,15 @@ window.selectWsOutcome = function(btn) {
     btns[i].classList.toggle("active", btns[i] === btn);
   }
   var ticker = btn.getAttribute("data-ws-ticker");
+  if (_wsWsPrevTicker && _wsWsPrevTicker !== ticker) {
+    PriceStream.unsubscribeChannel("trade", [_wsWsPrevTicker]);
+  }
   _wsActiveOutcome = ticker;
+  _wsWsPrevTicker = ticker;
   var body = section.querySelector(".ws-body");
   if (body) body.innerHTML = '<div class="ws-empty">Loading whale trades\u2026</div>';
   fetchWhaleTrades(ticker);
+  PriceStream.subscribeChannel("trade", [ticker]);
 };
 
 window.applyWsFilter = function() {
@@ -4481,6 +4497,10 @@ var PriceStream = (function() {
       } else if (msg.type === "snapshot") {
         var u = msg.updates || [];
         for (var i = 0; i < u.length; i++) dispatch(u[i].ticker, u[i].data);
+      } else if (msg.type === "orderbook_delta") {
+        _handleObDelta(msg.ticker, msg.data);
+      } else if (msg.type === "trade") {
+        _handleLiveTrade(msg.ticker, msg.data);
       }
     };
     ws.onerror = function() { /* onclose will fire next */ };
@@ -4527,6 +4547,24 @@ var PriceStream = (function() {
       }
     },
     onUpdate: function(cb) { handlers.push(cb); },
+    subscribeChannel: function(channel, tickers) {
+      if (ws && ws.readyState === 1) {
+        ws.send(JSON.stringify({
+          action: "subscribe_channel",
+          channel: channel,
+          tickers: tickers,
+        }));
+      }
+    },
+    unsubscribeChannel: function(channel, tickers) {
+      if (ws && ws.readyState === 1) {
+        ws.send(JSON.stringify({
+          action: "unsubscribe_channel",
+          channel: channel,
+          tickers: tickers,
+        }));
+      }
+    },
     setPaused: function(p) { paused = !!p; },
     isPaused: function() { return paused; },
   };
@@ -4597,6 +4635,111 @@ PriceStream.onUpdate(function(ticker, data) {
 
 // Register the live-chart tick handler now that PriceStream exists.
 PriceStream.onUpdate(_liveChartOnTick);
+
+// ── Orderbook delta handler ──────────────────────────────────────
+// When the server sends an orderbook_delta for the ticker the user
+// is viewing, apply it to the local _obData and re-render. This
+// replaces the 3s REST polling with instant WS updates.
+function _handleObDelta(ticker, delta) {
+  if (window._obPaused) return;
+  if (ticker !== _obActiveOutcome) return;
+  if (!_obData) return;
+  // delta = { yes: [[price, qty], ...], no: [[price, qty], ...] }
+  // qty=0 means remove that price level; qty>0 means set/update.
+  // We need to rebuild the parsed orderbook from deltas. For now,
+  // apply deltas to a local depth map and re-derive asks/bids.
+  if (!window._obDepth) window._obDepth = { yes: {}, no: {} };
+  for (var side in delta) {
+    if (side !== "yes" && side !== "no") continue;
+    var levels = delta[side];
+    for (var i = 0; i < levels.length; i++) {
+      var p = levels[i][0], q = levels[i][1];
+      if (q <= 0) {
+        delete window._obDepth[side][p];
+      } else {
+        window._obDepth[side][p] = q;
+      }
+    }
+  }
+  // Rebuild _obData from depth map.
+  function _toLevels(map) {
+    var out = [];
+    for (var p in map) { out.push({price: parseInt(p), qty: map[p]}); }
+    return out;
+  }
+  var yesLevels = _toLevels(window._obDepth.yes);
+  var noLevels = _toLevels(window._obDepth.no);
+  var yesAsks = noLevels.filter(function(l){return l.price<100;}).map(function(l){return {price:100-l.price, qty:l.qty};});
+  yesAsks.sort(function(a,b){return a.price-b.price;});
+  var yesBids = yesLevels.slice().sort(function(a,b){return b.price-a.price;});
+  var noAsks = yesLevels.filter(function(l){return l.price<100;}).map(function(l){return {price:100-l.price, qty:l.qty};});
+  noAsks.sort(function(a,b){return a.price-b.price;});
+  var noBids = noLevels.slice().sort(function(a,b){return b.price-a.price;});
+  function _addTotals(levels) {
+    var rq = 0;
+    for (var i = 0; i < levels.length; i++) {
+      rq += levels[i].qty;
+      levels[i].total = Math.round(rq * levels[i].price / 100 * 100) / 100;
+      levels[i].cum_qty = Math.round(rq * 100) / 100;
+    }
+    return levels;
+  }
+  _obData = {
+    ticker: ticker,
+    yes: { asks: _addTotals(yesAsks), bids: _addTotals(yesBids) },
+    no: { asks: _addTotals(noAsks), bids: _addTotals(noBids) },
+  };
+  renderOrderbook();
+}
+
+// ── Live trade handler ──────────────────────────────────────────
+// When the server sends a trade for the ticker the user is viewing,
+// prepend it to the existing whale trades list if it meets the
+// min-amount threshold. No need to re-fetch the whole list.
+function _handleLiveTrade(ticker, trade) {
+  if (window._wsPaused) return;
+  if (ticker !== _wsActiveOutcome) return;
+  if (!_wsData) return;
+  // Only show if trade cost >= user's min-amount filter.
+  if (trade.cost < _wsMinAmount) return;
+  // Prepend to trades list.
+  _wsData.trades = _wsData.trades || [];
+  _wsData.trades.unshift(trade);
+  // Update summary stats.
+  if (trade.side === "YES") {
+    _wsData.yes_volume = (_wsData.yes_volume || 0) + trade.cost;
+    _wsData.yes_count = (_wsData.yes_count || 0) + 1;
+  } else {
+    _wsData.no_volume = (_wsData.no_volume || 0) + trade.cost;
+    _wsData.no_count = (_wsData.no_count || 0) + 1;
+  }
+  _wsData.total_volume = (_wsData.total_volume || 0) + trade.cost;
+  _wsData.whale_count = (_wsData.whale_count || 0) + 1;
+  _wsData.sentiment = _wsData.yes_volume > _wsData.no_volume ? "Bullish"
+                    : _wsData.no_volume > _wsData.yes_volume ? "Bearish"
+                    : "Neutral";
+  renderWhaleSentiment();
+}
+
+// Seed the depth map when REST loads the initial orderbook.
+function _seedObDepth(obData) {
+  window._obDepth = { yes: {}, no: {} };
+  if (!obData) return;
+  var sides = ["yes", "no"];
+  for (var s = 0; s < sides.length; s++) {
+    var side = sides[s];
+    var data = obData[side] || {};
+    var asks = data.asks || [], bids = data.bids || [];
+    for (var a = 0; a < asks.length; a++) {
+      // Convert from Trade-view back to raw: yes_ask comes from no-side levels
+      if (side === "yes") window._obDepth.no[100 - asks[a].price] = asks[a].qty;
+      else window._obDepth.yes[100 - asks[a].price] = asks[a].qty;
+    }
+    for (var b = 0; b < bids.length; b++) {
+      window._obDepth[side][bids[b].price] = bids[b].qty;
+    }
+  }
+}
 
 PriceStream.connect();
 
