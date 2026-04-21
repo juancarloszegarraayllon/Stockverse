@@ -2850,7 +2850,7 @@ function renderPriceChartSvg(series, hoursWindow, volume) {
   var volGap = hasVolume ? 6 : 0;      // gap between panels
   var dateRowH = 20;                   // strip for the crosshair date
   var W = 900, H = 220 + volH + volGap + dateRowH;
-  var padL = 32, padR = 8, padT = 12, padB = 22 + dateRowH;
+  var padL = 32, padR = 42, padT = 12, padB = 22 + dateRowH;
   var w = W - padL - padR;
   var h = 220 - padT - padB;           // price-panel inner height
   function sx(t) { return padL + ((t - tMin) / (tMax - tMin)) * w; }
@@ -2890,6 +2890,17 @@ function renderPriceChartSvg(series, hoursWindow, volume) {
       d += (m === 0 ? "M" : "L") + sx(pts2[m].t).toFixed(1) + " " + sy(pts2[m].p).toFixed(1) + " ";
     }
     svg += '<path d="' + d + '" fill="none" stroke="' + color + '" stroke-width="2" stroke-linejoin="round"/>';
+    // Persistent end-of-line label showing current % at the right
+    // edge of the chart (like Bloomberg/Kalshi's own chart display).
+    var lastPt = pts2[pts2.length - 1];
+    var endX = sx(lastPt.t);
+    var endY = sy(lastPt.p);
+    var pctLabel = Math.round(lastPt.p) + '%';
+    svg += '<circle cx="' + endX.toFixed(1) + '" cy="' + endY.toFixed(1)
+        + '" r="3" fill="' + color + '"/>';
+    svg += '<text x="' + (endX + 6).toFixed(1) + '" y="' + (endY + 4).toFixed(1)
+        + '" fill="' + color + '" font-size="11" font-weight="700" font-family="inherit">'
+        + pctLabel + '</text>';
   }
   // X-axis tick labels in AM/PM format at regular intervals.
   var firstDate = new Date(tMin);
@@ -4479,14 +4490,14 @@ async function _fetchLivePrices(eventTicker) {
         var yesCell = row.querySelector('[data-mk-field="yes"]');
         if (yesCell) {
           _flash(yesCell, yesCell.textContent, String(m.yes_bid));
-          yesCell.textContent = m.yes_bid + '¢ / ' + m.yes_ask + '¢';
+          yesCell.textContent = m.yes_ask + '¢ / ' + m.yes_bid + '¢';
         }
       }
       if (m.no_bid != null && m.no_ask != null) {
         var noCell = row.querySelector('[data-mk-field="no"]');
         if (noCell) {
           _flash(noCell, noCell.textContent, String(m.no_bid));
-          noCell.textContent = m.no_bid + '¢ / ' + m.no_ask + '¢';
+          noCell.textContent = m.no_ask + '¢ / ' + m.no_bid + '¢';
         }
       }
       if (m.last_price != null) {
@@ -4647,7 +4658,7 @@ PriceStream.onUpdate(function(ticker, data) {
   if (data.yes_bid != null && data.yes_ask != null) {
     var yesCell = row.querySelector('[data-mk-field="yes"]');
     if (yesCell) {
-      var newYes = data.yes_bid + '¢ / ' + data.yes_ask + '¢';
+      var newYes = data.yes_ask + '¢ / ' + data.yes_bid + '¢';
       _flash(yesCell, yesCell.textContent, String(data.yes_bid));
       yesCell.textContent = newYes;
     }
@@ -4655,7 +4666,7 @@ PriceStream.onUpdate(function(ticker, data) {
   if (data.no_bid != null && data.no_ask != null) {
     var noCell = row.querySelector('[data-mk-field="no"]');
     if (noCell) {
-      var newNo = data.no_bid + '¢ / ' + data.no_ask + '¢';
+      var newNo = data.no_ask + '¢ / ' + data.no_bid + '¢';
       _flash(noCell, noCell.textContent, String(data.no_bid));
       noCell.textContent = newNo;
     }
