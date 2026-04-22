@@ -335,13 +335,21 @@ def _extract_update(msg):
         fields["no_bid"] = 100 - fields["yes_ask"]
     # Kalshi's price_dollars can represent either a YES or NO side
     # trade. Always normalize to the YES perspective by picking
-    # whichever interpretation is closest to yes_bid.
-    if "last_price" in fields and "yes_bid" in fields:
-        lp = fields["last_price"]
-        yb = fields["yes_bid"]
-        flipped = 100 - lp
-        if abs(flipped - yb) < abs(lp - yb):
-            fields["last_price"] = flipped
+    # whichever interpretation is closest to yes_bid. Use the current
+    # tick's yes_bid if present, otherwise fall back to the stored
+    # value in LIVE_PRICES (handles trade-only ticks that don't
+    # include bid/ask data).
+    if "last_price" in fields:
+        yb_ref = fields.get("yes_bid")
+        if yb_ref is None:
+            stored = LIVE_PRICES.get(tk)
+            if stored:
+                yb_ref = stored.get("yes_bid")
+        if yb_ref is not None:
+            lp = fields["last_price"]
+            flipped = 100 - lp
+            if abs(flipped - yb_ref) < abs(lp - yb_ref):
+                fields["last_price"] = flipped
     # Volume & open interest — Kalshi's ticker channel sends
     # cumulative totals (not deltas). Field names vary by channel
     # version; try the common aliases.
