@@ -1523,6 +1523,23 @@ def _build_cache():
                 _subcat = _soccer_comp
             elif _sport and _sport != "Soccer":
                 _subcat = SERIES_TO_SUBTAB.get(_sport, {}).get(series, "")
+                if not _subcat and series:
+                    # Auto-generate a subtab for unknown series in any
+                    # sport, matching how Soccer auto-generates league
+                    # labels above. Strip KX prefix + GAME/MATCH/etc
+                    # suffix, then Title Case. Register it so the nav
+                    # subtab appears and future events inherit it.
+                    base = series
+                    for sfx in ("GAME", "MATCH", "1H", "SPREAD", "TOTAL", "BTTS"):
+                        if base.endswith(sfx):
+                            base = base[:-len(sfx)]
+                            break
+                    if base.startswith("KX"):
+                        base = base[2:]
+                    if base:
+                        _subcat = base.replace("_", " ").title()
+                        _sub_map = SERIES_TO_SUBTAB.setdefault(_sport, {})
+                        _sub_map[series] = _subcat
             else:
                 _subcat = ""
 
