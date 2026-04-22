@@ -4693,21 +4693,38 @@ PriceStream.onUpdate(function(ticker, data) {
       noCell.textContent = newNo;
     }
   }
-  // Update Last + Probability from WS last_price in real-time.
-  // Stale snapshot values are now filtered server-side (values >25c
-  // away from yes_bid are rejected), so what reaches us is reliable.
+  // Normalize last_price on the CLIENT side (belt + suspenders with
+  // server-side normalization). Pick whichever of (lp, 100-lp) is
+  // closest to yes_bid. Uses yes_bid from THIS tick or from the
+  // YES cell's current displayed value as fallback.
   if (data.last_price != null) {
+    var lp = data.last_price;
+    var refBid = data.yes_bid;
+    if (refBid == null) {
+      // Parse yes_bid from the YES cell (e.g., "79¢ / 77¢" → 77)
+      var yesCell2 = row.querySelector('[data-mk-field="yes"]');
+      if (yesCell2) {
+        var parts = yesCell2.textContent.split('/');
+        if (parts.length >= 2) {
+          var parsed = parseInt(parts[1]);
+          if (!isNaN(parsed)) refBid = parsed;
+        }
+      }
+    }
+    if (refBid != null) {
+      var flipped = 100 - lp;
+      if (Math.abs(flipped - refBid) < Math.abs(lp - refBid)) {
+        lp = flipped;
+      }
+    }
     var lastCell = row.querySelector('[data-mk-field="last"]');
     if (lastCell) {
-      _flash(lastCell, lastCell.textContent, String(data.last_price));
-      lastCell.textContent = data.last_price + '¢';
+      _flash(lastCell, lastCell.textContent, String(lp));
+      lastCell.textContent = lp + '¢';
     }
-  }
-  if (data.last_price != null) {
-    var wsProb = Math.round(data.last_price);
     var probCell = row.querySelector('[data-mk-field="chance"]');
     if (probCell) {
-      var newProb = wsProb + '%';
+      var newProb = Math.round(lp) + '%';
       _flash(probCell, probCell.textContent, newProb);
       probCell.textContent = newProb;
     }
@@ -4748,9 +4765,23 @@ PriceStream.onUpdate(function(ticker, data) {
   var row = document.querySelector('[data-card-ticker="' + ticker + '"]');
   if (!row) return;
   if (data.last_price != null) {
+    // Client-side normalization for card probability too.
+    var lp = data.last_price;
+    var refBid = data.yes_bid;
+    if (refBid == null) {
+      var yBox = row.querySelector(".odds-box.odds-yes");
+      if (yBox) {
+        var p = parseInt(yBox.textContent);
+        if (!isNaN(p)) refBid = p;
+      }
+    }
+    if (refBid != null) {
+      var fl = 100 - lp;
+      if (Math.abs(fl - refBid) < Math.abs(lp - refBid)) lp = fl;
+    }
     var chanceEl = row.querySelector(".outcome-chance");
     if (chanceEl) {
-      var newChance = Math.round(data.last_price) + '%';
+      var newChance = Math.round(lp) + '%';
       _flash(chanceEl, chanceEl.textContent, newChance);
       chanceEl.textContent = newChance;
     }
