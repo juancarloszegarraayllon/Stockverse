@@ -4693,47 +4693,40 @@ PriceStream.onUpdate(function(ticker, data) {
       noCell.textContent = newNo;
     }
   }
-  // Normalize last_price on the CLIENT side (belt + suspenders with
-  // server-side normalization). Pick whichever of (lp, 100-lp) is
-  // closest to yes_bid. Uses yes_bid from THIS tick or from the
-  // YES cell's current displayed value as fallback.
+  // Use bid/ask MIDPOINT for probability — always from the YES
+  // perspective, never ambiguous, never bounces. last_price from
+  // Kalshi is inherently ambiguous (can be YES or NO side trade)
+  // and no normalization can fix every case reliably.
+  if (data.yes_bid != null && data.yes_ask != null) {
+    var wsProb = Math.round((data.yes_bid + data.yes_ask) / 2);
+    var probCell = row.querySelector('[data-mk-field="chance"]');
+    if (probCell) {
+      var newProb = wsProb + '%';
+      _flash(probCell, probCell.textContent, newProb);
+      probCell.textContent = newProb;
+    }
+  }
   if (data.last_price != null) {
+    // Last column still shows last_price (normalized client-side).
     var lp = data.last_price;
     var refBid = data.yes_bid;
     if (refBid == null) {
-      // Parse yes_bid from the YES cell. Format can be either
-      // "79¢ / 77¢" (ask/bid after WS update) or "77¢" (initial render).
       var yesCell2 = row.querySelector('[data-mk-field="yes"]');
       if (yesCell2) {
         var txt = yesCell2.textContent;
         var parts = txt.split('/');
-        if (parts.length >= 2) {
-          // "79¢ / 77¢" → parse bid (second part)
-          var parsed = parseInt(parts[1]);
-          if (!isNaN(parsed)) refBid = parsed;
-        } else {
-          // "77¢" → parse the single value as bid
-          var parsed = parseInt(txt);
-          if (!isNaN(parsed)) refBid = parsed;
-        }
+        var parsed = parseInt(parts.length >= 2 ? parts[1] : txt);
+        if (!isNaN(parsed)) refBid = parsed;
       }
     }
     if (refBid != null) {
       var flipped = 100 - lp;
-      if (Math.abs(flipped - refBid) < Math.abs(lp - refBid)) {
-        lp = flipped;
-      }
+      if (Math.abs(flipped - refBid) < Math.abs(lp - refBid)) lp = flipped;
     }
     var lastCell = row.querySelector('[data-mk-field="last"]');
     if (lastCell) {
       _flash(lastCell, lastCell.textContent, String(lp));
       lastCell.textContent = lp + '¢';
-    }
-    var probCell = row.querySelector('[data-mk-field="chance"]');
-    if (probCell) {
-      var newProb = Math.round(lp) + '%';
-      _flash(probCell, probCell.textContent, newProb);
-      probCell.textContent = newProb;
     }
   }
   if (data.volume != null) {
@@ -4771,25 +4764,12 @@ PriceStream.onUpdate(_liveChartOnTick);
 PriceStream.onUpdate(function(ticker, data) {
   var row = document.querySelector('[data-card-ticker="' + ticker + '"]');
   if (!row) return;
-  if (data.last_price != null) {
-    // Client-side normalization for card probability too.
-    var lp = data.last_price;
-    var refBid = data.yes_bid;
-    if (refBid == null) {
-      var yBox = row.querySelector(".odds-box.odds-yes");
-      if (yBox) {
-        // Card YES box shows single value like "79¢"
-        var p = parseInt(yBox.textContent);
-        if (!isNaN(p)) refBid = p;
-      }
-    }
-    if (refBid != null) {
-      var fl = 100 - lp;
-      if (Math.abs(fl - refBid) < Math.abs(lp - refBid)) lp = fl;
-    }
+  // Card probability uses bid/ask midpoint (same as Markets table).
+  if (data.yes_bid != null && data.yes_ask != null) {
+    var cardProb = Math.round((data.yes_bid + data.yes_ask) / 2);
     var chanceEl = row.querySelector(".outcome-chance");
     if (chanceEl) {
-      var newChance = Math.round(lp) + '%';
+      var newChance = cardProb + '%';
       _flash(chanceEl, chanceEl.textContent, newChance);
       chanceEl.textContent = newChance;
     }

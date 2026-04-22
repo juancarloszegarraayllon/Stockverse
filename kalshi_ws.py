@@ -553,48 +553,23 @@ async def run_ws_client(get_tickers):
                         # Keep a rolling sample of what Kalshi actually
                         # sends so /api/ws_raw can show us the shape.
                         RAW_SAMPLES.append(msg)
-                        # Detect message type by channel hint or
-                        # content shape. Kalshi's WS doesn't always
-                        # include a "channel" field, so we try each
-                        # parser in priority order.
+                        # Detect message type. Try orderbook_delta and
+                        # trade FIRST — if the price parser runs first,
+                        # it can misinterpret orderbook snapshot fields
+                        # as stale price ticks, causing probability
+                        # bouncing when the Order Book section is open.
                         handled = False
-                        # 1) Ticker channel (price updates)
-                        parsed = _extract_update(msg)
-                        if parsed:
-                            tk, upd = parsed
-                            cur = LIVE_PRICES.get(tk)
-                            if cur is None:
-                                LIVE_PRICES[tk] = upd
-                            else:
-                                cur.update(upd)
-                            STATUS["updates"] += 1
+                        # 1) Orderbook delta — check first so OB
+                        #    snapshots don't leak into price updates.
+                        ob_parsed = _extract_orderbook_delta(msg)
+                        if ob_parsed:
+                            tk, delta = ob_parsed
                             try:
-                                _broadcast_to_browsers(tk, upd, "price")
+                                _broadcast_to_browsers(tk, delta, "orderbook_delta")
                             except Exception as e:
-                                log.debug("browser broadcast failed: %s", e)
-                            # Buffer for DB price history
-                            _price_buffer.append({
-                                "market_ticker": tk,
-                                "yes_bid": upd.get("yes_bid"),
-                                "yes_ask": upd.get("yes_ask"),
-                                "no_bid": upd.get("no_bid"),
-                                "no_ask": upd.get("no_ask"),
-                                "last_price": upd.get("last_price"),
-                                "volume": upd.get("volume"),
-                                "open_interest": upd.get("open_interest"),
-                            })
+                                log.debug("ob delta broadcast failed: %s", e)
                             handled = True
-                        # 2) Orderbook delta channel
-                        if not handled:
-                            ob_parsed = _extract_orderbook_delta(msg)
-                            if ob_parsed:
-                                tk, delta = ob_parsed
-                                try:
-                                    _broadcast_to_browsers(tk, delta, "orderbook_delta")
-                                except Exception as e:
-                                    log.debug("ob delta broadcast failed: %s", e)
-                                handled = True
-                        # 3) Trade channel
+                        # 2) Trade channel
                         if not handled:
                             tr_parsed = _extract_trade(msg)
                             if tr_parsed:
@@ -603,6 +578,33 @@ async def run_ws_client(get_tickers):
                                     _broadcast_to_browsers(tk, trade, "trade")
                                 except Exception as e:
                                     log.debug("trade broadcast failed: %s", e)
+                                handled = True
+                        # 3) Ticker channel (price updates) — last so
+                        #    OB/trade messages can't be misinterpreted.
+                        if not handled:
+                            parsed = _extract_update(msg)
+                            if parsed:
+                                tk, upd = parsed
+                                cur = LIVE_PRICES.get(tk)
+                                if cur is None:
+                                    LIVE_PRICES[tk] = upd
+                                else:
+                                    cur.update(upd)
+                                STATUS["updates"] += 1
+                                try:
+                                    _broadcast_to_browsers(tk, upd, "price")
+                                except Exception as e:
+                                    log.debug("browser broadcast failed: %s", e)
+                                _price_buffer.append({
+                                    "market_ticker": tk,
+                                    "yes_bid": upd.get("yes_bid"),
+                                    "yes_ask": upd.get("yes_ask"),
+                                    "no_bid": upd.get("no_bid"),
+                                    "no_ask": upd.get("no_ask"),
+                                    "last_price": upd.get("last_price"),
+                                    "volume": upd.get("volume"),
+                                    "open_interest": upd.get("open_interest"),
+                                })
                                 handled = True
                 finally:
                     refresh_task.cancel()
