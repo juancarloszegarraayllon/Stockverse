@@ -1486,7 +1486,27 @@ def _build_cache():
                 except Exception:
                     pass
             _is_sport = bool(_sport)
-            _soccer_comp = SOCCER_COMP.get(series, "Other") if _sport == "Soccer" else ""
+            _soccer_comp = ""
+            if _sport == "Soccer":
+                _soccer_comp = SOCCER_COMP.get(series, "")
+                if not _soccer_comp:
+                    # Auto-generate league label from the series ticker
+                    # for unknown soccer leagues. Strip KX prefix and
+                    # GAME/MATCH suffix, then humanize. E.g.:
+                    #   KXBOLPDIVGAME → BOLPDIV → "Bolpdiv"
+                    # Also auto-register it in SOCCER_COMP so the nav
+                    # subtab appears and future events use the same label.
+                    base = series
+                    for sfx in ("GAME", "MATCH", "1H", "SPREAD", "TOTAL", "BTTS"):
+                        if base.endswith(sfx):
+                            base = base[:-len(sfx)]
+                            break
+                    if base.startswith("KX"):
+                        base = base[2:]
+                    if base:
+                        label = base.replace("_", " ").title()
+                        SOCCER_COMP[series] = label
+                        _soccer_comp = label
             mkts = ev.get("markets")
             if not isinstance(mkts, list):
                 mkts = []
@@ -1829,6 +1849,17 @@ def get_events(
                             dt = _date.fromisoformat(date_to)
                             if kd > dt: continue
                 except: pass
+
+        # Game view: only show actual game/match events, not standalone
+        # prop markets (Points, Goals, Assists, First Goal, etc.). A
+        # record qualifies as a "game" card if it has grouped siblings
+        # (market_groups) or its series ends with GAME/MATCH.
+        if view != "all":
+            series_up = str(r.get("series_ticker", "")).upper()
+            has_groups = bool(r.get("_market_groups"))
+            is_game = series_up.endswith("GAME") or series_up.endswith("MATCH")
+            if not has_groups and not is_game:
+                continue
 
         results.append(r)
 
