@@ -4701,12 +4701,19 @@ PriceStream.onUpdate(function(ticker, data) {
     var lp = data.last_price;
     var refBid = data.yes_bid;
     if (refBid == null) {
-      // Parse yes_bid from the YES cell (e.g., "79¢ / 77¢" → 77)
+      // Parse yes_bid from the YES cell. Format can be either
+      // "79¢ / 77¢" (ask/bid after WS update) or "77¢" (initial render).
       var yesCell2 = row.querySelector('[data-mk-field="yes"]');
       if (yesCell2) {
-        var parts = yesCell2.textContent.split('/');
+        var txt = yesCell2.textContent;
+        var parts = txt.split('/');
         if (parts.length >= 2) {
+          // "79¢ / 77¢" → parse bid (second part)
           var parsed = parseInt(parts[1]);
+          if (!isNaN(parsed)) refBid = parsed;
+        } else {
+          // "77¢" → parse the single value as bid
+          var parsed = parseInt(txt);
           if (!isNaN(parsed)) refBid = parsed;
         }
       }
@@ -4771,6 +4778,7 @@ PriceStream.onUpdate(function(ticker, data) {
     if (refBid == null) {
       var yBox = row.querySelector(".odds-box.odds-yes");
       if (yBox) {
+        // Card YES box shows single value like "79¢"
         var p = parseInt(yBox.textContent);
         if (!isNaN(p)) refBid = p;
       }

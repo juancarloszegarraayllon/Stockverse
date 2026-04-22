@@ -2386,13 +2386,22 @@ def get_event_detail(ticker: str):
             oi    = o.get("_oi", 0) or 0
             liq   = o.get("_liq", 0) or 0
             prev  = o.get("_prev")
-            # Derived
-            if yb is not None and ya is not None and yb > 0 and ya > 0:
+            # Normalize last_price to YES side (same as _overlay_live).
+            if last is not None and yb is not None:
+                flipped = 100 - last
+                if abs(flipped - yb) < abs(last - yb):
+                    last = flipped
+            # Derived — use last_price for probability when available
+            # (matches Kalshi's display). Fall back to midprice.
+            if last is not None and last > 0:
+                prob = round(last)
+                if yb is not None and ya is not None:
+                    spread = round(ya - yb)
+                else:
+                    spread = None
+            elif yb is not None and ya is not None and yb > 0 and ya > 0:
                 prob = round((yb + ya) / 2)
                 spread = round(ya - yb)
-            elif last is not None and last > 0:
-                prob = round(last)
-                spread = None
             else:
                 prob = None
                 spread = None
