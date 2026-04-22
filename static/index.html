@@ -1292,6 +1292,16 @@ function appendCards(evs) {
     });
     grid.appendChild(card);
   }
+  // Subscribe all visible card tickers to WS for real-time updates.
+  var cardTickers = document.querySelectorAll("[data-card-ticker]");
+  var subList = [];
+  for (var ct = 0; ct < cardTickers.length; ct++) {
+    var t = cardTickers[ct].getAttribute("data-card-ticker");
+    if (t) subList.push(t);
+  }
+  if (subList.length && typeof PriceStream !== "undefined") {
+    PriceStream.subscribe(subList);
+  }
 }
 
 function isLive(ev) {
@@ -1649,6 +1659,7 @@ function buildOutcomeTable(outcomes, groupCode, scoreMap) {
     var o = outcomes[i];
     var extraClass = i >= 5 ? " outcome-row-extra" : "";
     h += "<div class=\"outcome-row" + extraClass + "\"";
+    h += " data-card-ticker=\"" + (o.ticker || "") + "\"";
     if (groupCode) h += " data-group=\"" + groupCode + "\"";
     h += ">";
     h += "<div class=\"outcome-label\">" + o.label + "</div>";
@@ -4718,6 +4729,33 @@ PriceStream.onUpdate(function(ticker, data) {
 
 // Register the live-chart tick handler now that PriceStream exists.
 PriceStream.onUpdate(_liveChartOnTick);
+
+// Real-time card grid updates — same speed as the Markets table.
+// Finds card outcome rows by data-card-ticker and updates the
+// chance, yes (ask), and no (ask) cells.
+PriceStream.onUpdate(function(ticker, data) {
+  var row = document.querySelector('[data-card-ticker="' + ticker + '"]');
+  if (!row) return;
+  if (data.last_price != null) {
+    var chanceEl = row.querySelector(".outcome-chance");
+    if (chanceEl) {
+      var newChance = Math.round(data.last_price) + '%';
+      _flash(chanceEl, chanceEl.textContent, newChance);
+      chanceEl.textContent = newChance;
+    }
+  }
+  var boxes = row.querySelectorAll(".odds-box");
+  if (data.yes_ask != null && boxes[0]) {
+    var newYes = data.yes_ask + '¢';
+    _flash(boxes[0], boxes[0].textContent, newYes);
+    boxes[0].textContent = newYes;
+  }
+  if (data.no_ask != null && boxes[1]) {
+    var newNo = data.no_ask + '¢';
+    _flash(boxes[1], boxes[1].textContent, newNo);
+    boxes[1].textContent = newNo;
+  }
+});
 
 // ── Orderbook delta handler ──────────────────────────────────────
 // When the server sends an orderbook_delta for the ticker the user
