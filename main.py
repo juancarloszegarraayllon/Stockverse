@@ -101,6 +101,13 @@ async def startup_event():
         asyncio.create_task(run_sofascore_feed())
     except Exception as e:
         logging.getLogger("stochverse").warning("failed to start sofascore feed: %s", e)
+    # FlashLive Sports feed (RapidAPI) — reliable replacement for
+    # SofaScore when it's blocked by Cloudflare. Covers all sports.
+    try:
+        from flashlive_feed import run_flashlive_feed
+        asyncio.create_task(run_flashlive_feed())
+    except Exception as e:
+        logging.getLogger("stochverse").warning("failed to start flashlive feed: %s", e)
     # Phase 4: periodically flush live scores from all feeds to the DB.
     asyncio.create_task(_score_flush_loop())
     # Phase 5: periodically prune old price rows to stay within
@@ -1704,6 +1711,10 @@ def get_events(
         from sofascore_feed import match_game as sofa_match_game
     except Exception:
         sofa_match_game = None
+    try:
+        from flashlive_feed import match_game as flash_match_game
+    except Exception:
+        flash_match_game = None
 
     # Filter
     results = []
@@ -2043,6 +2054,8 @@ def get_events(
                 g = sdb_match_game(title, sport)
             if g is None and sofa_match_game is not None:
                 g = sofa_match_game(title, sport)
+            if g is None and flash_match_game is not None:
+                g = flash_match_game(title, sport)
         # Enrich soccer 2-leg ties with SofaScore aggregate data
         # when the primary feed (usually ESPN for UCL) didn't
         # populate it. No-op for non-soccer or when aggregate is
@@ -4124,6 +4137,27 @@ async def sportsdb_probe():
             return out
     except Exception as e:
         return {"error": str(e)}
+
+@app.get("/api/flashlive_status")
+def flashlive_status():
+    """Debug endpoint: reports the FlashLive feed state."""
+    try:
+        from flashlive_feed import STATUS, GAMES
+        sample = []
+        for k, g in list(GAMES.items())[:10]:
+            sample.append({
+                "sport": g.get("sport"),
+                "home": g.get("home_name"),
+                "away": g.get("away_name"),
+                "score": f"{g.get('home_score', '')} - {g.get('away_score', '')}",
+                "state": g.get("state"),
+                "clock": g.get("display_clock"),
+                "league": g.get("league"),
+            })
+        return {"status": dict(STATUS), "sample_games": sample}
+    except Exception as e:
+        return {"error": str(e)}
+
 
 @app.get("/api/sofascore_status")
 def sofascore_status():
