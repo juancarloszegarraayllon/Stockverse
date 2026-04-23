@@ -202,11 +202,16 @@ def _extract_orderbook_delta(msg):
 def _extract_trade(msg):
     """Parse a trade channel message. Returns (ticker, trade_dict) or
     None. The trade dict includes side, price (cents), count, cost,
-    and timestamp."""
+    and timestamp. Only matches messages that actually contain trade
+    data (taker_side or trade_id present)."""
     if not isinstance(msg, dict):
         return None
     body = msg.get("msg") or msg.get("data") or msg
     if not isinstance(body, dict):
+        return None
+    # MUST have trade-specific fields — otherwise this is a price
+    # tick, not a trade, and should be handled by _extract_update.
+    if not body.get("taker_side") and not body.get("trade_id"):
         return None
     tk = body.get("market_ticker") or body.get("ticker")
     if not tk:

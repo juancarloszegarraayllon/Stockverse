@@ -3290,7 +3290,21 @@ function _scheduleLiveChartRedraw() {
 // defined so the symbol order works.
 function _liveChartOnTick(ticker, data) {
   if (window._mkPaused) return;
-  if (data.last_price == null) return;
+  // Use bid/ask midpoint for chart (always correct YES perspective).
+  // Fall back to normalized last_price if no bid/ask in this tick.
+  var chartPrice = null;
+  if (data.yes_bid != null && data.yes_ask != null) {
+    chartPrice = Math.round((data.yes_bid + data.yes_ask) / 2);
+  } else if (data.last_price != null) {
+    var lp = data.last_price;
+    var ref = data.yes_bid;
+    if (ref != null) {
+      var fl = 100 - lp;
+      if (Math.abs(fl - ref) < Math.abs(lp - ref)) lp = fl;
+    }
+    chartPrice = Math.round(lp);
+  }
+  if (chartPrice == null) return;
   var nowMs = Date.now();
   Object.keys(_liveChartCache).forEach(function(id) {
     var c = _liveChartCache[id];
@@ -3300,8 +3314,8 @@ function _liveChartOnTick(ticker, data) {
       if (ser.market_ticker !== ticker) continue;
       ser.points = ser.points || [];
       var lastPt = ser.points[ser.points.length - 1];
-      if (lastPt && lastPt.p === data.last_price && (nowMs - lastPt.t) < 2000) return;
-      ser.points.push({t: nowMs, p: data.last_price});
+      if (lastPt && lastPt.p === chartPrice && (nowMs - lastPt.t) < 2000) return;
+      ser.points.push({t: nowMs, p: chartPrice});
       if (ser.points.length > 3000) ser.points.splice(0, ser.points.length - 3000);
       c.dirty = true;
     }
