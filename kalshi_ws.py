@@ -164,9 +164,9 @@ def _broadcast_to_browsers(ticker: str, update: dict, msg_type: str = "price"):
 
 def _extract_orderbook_delta(msg):
     """Parse an orderbook_delta message. Returns (ticker, delta_dict)
-    or None. Delta contains yes/no arrays of [price, qty] pairs
-    representing the NEW state at each price level (qty=0 means
-    remove that level)."""
+    or None. Delta contains yes/no arrays of [price, qty] pairs.
+    Also matches EMPTY orderbook messages (no levels) to prevent them
+    from falling through to the price parser."""
     if not isinstance(msg, dict):
         return None
     body = msg.get("msg") or msg.get("data") or msg
@@ -175,27 +175,33 @@ def _extract_orderbook_delta(msg):
     tk = body.get("market_ticker") or body.get("ticker")
     if not tk:
         return None
+    # Detect orderbook messages by the presence of yes/no or
+    # yes_dollars/no_dollars KEYS (even if values are empty).
+    has_ob_keys = any(
+        k in body for k in ("yes", "no", "yes_dollars", "no_dollars")
+    )
+    if not has_ob_keys:
+        return None
     delta = {}
     for side in ("yes", "no"):
         raw = body.get(side) or body.get(f"{side}_dollars") or []
-        if raw:
-            levels = []
-            for lv in raw:
-                if isinstance(lv, (list, tuple)) and len(lv) >= 2:
-                    try:
-                        p = lv[0]
-                        if isinstance(p, str):
-                            p = round(float(p) * 100)
-                        else:
-                            p = round(float(p))
-                        q = float(lv[1])
-                        levels.append([p, q])
-                    except Exception:
-                        pass
-            if levels:
-                delta[side] = levels
-    if not delta:
-        return None
+        if not isinstance(raw, list):
+            continue
+        levels = []
+        for lv in raw:
+            if isinstance(lv, (list, tuple)) and len(lv) >= 2:
+                try:
+                    p = lv[0]
+                    if isinstance(p, str):
+                        p = round(float(p) * 100)
+                    else:
+                        p = round(float(p))
+                    q = float(lv[1])
+                    levels.append([p, q])
+                except Exception:
+                    pass
+        if levels:
+            delta[side] = levels
     return (tk, delta)
 
 
