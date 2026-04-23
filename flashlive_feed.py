@@ -185,46 +185,68 @@ async def _fetch_live_events():
 def _parse_event(ev):
     """Parse a FlashLive event into our standard game dict format."""
     try:
-        # FlashLive event structure varies — handle common fields
-        event_id = ev.get("EVENT_ID") or ev.get("id") or ""
-        home_name = ev.get("HOME_NAME") or ev.get("home", {}).get("name", "") or ""
-        away_name = ev.get("AWAY_NAME") or ev.get("away", {}).get("name", "") or ""
-        home_score = str(ev.get("HOME_SCORE", "") or ev.get("home_score", ""))
-        away_score = str(ev.get("AWAY_SCORE", "") or ev.get("away_score", ""))
-        sport_id = str(ev.get("SPORT_ID") or ev.get("sport_id") or "")
-        sport = SPORT_MAP.get(sport_id, "")
+        event_id = ev.get("EVENT_ID") or ""
+        home_name = ev.get("HOME_NAME") or ev.get("HOME_PARTICIPANT_NAME_ONE") or ""
+        away_name = ev.get("AWAY_NAME") or ev.get("AWAY_PARTICIPANT_NAME_ONE") or ""
+        # Strip trailing asterisks (FlashLive marks home team with *)
+        home_name = home_name.rstrip(" *")
+        away_name = away_name.rstrip(" *")
+        home_score = str(ev.get("HOME_SCORE_CURRENT") or ev.get("HOME_SCORE_FULL") or "")
+        away_score = str(ev.get("AWAY_SCORE_CURRENT") or ev.get("AWAY_SCORE_FULL") or "")
+        sport = ev.get("_sport") or SPORT_MAP.get(str(ev.get("SPORT_ID", "")), "")
 
-        # Game state
-        stage_type = str(ev.get("STAGE_TYPE") or ev.get("stage_type") or "")
-        status_type = str(ev.get("STATUS_TYPE") or ev.get("status_type") or "")
-        minute = ev.get("STAGE") or ev.get("STAGE_START_TIME") or ""
-        period = ev.get("PERIOD") or ""
+        # Game state from STAGE_TYPE
+        stage = str(ev.get("STAGE_TYPE") or ev.get("STAGE") or "").upper()
+        game_time = ev.get("GAME_TIME")
 
-        if status_type in ("2", "3"):  # live/in-progress
+        live_stages = {"LIVE", "FIRST_HALF", "SECOND_HALF", "FIRST_SET",
+                       "SECOND_SET", "THIRD_SET", "FOURTH_SET", "FIFTH_SET",
+                       "FIRST_PERIOD", "SECOND_PERIOD", "THIRD_PERIOD",
+                       "OVERTIME", "FIRST_QUARTER", "SECOND_QUARTER",
+                       "THIRD_QUARTER", "FOURTH_QUARTER", "HALFTIME",
+                       "INNING", "BREAK_TIME", "AWAITING_EXTRA_TIME",
+                       "EXTRA_TIME_FIRST_HALF", "EXTRA_TIME_SECOND_HALF",
+                       "AWAITING_PENALTIES", "PENALTIES"}
+        finished_stages = {"FINISHED", "AFTER_PENALTIES", "AFTER_EXTRA_TIME",
+                          "AWARDED", "ABANDONED", "CANCELLED", "RETIRED",
+                          "WALKOVER", "POSTPONED"}
+
+        if stage in live_stages:
             state = "in"
-        elif status_type in ("4", "5", "6"):  # finished
+        elif stage in finished_stages:
             state = "post"
         else:
             state = "pre"
 
-        # Time display
-        display_clock = str(minute) if minute else ""
-        if period:
-            display_clock = f"{period} {display_clock}".strip()
+        # Game clock / minute
+        if game_time and str(game_time) != "-1":
+            display_clock = f"{game_time}'"
+        elif stage in live_stages:
+            display_clock = stage.replace("_", " ").title()
+        elif state == "post":
+            display_clock = "FT"
+        else:
+            display_clock = ""
 
-        # Short detail
         short_detail = display_clock or ("FT" if state == "post" else "")
 
-        # League / tournament
-        league = ev.get("TOURNAMENT_NAME") or ev.get("tournament", {}).get("name", "") or ""
-        country = ev.get("COUNTRY_NAME") or ""
+        # League from parent tournament or event fields
+        league = ev.get("_league") or ev.get("TOURNAMENT_NAME") or ""
+        country = ev.get("_country") or ev.get("COUNTRY_NAME") or ""
 
         # Abbreviations
-        home_abbr = (home_name[:3].upper() if home_name else "")
-        away_abbr = (away_name[:3].upper() if away_name else "")
+        home_abbr = ev.get("SHORTNAME_HOME") or (home_name[:3].upper() if home_name else "")
+        away_abbr = ev.get("SHORTNAME_AWAY") or (away_name[:3].upper() if away_name else "")
+
+        # Period from stage
+        period_map = {"FIRST_HALF": 1, "SECOND_HALF": 2, "HALFTIME": 1,
+                      "FIRST_PERIOD": 1, "SECOND_PERIOD": 2, "THIRD_PERIOD": 3,
+                      "OVERTIME": 4, "FIRST_QUARTER": 1, "SECOND_QUARTER": 2,
+                      "THIRD_QUARTER": 3, "FOURTH_QUARTER": 4}
+        period = period_map.get(stage, 0)
 
         # Scheduled start
-        start_ts = ev.get("START_TIME") or ev.get("start_time") or 0
+        start_ts = ev.get("START_UTIME") or ev.get("START_TIME") or 0
         try:
             start_ms = int(float(start_ts)) * 1000 if start_ts else 0
         except (ValueError, TypeError):
