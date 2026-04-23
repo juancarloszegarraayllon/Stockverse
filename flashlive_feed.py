@@ -127,6 +127,7 @@ async def _fetch_live_events():
     }
     all_events = []
     raw_samples = []
+    errors = []
     async with httpx.AsyncClient(timeout=15.0) as client:
         for sport_id, sport_name in ACTIVE_SPORTS.items():
             try:
@@ -141,7 +142,6 @@ async def _fetch_live_events():
                 )
                 if r.status_code == 200:
                     data = r.json()
-                    # Save first raw response for debugging
                     if len(raw_samples) < 3:
                         raw_samples.append({
                             "sport": sport_name,
@@ -152,11 +152,12 @@ async def _fetch_live_events():
                     events = data if isinstance(data, list) else data.get("DATA", data.get("data", []))
                     if isinstance(events, list):
                         all_events.extend(events)
-                elif r.status_code != 404:
-                    log.debug("FlashLive %s: HTTP %d", sport_name, r.status_code)
+                else:
+                    errors.append(f"{sport_name}: HTTP {r.status_code} - {r.text[:200]}")
             except Exception as e:
-                log.debug("FlashLive %s fetch error: %s", sport_name, e)
-    STATUS["last_error"] = None if all_events else "no events found"
+                errors.append(f"{sport_name}: {str(e)[:200]}")
+    STATUS["last_error"] = errors[0] if errors else ("no events found" if not all_events else None)
+    STATUS["all_errors"] = errors[:5]
     STATUS["raw_samples"] = raw_samples
     return all_events
 
