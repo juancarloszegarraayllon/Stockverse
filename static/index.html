@@ -3959,7 +3959,7 @@ async function fetchOrderbook(ticker) {
     if (_obActiveOutcome !== ticker) { _obRefreshTimer = null; return; }
     if (!document.getElementById("ob-body")) { _obRefreshTimer = null; return; }
     fetchOrderbook(ticker);
-  }, 2000);
+  }, 1000);
 }
 
 function renderOrderbook() {
