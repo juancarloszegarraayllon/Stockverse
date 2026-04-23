@@ -3896,9 +3896,8 @@ window.selectObOutcome = function(btn) {
   var ticker = btn.getAttribute("data-ob-ticker");
   // Unsubscribe from previous ticker's orderbook channel.
   if (_obWsPrevTicker && _obWsPrevTicker !== ticker) {
-    if (_obWsPrevTicker && _obWsPrevTicker !== ticker) {
-      PriceStream.unsubscribeChannel("orderbook_delta", [_obWsPrevTicker]);
-    }
+    // Removed: orderbook_delta subscription was causing price bouncing.
+    // The 2s REST poll handles OB updates reliably.
   }
   _obActiveOutcome = ticker;
   _obActiveSide = "yes";
@@ -3911,7 +3910,8 @@ window.selectObOutcome = function(btn) {
   if (body) body.innerHTML = '<div class="ob-loading">Loading order book&hellip;</div>';
   // Initial fetch via REST, then subscribe to WS deltas.
   fetchOrderbook(ticker);
-  PriceStream.subscribeChannel("orderbook_delta", [ticker]);
+  // Removed: orderbook_delta WS subscription was causing price bouncing.
+  // The 2s REST poll in fetchOrderbook handles OB depth updates.
 };
 
 // Auto-load first outcome on page render.
