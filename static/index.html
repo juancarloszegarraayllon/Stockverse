@@ -3165,11 +3165,14 @@ function wireChartHover(chartEl) {
 
 // Selectable timeframe windows for the price-history chart.
 var CHART_TIMEFRAMES = [
-  { key: "1h",  hours: 1,   label: "1H",  src: "db",    period: null },
-  { key: "6h",  hours: 6,   label: "6H",  src: "db",    period: null },
-  { key: "24h", hours: 24,  label: "24H", src: "kalshi", period: 60   },
-  { key: "7d",  hours: 168, label: "7D",  src: "kalshi", period: 1440 },
-  { key: "30d", hours: 720, label: "30D", src: "kalshi", period: 1440 },
+  { key: "1h",  hours: 1,    label: "1H",  src: "db",    period: null },
+  { key: "6h",  hours: 6,    label: "6H",  src: "db",    period: null },
+  { key: "24h", hours: 24,   label: "24H", src: "kalshi", period: 60   },
+  { key: "7d",  hours: 168,  label: "7D",  src: "kalshi", period: 1440 },
+  { key: "30d", hours: 720,  label: "30D", src: "kalshi", period: 1440 },
+  { key: "3m",  hours: 2160, label: "3M",  src: "kalshi", period: 1440 },
+  { key: "6m",  hours: 4320, label: "6M",  src: "kalshi", period: 1440 },
+  { key: "1y",  hours: 8760, label: "1Y",  src: "kalshi", period: 1440 },
 ];
 
 // Build the chart section shown above the markets table.
