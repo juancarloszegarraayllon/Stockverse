@@ -108,33 +108,47 @@ def compact_label(g: dict) -> str:
 
 
 async def _fetch_live_events():
-    """Fetch all currently live events from FlashLive."""
+    """Fetch all currently live events from FlashLive.
+    Tries multiple endpoint patterns since the exact path may vary."""
     if not API_KEY or httpx is None:
         return []
     headers = {
         "x-rapidapi-key": API_KEY,
         "x-rapidapi-host": API_HOST,
     }
-    events = []
-    try:
-        async with httpx.AsyncClient(timeout=15.0) as client:
-            # Try the live events endpoint
-            r = await client.get(
-                f"{BASE_URL}/v1/events/live",
-                headers=headers,
-                params={"locale": "en_INT"},
-            )
-            if r.status_code == 200:
-                data = r.json()
-                # FlashLive returns DATA array
-                events = data if isinstance(data, list) else data.get("DATA", [])
-            else:
-                STATUS["last_error"] = f"HTTP {r.status_code}: {r.text[:200]}"
-                log.warning("FlashLive API error: %s %s", r.status_code, r.text[:200])
-    except Exception as e:
-        STATUS["last_error"] = str(e)[:200]
-        log.error("FlashLive fetch error: %s", e)
-    return events
+    # Try multiple endpoint patterns
+    endpoints = [
+        "/v1/events/live-list",
+        "/v1/events/list",
+        "/v1/events/live",
+        "/v1/events",
+        "/events/live",
+        "/events/list",
+    ]
+    for endpoint in endpoints:
+        try:
+            async with httpx.AsyncClient(timeout=15.0) as client:
+                r = await client.get(
+                    f"{BASE_URL}{endpoint}",
+                    headers=headers,
+                    params={"locale": "en_INT", "timezone": "-4"},
+                )
+                if r.status_code == 200:
+                    data = r.json()
+                    events = data if isinstance(data, list) else data.get("DATA", data.get("data", []))
+                    if events:
+                        STATUS["last_error"] = None
+                        STATUS["endpoint"] = endpoint
+                        log.info("FlashLive: working endpoint found: %s (%d events)", endpoint, len(events))
+                        return events
+                elif r.status_code == 404:
+                    continue  # try next endpoint
+                else:
+                    STATUS["last_error"] = f"HTTP {r.status_code} on {endpoint}: {r.text[:200]}"
+        except Exception as e:
+            STATUS["last_error"] = f"{endpoint}: {str(e)[:200]}"
+    log.warning("FlashLive: no working endpoint found")
+    return []
 
 
 def _parse_event(ev):
