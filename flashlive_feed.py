@@ -143,16 +143,35 @@ async def _fetch_live_events():
                 )
                 if r.status_code == 200:
                     data = r.json()
-                    if len(raw_samples) < 3:
+                    top_data = data.get("DATA", []) if isinstance(data, dict) else data
+                    # FlashLive nests events inside tournament groups.
+                    # Each item in DATA can be a tournament header or
+                    # an event. Events have an EVENT_ID field.
+                    for item in (top_data if isinstance(top_data, list) else []):
+                        if isinstance(item, dict):
+                            if item.get("EVENT_ID"):
+                                # Direct event
+                                item["_sport"] = sport_name
+                                all_events.append(item)
+                            # Check for nested events
+                            for k in ("EVENTS", "events", "ITEMS", "items"):
+                                nested = item.get(k)
+                                if isinstance(nested, list):
+                                    for ev in nested:
+                                        if isinstance(ev, dict):
+                                            ev["_sport"] = sport_name
+                                            ev["_league"] = item.get("SHORT_NAME") or item.get("NAME_PART_2") or ""
+                                            ev["_country"] = item.get("COUNTRY_NAME") or ""
+                                            all_events.append(ev)
+                    # Save raw sample for debugging
+                    if len(raw_samples) < 2 and top_data:
+                        first = top_data[0] if isinstance(top_data, list) and top_data else {}
                         raw_samples.append({
                             "sport": sport_name,
-                            "type": str(type(data).__name__),
-                            "keys": list(data.keys()) if isinstance(data, dict) else "list",
-                            "preview": str(data)[:500],
+                            "total_items": len(top_data) if isinstance(top_data, list) else 0,
+                            "first_item_keys": list(first.keys())[:20] if isinstance(first, dict) else "?",
+                            "first_item_preview": str(first)[:800],
                         })
-                    events = data if isinstance(data, list) else data.get("DATA", data.get("data", []))
-                    if isinstance(events, list):
-                        all_events.extend(events)
                 else:
                     errors.append(f"{sport_name}: HTTP {r.status_code} - {r.text[:200]}")
             except Exception as e:
