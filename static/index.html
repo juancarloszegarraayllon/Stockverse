@@ -1836,6 +1836,10 @@ document.getElementById("search-input").addEventListener("input", function(e) {
       state.category = "All";
       state.sport = null;
       state.soccerComp = null;
+      // Always show all markets when searching
+      state.viewMode = "all";
+      document.getElementById("view-game").classList.remove("active");
+      document.getElementById("view-all").classList.add("active");
     } else {
       // Search cleared - go back to home
       state.category = null;
@@ -2882,6 +2886,7 @@ function renderPriceChartSvg(series, hoursWindow, volume) {
     svg += '<text x="' + (padL - 6) + '" y="' + (y + 3) + '" fill="#555" font-size="9" text-anchor="end">' + g + '%</text>';
   }
   // Lines (and single-point dots when a series only has one sample).
+  var _endLabels = [];
   for (var k = 0; k < series.length; k++) {
     var s = series[k];
     var pts2 = s.points || [];
@@ -2901,17 +2906,27 @@ function renderPriceChartSvg(series, hoursWindow, volume) {
       d += (m === 0 ? "M" : "L") + sx(pts2[m].t).toFixed(1) + " " + sy(pts2[m].p).toFixed(1) + " ";
     }
     svg += '<path d="' + d + '" fill="none" stroke="' + color + '" stroke-width="2" stroke-linejoin="round"/>';
-    // Persistent end-of-line label showing current % at the right
-    // edge of the chart (like Bloomberg/Kalshi's own chart display).
     var lastPt = pts2[pts2.length - 1];
-    var endX = sx(lastPt.t);
-    var endY = sy(lastPt.p);
-    var pctLabel = Math.round(lastPt.p) + '%';
-    svg += '<circle cx="' + endX.toFixed(1) + '" cy="' + endY.toFixed(1)
-        + '" r="3" fill="' + color + '"/>';
-    svg += '<text x="' + (endX + 6).toFixed(1) + '" y="' + (endY + 4).toFixed(1)
-        + '" fill="' + color + '" font-size="11" font-weight="700" font-family="inherit">'
-        + pctLabel + '</text>';
+    _endLabels.push({
+      x: sx(lastPt.t),
+      y: sy(lastPt.p),
+      label: Math.round(lastPt.p) + '%',
+      color: color,
+    });
+  }
+  // De-overlap end labels: sort by Y, push apart if too close.
+  _endLabels.sort(function(a, b) { return a.y - b.y; });
+  for (var eli = 1; eli < _endLabels.length; eli++) {
+    var gap = _endLabels[eli].y - _endLabels[eli - 1].y;
+    if (gap < 14) _endLabels[eli].y = _endLabels[eli - 1].y + 14;
+  }
+  for (var eli2 = 0; eli2 < _endLabels.length; eli2++) {
+    var el = _endLabels[eli2];
+    svg += '<circle cx="' + el.x.toFixed(1) + '" cy="' + sy(parseFloat(el.label)).toFixed(1)
+        + '" r="3" fill="' + el.color + '"/>';
+    svg += '<text x="' + (el.x + 6).toFixed(1) + '" y="' + (el.y + 4).toFixed(1)
+        + '" fill="' + el.color + '" font-size="11" font-weight="700" font-family="inherit">'
+        + el.label + '</text>';
   }
   // X-axis tick labels in AM/PM format at regular intervals.
   var firstDate = new Date(tMin);

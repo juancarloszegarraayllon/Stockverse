@@ -219,10 +219,32 @@ def _parse_event(ev):
             state = "pre"
 
         # Game clock / minute
-        if game_time and str(game_time) != "-1":
-            display_clock = f"{game_time}'"
+        game_time_str = str(game_time or "")
+        if game_time_str and game_time_str not in ("-1", "0", "", "None"):
+            display_clock = f"{game_time_str}'"
         elif stage in live_stages:
-            display_clock = stage.replace("_", " ").title()
+            # Use the stage as a descriptive label
+            stage_labels = {
+                "FIRST_HALF": "1st Half",
+                "SECOND_HALF": "2nd Half",
+                "HALFTIME": "Halftime",
+                "FIRST_PERIOD": "1st Period",
+                "SECOND_PERIOD": "2nd Period",
+                "THIRD_PERIOD": "3rd Period",
+                "OVERTIME": "Overtime",
+                "FIRST_QUARTER": "Q1",
+                "SECOND_QUARTER": "Q2",
+                "THIRD_QUARTER": "Q3",
+                "FOURTH_QUARTER": "Q4",
+                "FIRST_SET": "Set 1",
+                "SECOND_SET": "Set 2",
+                "THIRD_SET": "Set 3",
+                "FOURTH_SET": "Set 4",
+                "FIFTH_SET": "Set 5",
+                "BREAK_TIME": "Break",
+                "PENALTIES": "Penalties",
+            }
+            display_clock = stage_labels.get(stage, stage.replace("_", " ").title())
         elif state == "post":
             display_clock = "FT"
         else:
