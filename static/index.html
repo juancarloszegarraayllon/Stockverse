@@ -4698,16 +4698,20 @@ PriceStream.onUpdate(function(ticker, data) {
     var yesCell = row.querySelector('[data-mk-field="yes"]');
     if (yesCell) {
       var newYes = data.yes_ask + '¢ / ' + data.yes_bid + '¢';
-      _flash(yesCell, yesCell.textContent, String(data.yes_bid));
-      yesCell.textContent = newYes;
+      if (yesCell.textContent !== newYes) {
+        _flash(yesCell, yesCell.textContent, newYes);
+        yesCell.textContent = newYes;
+      }
     }
   }
   if (data.no_bid != null && data.no_ask != null) {
     var noCell = row.querySelector('[data-mk-field="no"]');
     if (noCell) {
       var newNo = data.no_ask + '¢ / ' + data.no_bid + '¢';
-      _flash(noCell, noCell.textContent, String(data.no_bid));
-      noCell.textContent = newNo;
+      if (noCell.textContent !== newNo) {
+        _flash(noCell, noCell.textContent, newNo);
+        noCell.textContent = newNo;
+      }
     }
   }
   // Probability uses last_price (matching Kalshi's display).
