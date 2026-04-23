@@ -3290,19 +3290,24 @@ function _scheduleLiveChartRedraw() {
 // defined so the symbol order works.
 function _liveChartOnTick(ticker, data) {
   if (window._mkPaused) return;
-  // Use bid/ask midpoint for chart (always correct YES perspective).
-  // Fall back to normalized last_price if no bid/ask in this tick.
+  // Use last_price for chart points (same as Markets table Probability).
+  // Normalize to YES perspective. Fall back to bid/ask midpoint.
   var chartPrice = null;
-  if (data.yes_bid != null && data.yes_ask != null) {
-    chartPrice = Math.round((data.yes_bid + data.yes_ask) / 2);
-  } else if (data.last_price != null) {
+  if (data.last_price != null) {
     var lp = data.last_price;
     var ref = data.yes_bid;
+    if (ref == null) {
+      // Try stored LIVE_PRICES via the row's YES cell
+      var r = document.querySelector('tr[data-mk-row="' + ticker + '"]');
+      if (r) { var yc = r.querySelector('[data-mk-field="yes"]'); if (yc) { var pp = parseInt(yc.textContent.split('/').pop()); if (!isNaN(pp)) ref = pp; } }
+    }
     if (ref != null) {
       var fl = 100 - lp;
       if (Math.abs(fl - ref) < Math.abs(lp - ref)) lp = fl;
     }
     chartPrice = Math.round(lp);
+  } else if (data.yes_bid != null && data.yes_ask != null) {
+    chartPrice = Math.round((data.yes_bid + data.yes_ask) / 2);
   }
   if (chartPrice == null) return;
   var nowMs = Date.now();
