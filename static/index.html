@@ -2930,6 +2930,18 @@ function renderPriceChartSvg(series, hoursWindow, volume) {
       timeZone: "America/New_York",
     });
   }
+  function fmtTickMonth(d) {
+    return d.toLocaleDateString("en-US", {
+      month: "short",
+      timeZone: "America/New_York",
+    });
+  }
+  function fmtTickMonthYear(d) {
+    return d.toLocaleDateString("en-US", {
+      month: "short", year: "numeric",
+      timeZone: "America/New_York",
+    });
+  }
   // Volume bars underneath the price panel. Bars share the same X
   // scale as the price chart. Height is normalized per-chart so
   // the tallest bar always fills the panel.
@@ -2961,15 +2973,21 @@ function renderPriceChartSvg(series, hoursWindow, volume) {
   // Render time ticks at regular intervals. For intraday charts
   // (<=6h) use 10-minute intervals; for longer use hourly or daily.
   var tickIntervalMs;
-  if (spanHours <= 2) tickIntervalMs = 10 * 60000;        // 10 min
-  else if (spanHours <= 8) tickIntervalMs = 30 * 60000;   // 30 min
-  else if (spanHours <= 48) tickIntervalMs = 3600000;     // 1 hour
-  else tickIntervalMs = 86400000;                          // 1 day
+  if (spanHours <= 2) tickIntervalMs = 10 * 60000;          // 10 min
+  else if (spanHours <= 8) tickIntervalMs = 30 * 60000;     // 30 min
+  else if (spanHours <= 48) tickIntervalMs = 3600000;       // 1 hour
+  else if (spanHours <= 720) tickIntervalMs = 86400000;     // 1 day (up to 30D)
+  else if (spanHours <= 4320) tickIntervalMs = 30 * 86400000; // ~1 month (up to 6M)
+  else tickIntervalMs = 60 * 86400000;                       // ~2 months (1Y+)
   var tickStart = Math.ceil(tMin / tickIntervalMs) * tickIntervalMs;
   for (var tt = tickStart; tt <= tMax; tt += tickIntervalMs) {
     var tx = sx(tt);
     if (tx < padL + 30 || tx > padL + w - 30) continue;
-    var tickLabel = spanHours > 36 ? fmtTickLong(new Date(tt)) : fmtTick(new Date(tt));
+    var tickLabel;
+    if (spanHours > 2160) tickLabel = fmtTickMonthYear(new Date(tt));      // 3M+: "Jan 2026"
+    else if (spanHours > 720) tickLabel = fmtTickMonth(new Date(tt));      // 30D-3M: "Jan"
+    else if (spanHours > 36) tickLabel = fmtTickLong(new Date(tt));        // 2D-30D: "Jan 5, 3 PM"
+    else tickLabel = fmtTick(new Date(tt));                                 // <2D: "3:00 PM"
     svg += '<text x="' + tx.toFixed(1) + '" y="' + (H - 6) + '" fill="#555" font-size="9" text-anchor="middle">' + tickLabel + '</text>';
   }
   // Hover layer — an invisible rect that catches pointer events
@@ -3173,6 +3191,7 @@ var CHART_TIMEFRAMES = [
   { key: "3m",  hours: 2160, label: "3M",  src: "kalshi", period: 1440 },
   { key: "6m",  hours: 4320, label: "6M",  src: "kalshi", period: 1440 },
   { key: "1y",  hours: 8760, label: "1Y",  src: "kalshi", period: 1440 },
+  { key: "all", hours: 8760, label: "ALL", src: "kalshi", period: 1440 },
 ];
 
 // Build the chart section shown above the markets table.
