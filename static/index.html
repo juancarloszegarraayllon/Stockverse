@@ -2976,8 +2976,8 @@ function renderPriceChartSvg(series, hoursWindow, volume) {
   if (spanHours <= 2) tickIntervalMs = 10 * 60000;          // 10 min
   else if (spanHours <= 8) tickIntervalMs = 30 * 60000;     // 30 min
   else if (spanHours <= 48) tickIntervalMs = 3600000;       // 1 hour
-  else if (spanHours < 720) tickIntervalMs = 86400000;      // 1 day (up to 30D)
-  else if (spanHours <= 4320) tickIntervalMs = 30 * 86400000; // ~1 month (30D to 6M)
+  else if (spanHours <= 168) tickIntervalMs = 86400000;     // 1 day (up to 7D)
+  else if (spanHours <= 4320) tickIntervalMs = 30 * 86400000; // ~1 month (7D to 6M)
   else tickIntervalMs = 60 * 86400000;                       // ~2 months (1Y+)
   var tickStart = Math.ceil(tMin / tickIntervalMs) * tickIntervalMs;
   for (var tt = tickStart; tt <= tMax; tt += tickIntervalMs) {
@@ -2985,8 +2985,8 @@ function renderPriceChartSvg(series, hoursWindow, volume) {
     if (tx < padL + 30 || tx > padL + w - 30) continue;
     var tickLabel;
     if (spanHours > 2160) tickLabel = fmtTickMonthYear(new Date(tt));      // 3M+: "Jan 2026"
-    else if (spanHours >= 720) tickLabel = fmtTickMonth(new Date(tt));     // 30D-3M: "Jan"
-    else if (spanHours > 36) tickLabel = fmtTickLong(new Date(tt));        // 2D-30D: "Jan 5, 3 PM"
+    else if (spanHours > 168) tickLabel = fmtTickMonth(new Date(tt));      // 7D+: "Jan"
+    else if (spanHours > 36) tickLabel = fmtTickLong(new Date(tt));        // 2D-7D: "Jan 5, 3 PM"
     else tickLabel = fmtTick(new Date(tt));                                 // <2D: "3:00 PM"
     svg += '<text x="' + tx.toFixed(1) + '" y="' + (H - 6) + '" fill="#555" font-size="9" text-anchor="middle">' + tickLabel + '</text>';
   }
