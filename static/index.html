@@ -320,6 +320,25 @@ html,body{overscroll-behavior:none}
 .ed-sb-filter-tabs{margin-bottom:6px;gap:2px}
 .ed-sb-filter-tabs .ed-sb-tab{font-size:9px;padding:5px 6px}
 .ed-sb-select{flex:1;background:var(--bg3);border:1px solid var(--border);color:var(--text);font-size:10px;font-family:inherit;padding:5px 6px;border-radius:4px;cursor:pointer}
+.h2h-section{margin-bottom:16px}
+.h2h-section-title{font-size:11px;font-weight:700;color:var(--text);padding:8px 0 6px;border-bottom:1px solid var(--border);text-transform:uppercase;letter-spacing:0.3px}
+.h2h-rows{display:flex;flex-direction:column}
+.h2h-row{display:flex;align-items:center;gap:4px;padding:7px 0;border-bottom:1px solid var(--border);font-size:11px;min-height:28px}
+.h2h-date{flex:0 0 52px;font-size:10px;color:var(--text-muted);font-variant-numeric:tabular-nums}
+.h2h-league{flex:0 0 28px;font-size:9px;font-weight:700;color:var(--text-muted);text-align:center;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.h2h-team{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+.h2h-home{text-align:right}
+.h2h-away{text-align:left}
+.h2h-name{color:var(--text-dim)}
+.h2h-hl .h2h-name{color:var(--text)}
+.h2h-winner{font-weight:700}
+.h2h-score{flex:0 0 38px;text-align:center;font-weight:700;color:var(--text);font-variant-numeric:tabular-nums}
+.h2h-badge{flex:0 0 20px;width:20px;height:20px;border-radius:3px;display:inline-flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;color:#fff}
+.h2h-win{background:#4caf50}
+.h2h-loss{background:#f44336}
+.h2h-draw{background:#666}
+.h2h-show-more{display:block;width:100%;padding:8px 0;background:transparent;border:none;color:var(--green);font-family:inherit;font-size:11px;font-weight:600;cursor:pointer;text-align:center;text-decoration:underline;text-underline-offset:2px}
+.h2h-show-more:hover{color:var(--text)}
 .ed-tl-item{display:flex;align-items:flex-start;gap:8px;padding:6px 0;border-bottom:1px solid var(--border);font-size:11px}
 .ed-tl-item:last-child{border-bottom:0}
 .ed-tl-time{min-width:28px;color:var(--text-muted);font-weight:700;font-variant-numeric:tabular-nums;text-align:right;flex-shrink:0}
@@ -3998,64 +4017,120 @@ window.switchLineTab = function(btn) {
   btn.classList.add("active");
 };
 
-// Placeholder loaders — will be wired to FlashLive endpoints
 async function _loadH2H(container, ticker) {
   container.innerHTML = '<div class="ed-stats-loading">Loading H2H…</div>';
   try {
     var r = await fetch("/api/event/" + encodeURIComponent(ticker) + "/h2h");
     var d = await r.json();
-    if (d.error) {
-      container.innerHTML = '<div class="ed-stats-loading">' + escH(d.error) + '</div>';
-      return;
-    }
+    if (d.error) { container.innerHTML = '<div class="ed-stats-loading">' + escH(d.error) + '</div>'; return; }
     var data = d.data || {};
-    var items = [];
-    // FlashLive H2H: DATA → tabs → GROUPS → ITEMS
+    var homeName = d.home_name || "";
+    var awayName = d.away_name || "";
+    // FlashLive H2H: DATA → array of tabs, each with GROUPS → ITEMS
+    // Typically: tab 0 = H2H Overall, containing 3 groups:
+    //   group 0 = "Last matches: Home", group 1 = "Last matches: Away", group 2 = "Head-to-head"
     var tabs = data.DATA || data.data || [];
-    if (Array.isArray(tabs)) {
-      for (var ti = 0; ti < tabs.length; ti++) {
-        var groups = tabs[ti].GROUPS || [];
-        for (var gi = 0; gi < groups.length; gi++) {
-          var grp = groups[gi];
-          var grpItems = grp.ITEMS || [];
-          for (var ii = 0; ii < grpItems.length; ii++) {
-            items.push(grpItems[ii]);
-          }
-        }
+    if (!Array.isArray(tabs)) tabs = [];
+    var sections = []; // {title, items[]}
+    for (var ti = 0; ti < tabs.length; ti++) {
+      var groups = tabs[ti].GROUPS || [];
+      for (var gi = 0; gi < groups.length; gi++) {
+        var grp = groups[gi];
+        var title = grp.GROUP_LABEL || grp.NAME || "";
+        var items = grp.ITEMS || [];
+        if (items.length) sections.push({title: title, items: items});
       }
     }
-    if (!items.length) {
-      container.innerHTML = '<div class="ed-stats-loading">No H2H data available.</div>';
-      return;
-    }
-    var h = '<div class="ed-stats-title">Recent Meetings</div>';
-    h += '<div style="font-size:11px">';
-    for (var mi = 0; mi < Math.min(items.length, 15); mi++) {
-      var m = items[mi];
-      var home = m.HOME_PARTICIPANT || m.HOME_PARTICIPANT_NAME_ONE || "";
-      var away = m.AWAY_PARTICIPANT || m.AWAY_PARTICIPANT_NAME_ONE || "";
-      var score = m.CURRENT_RESULT || (m.HOME_SCORE_FULL + ":" + m.AWAY_SCORE_FULL) || "";
-      var result = m.H_RESULT || "";
-      var league = m.EVENT_NAME || "";
-      var date = "";
-      if (m.START_TIME) {
-        try { date = new Date(m.START_TIME * 1000).toLocaleDateString("en-US", {month:"short", day:"numeric", year:"numeric"}); } catch(e) {}
-      }
-      var resultCls = result === "WIN" ? "color:#4caf50" : result === "LOSS" ? "color:#f44336" : "color:var(--text-muted)";
-      h += '<div style="display:flex;align-items:center;padding:6px 0;border-bottom:1px solid var(--border);gap:6px">';
-      h += '<div style="flex:0 0 70px;font-size:10px;color:var(--text-muted)">' + escH(date) + '</div>';
-      h += '<div style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">';
-      h += escH(home) + ' <span style="font-weight:700;' + resultCls + '">' + escH(score) + '</span> ' + escH(away);
-      h += '</div>';
-      h += '<div style="font-size:9px;color:var(--text-muted)">' + escH(league) + '</div>';
-      h += '</div>';
-    }
-    h += '</div>';
-    container.innerHTML = h;
+    if (!sections.length) { container.innerHTML = '<div class="ed-stats-loading">No H2H data available.</div>'; return; }
+    container._h2hSections = sections;
+    container._h2hHome = homeName;
+    container._h2hAway = awayName;
+    _renderH2HSections(container, sections, homeName, awayName);
   } catch (e) {
     container.innerHTML = '<div class="ed-stats-loading">Failed to load H2H.</div>';
   }
 }
+
+function _renderH2HRow(m, homeName, awayName) {
+  var home = m.HOME_PARTICIPANT || m.HOME_PARTICIPANT_NAME_ONE || "";
+  var away = m.AWAY_PARTICIPANT || m.AWAY_PARTICIPANT_NAME_ONE || "";
+  var hs = m.HOME_SCORE_FULL != null ? m.HOME_SCORE_FULL : "";
+  var as2 = m.AWAY_SCORE_FULL != null ? m.AWAY_SCORE_FULL : "";
+  var result = m.H_RESULT || "";
+  var league = m.EVENT_NAME || "";
+  var leagueShort = league.length > 20 ? league.substring(0, 18) + "…" : league;
+  var dateStr = "";
+  if (m.START_TIME) {
+    try {
+      var dt = new Date(m.START_TIME * 1000);
+      dateStr = ("0" + dt.getDate()).slice(-2) + "." + ("0" + (dt.getMonth()+1)).slice(-2) + "." + String(dt.getFullYear()).slice(-2);
+    } catch(e) {}
+  }
+  var homeHL = homeName && home.toLowerCase().indexOf(homeName.toLowerCase()) >= 0;
+  var awayHL = awayName && away.toLowerCase().indexOf(awayName.toLowerCase()) >= 0;
+  // Determine winner
+  var homeWon = parseInt(hs) > parseInt(as2);
+  var awayWon = parseInt(as2) > parseInt(hs);
+  // W/D/L badge
+  var badgeHTML = "";
+  if (result === "WIN") badgeHTML = '<span class="h2h-badge h2h-win">W</span>';
+  else if (result === "LOSS") badgeHTML = '<span class="h2h-badge h2h-loss">L</span>';
+  else if (result === "DRAW") badgeHTML = '<span class="h2h-badge h2h-draw">D</span>';
+  var h = '<div class="h2h-row">';
+  h += '<span class="h2h-date">' + escH(dateStr) + '</span>';
+  h += '<span class="h2h-league" title="' + escH(league) + '">' + escH(leagueShort) + '</span>';
+  h += '<span class="h2h-team h2h-home' + (homeHL ? ' h2h-hl' : '') + '">';
+  h += '<span class="h2h-name' + (homeWon ? ' h2h-winner' : '') + '">' + escH(home) + '</span></span>';
+  h += '<span class="h2h-score">' + escH(String(hs)) + ' - ' + escH(String(as2)) + '</span>';
+  h += '<span class="h2h-team h2h-away' + (awayHL ? ' h2h-hl' : '') + '">';
+  h += '<span class="h2h-name' + (awayWon ? ' h2h-winner' : '') + '">' + escH(away) + '</span></span>';
+  h += badgeHTML;
+  h += '</div>';
+  return h;
+}
+
+function _renderH2HSections(container, sections, homeName, awayName) {
+  var h = '';
+  for (var si = 0; si < sections.length; si++) {
+    var sec = sections[si];
+    var title = sec.title;
+    if (!title) {
+      if (si === 0) title = "Last matches: " + homeName;
+      else if (si === 1) title = "Last matches: " + awayName;
+      else title = "Head-to-head matches";
+    }
+    h += '<div class="h2h-section">';
+    h += '<div class="h2h-section-title">' + escH(title) + '</div>';
+    h += '<div class="h2h-rows">';
+    var max = Math.min(sec.items.length, 5);
+    for (var mi = 0; mi < max; mi++) {
+      h += _renderH2HRow(sec.items[mi], homeName, awayName);
+    }
+    h += '</div>';
+    if (sec.items.length > 5) {
+      h += '<button class="h2h-show-more" onclick="window._h2hShowMore(this,' + si + ')">Show more matches</button>';
+    }
+    h += '</div>';
+  }
+  container.innerHTML = h;
+}
+
+window._h2hShowMore = function(btn, sectionIdx) {
+  var container = btn.closest(".ed-sb-lazy") || btn.closest(".ed-sb-panel");
+  if (!container || !container._h2hSections) return;
+  var sec = container._h2hSections[sectionIdx];
+  if (!sec) return;
+  var rowsDiv = btn.previousElementSibling;
+  if (!rowsDiv) return;
+  var homeName = container._h2hHome || "";
+  var awayName = container._h2hAway || "";
+  var h = '';
+  for (var mi = 0; mi < sec.items.length; mi++) {
+    h += _renderH2HRow(sec.items[mi], homeName, awayName);
+  }
+  rowsDiv.innerHTML = h;
+  btn.remove();
+};
 
 async function _loadStandings(container, ticker) {
   container.innerHTML = '<div class="ed-stats-loading">Loading standings…</div>';

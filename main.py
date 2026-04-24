@@ -4188,14 +4188,22 @@ async def get_event_h2h(ticker: str):
     if not found:
         return {"error": "event not found"}
     try:
-        from flashlive_feed import find_flashlive_event_id, fetch_event_h2h
-        fl_id = find_flashlive_event_id(found.get("title", ""), found.get("_sport", ""))
-        if not fl_id:
+        from flashlive_feed import match_game as flash_match, fetch_event_h2h
+        g = flash_match(found.get("title", ""), found.get("_sport", ""))
+        if not g:
             return {"error": "no FlashLive match found"}
+        fl_id = g.get("event_id")
+        if not fl_id:
+            return {"error": "no FlashLive event ID"}
         data = await fetch_event_h2h(fl_id)
         if not data:
             return {"error": "no H2H data available"}
-        return {"data": data, "source": "flashlive"}
+        return {
+            "data": data,
+            "home_name": g.get("home_name", ""),
+            "away_name": g.get("away_name", ""),
+            "source": "flashlive",
+        }
     except Exception as e:
         return {"error": str(e)[:200]}
 
