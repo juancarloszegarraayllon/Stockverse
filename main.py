@@ -2552,24 +2552,23 @@ def get_event_detail(ticker: str):
             if fl_tennis and fl_tennis.get("row1_name"):
                 rc["_live_state"]["tennis"] = fl_tennis
             elif g.get("tennis_home_name"):
-                flip = _needs_flip(title, g)
-                home_key, away_key = ("away", "home") if flip else ("home", "away")
+                # ESPN format — home/away already labeled
                 rc["_live_state"]["tennis"] = {
-                    "row1_name":   g.get(f"tennis_{home_key}_name", ""),
-                    "row2_name":   g.get(f"tennis_{away_key}_name", ""),
-                    "row1_sets":   g.get(f"tennis_{home_key}_sets", ""),
-                    "row2_sets":   g.get(f"tennis_{away_key}_sets", ""),
-                    "row1_games":  g.get(f"tennis_{home_key}_games", ""),
-                    "row2_games":  g.get(f"tennis_{away_key}_games", ""),
-                    "row1_point":  g.get(f"tennis_{home_key}_point", ""),
-                    "row2_point":  g.get(f"tennis_{away_key}_point", ""),
+                    "row1_name":   g.get("tennis_home_name", ""),
+                    "row2_name":   g.get("tennis_away_name", ""),
+                    "row1_sets":   g.get("tennis_home_sets", ""),
+                    "row2_sets":   g.get("tennis_away_sets", ""),
+                    "row1_games":  g.get("tennis_home_games", ""),
+                    "row2_games":  g.get("tennis_away_games", ""),
+                    "row1_point":  g.get("tennis_home_point", ""),
+                    "row2_point":  g.get("tennis_away_point", ""),
                     "set_history": [
-                        {"set": s.get("set"), "row1": s.get(home_key), "row2": s.get(away_key)}
+                        {"set": s.get("set"), "row1": s.get("home"), "row2": s.get("away")}
                         for s in (g.get("tennis_set_history") or [])
                     ],
                     "server": (
-                        "row1" if g.get("tennis_server") == home_key
-                        else ("row2" if g.get("tennis_server") == away_key else "")
+                        "row1" if g.get("tennis_server") == "home"
+                        else ("row2" if g.get("tennis_server") == "away" else "")
                     ),
                 }
 
