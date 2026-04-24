@@ -4214,19 +4214,54 @@ async def get_event_standings(ticker: str):
     if not found:
         return {"error": "event not found"}
     try:
-        from flashlive_feed import match_game as flash_match, fetch_standings
+        from flashlive_feed import match_game as flash_match, fetch_standings, fetch_top_scorers
         g = flash_match(found.get("title", ""), found.get("_sport", ""))
         if not g:
             return {"error": "no FlashLive match found"}
-        # FlashLive events store tournament info
-        raw = g.get("_raw_preview", "")
-        # Try to extract tournament_id from the game data
-        tournament_id = g.get("_tournament_id", "")
+        tournament_id = g.get("tournament_id", "")
+        season_id = g.get("tournament_season_id", "")
         if not tournament_id:
-            return {"error": "no tournament ID available", "hint": "FlashLive events/list may not include tournament_id in individual events"}
-        data = await fetch_standings(tournament_id)
+            return {"error": "no tournament ID available"}
+        data = await fetch_standings(tournament_id, season_id)
         if not data:
             return {"error": "no standings data available"}
+        return {
+            "data": data,
+            "tournament_id": tournament_id,
+            "season_id": season_id,
+            "home_name": g.get("home_name", ""),
+            "away_name": g.get("away_name", ""),
+            "source": "flashlive",
+        }
+    except Exception as e:
+        return {"error": str(e)[:200]}
+
+
+@app.get("/api/event/{ticker}/topscorers")
+async def get_event_topscorers(ticker: str):
+    """Fetch top scorers from FlashLive for this event's tournament."""
+    ticker = (ticker or "").strip().upper()
+    get_data()
+    records = _cache.get("data_all") or _cache.get("data") or []
+    found = None
+    for r in records:
+        if r.get("event_ticker") == ticker:
+            found = r
+            break
+    if not found:
+        return {"error": "event not found"}
+    try:
+        from flashlive_feed import match_game as flash_match, fetch_top_scorers
+        g = flash_match(found.get("title", ""), found.get("_sport", ""))
+        if not g:
+            return {"error": "no FlashLive match found"}
+        tournament_id = g.get("tournament_id", "")
+        season_id = g.get("tournament_season_id", "")
+        if not tournament_id:
+            return {"error": "no tournament ID available"}
+        data = await fetch_top_scorers(tournament_id, season_id)
+        if not data:
+            return {"error": "no top scorers data available"}
         return {"data": data, "source": "flashlive"}
     except Exception as e:
         return {"error": str(e)[:200]}
@@ -4247,6 +4282,8 @@ def flashlive_status():
                 "state": g.get("state"),
                 "clock": g.get("display_clock"),
                 "league": g.get("league"),
+                "tournament_id": g.get("tournament_id"),
+                "season_id": g.get("tournament_season_id"),
             })
         # Include raw events for field discovery — one soccer, one tennis
         raw_events = {}

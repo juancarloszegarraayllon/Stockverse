@@ -162,6 +162,9 @@ async def _fetch_live_events():
                                             ev["_sport"] = sport_name
                                             ev["_league"] = item.get("SHORT_NAME") or item.get("NAME_PART_2") or ""
                                             ev["_country"] = item.get("COUNTRY_NAME") or ""
+                                            ev["_tournament_id"] = str(item.get("TOURNAMENT_ID") or ev.get("TOURNAMENT_ID") or "")
+                                            ev["_tournament_season_id"] = str(item.get("TOURNAMENT_SEASON_ID") or ev.get("TOURNAMENT_SEASON_ID") or "")
+                                            ev["_tournament_stage_id"] = str(item.get("TOURNAMENT_STAGE_ID") or ev.get("TOURNAMENT_STAGE_ID") or "")
                                             all_events.append(ev)
                     # Save raw sample for debugging
                     if len(raw_samples) < 2 and top_data:
@@ -287,11 +290,18 @@ def _parse_event(ev):
             if len(w) >= 4:
                 away_phrases.append(w)
 
+        tournament_id = str(ev.get("_tournament_id") or ev.get("TOURNAMENT_ID") or "")
+        tournament_season_id = str(ev.get("_tournament_season_id") or ev.get("TOURNAMENT_SEASON_ID") or "")
+        tournament_stage_id = str(ev.get("_tournament_stage_id") or ev.get("TOURNAMENT_STAGE_ID") or "")
+
         result = {
             "event_id": event_id,
             "sport": sport,
             "league": league,
             "country": country,
+            "tournament_id": tournament_id,
+            "tournament_season_id": tournament_season_id,
+            "tournament_stage_id": tournament_stage_id,
             "home_name": home_name,
             "away_name": away_name,
             "home_score": home_score,
@@ -403,15 +413,13 @@ async def fetch_top_scorers(tournament_id: str, season_id: str = ""):
             except Exception:
                 continue
     return None
-    """Fetch match statistics from FlashLive's event detail/stats
-    endpoint. Returns a dict with stats or None if unavailable."""
+
+
+async def fetch_event_stats(event_id: str):
+    """Fetch match statistics from FlashLive."""
     if not API_KEY or not event_id or httpx is None:
         return None
-    headers = {
-        "x-rapidapi-key": API_KEY,
-        "x-rapidapi-host": API_HOST,
-    }
-    # Try statistics endpoint
+    headers = {"x-rapidapi-key": API_KEY, "x-rapidapi-host": API_HOST}
     endpoints = [
         f"/v1/events/statistics?event_id={event_id}&locale=en_INT",
         f"/v1/events/stats?event_id={event_id}&locale=en_INT",
@@ -421,8 +429,7 @@ async def fetch_top_scorers(tournament_id: str, season_id: str = ""):
             try:
                 r = await client.get(f"{BASE_URL}{url_path}", headers=headers)
                 if r.status_code == 200:
-                    data = r.json()
-                    return data
+                    return r.json()
             except Exception:
                 continue
     return None
@@ -434,6 +441,11 @@ def find_flashlive_event_id(title: str, sport: str = ""):
     if g:
         return g.get("event_id")
     return None
+
+
+def find_flashlive_game(title: str, sport: str = ""):
+    """Find the full FlashLive game dict matching the title."""
+    return match_game(title, sport)
 
 
 async def run_flashlive_feed():

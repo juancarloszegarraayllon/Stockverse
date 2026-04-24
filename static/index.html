@@ -4067,11 +4067,128 @@ async function _loadStandings(container, ticker) {
       return;
     }
     var data = d.data || {};
-    var h = '<div class="ed-stats-title">Standings</div>';
-    h += '<pre style="font-size:10px;color:var(--text-dim);overflow-x:auto;white-space:pre-wrap">' + escH(JSON.stringify(data, null, 2)).substring(0, 2000) + '</pre>';
-    container.innerHTML = h;
+    var homeName = (d.home_name || "").toLowerCase();
+    var awayName = (d.away_name || "").toLowerCase();
+    var groups = data.DATA || data.data || [];
+    if (!Array.isArray(groups)) groups = [groups];
+    var rows = [];
+    for (var gi = 0; gi < groups.length; gi++) {
+      var grp = groups[gi];
+      var grpRows = grp.ROWS || grp.rows || [];
+      if (!Array.isArray(grpRows)) continue;
+      for (var ri = 0; ri < grpRows.length; ri++) rows.push(grpRows[ri]);
+    }
+    if (!rows.length) {
+      container.innerHTML = '<div class="ed-stats-loading">No standings data available.</div>';
+      return;
+    }
+    container._standingsRows = rows;
+    container._homeName = homeName;
+    container._awayName = awayName;
+    _renderStandingsTable(container, rows, homeName, awayName);
   } catch (e) {
     container.innerHTML = '<div class="ed-stats-loading">Failed to load standings.</div>';
+  }
+}
+
+function _renderStandingsTable(container, rows, homeName, awayName) {
+  var h = '<div style="overflow-x:auto">';
+  h += '<table style="width:100%;font-size:11px;border-collapse:collapse">';
+  h += '<thead><tr style="color:var(--text-muted);border-bottom:1px solid var(--border)">';
+  h += '<th style="text-align:left;padding:4px 2px;width:20px">#</th>';
+  h += '<th style="text-align:left;padding:4px 2px">Team</th>';
+  h += '<th style="text-align:center;padding:4px 2px">MP</th>';
+  h += '<th style="text-align:center;padding:4px 2px">W</th>';
+  h += '<th style="text-align:center;padding:4px 2px">D</th>';
+  h += '<th style="text-align:center;padding:4px 2px">L</th>';
+  h += '<th style="text-align:center;padding:4px 2px">GF</th>';
+  h += '<th style="text-align:center;padding:4px 2px">GA</th>';
+  h += '<th style="text-align:center;padding:4px 2px">GD</th>';
+  h += '<th style="text-align:center;padding:4px 2px;font-weight:700">PTS</th>';
+  h += '</tr></thead><tbody>';
+  for (var i = 0; i < rows.length; i++) {
+    var row = rows[i];
+    var teamName = row.TEAM_NAME || row.team_name || row.name || "";
+    var rank = row.RANKING || row.ranking || row.rank || (i + 1);
+    var mp = row.MATCHES || row.matches || row.played || row.MP || "";
+    var w = row.WINS || row.wins || row.W || "";
+    var d2 = row.DRAWS || row.draws || row.D || "";
+    var l = row.LOSSES || row.losses || row.L || "";
+    var gf = row.GOALS_FOR || row.goals_for || row.GF || "";
+    var ga = row.GOALS_AGAINST || row.goals_against || row.GA || "";
+    var pts = row.POINTS || row.points || row.PTS || "";
+    var gd = "";
+    if (gf !== "" && ga !== "") gd = parseInt(gf) - parseInt(ga);
+    var isHighlight = (homeName && teamName.toLowerCase().indexOf(homeName) >= 0) ||
+                      (awayName && teamName.toLowerCase().indexOf(awayName) >= 0);
+    var rowStyle = 'border-bottom:1px solid var(--border);' + (isHighlight ? 'background:rgba(74,144,226,0.15);font-weight:600' : '');
+    h += '<tr style="' + rowStyle + '">';
+    h += '<td style="text-align:left;padding:4px 2px;color:var(--text-muted)">' + escH(String(rank)) + '</td>';
+    h += '<td style="text-align:left;padding:4px 2px">' + escH(teamName) + '</td>';
+    h += '<td style="text-align:center;padding:4px 2px">' + escH(String(mp)) + '</td>';
+    h += '<td style="text-align:center;padding:4px 2px">' + escH(String(w)) + '</td>';
+    h += '<td style="text-align:center;padding:4px 2px">' + escH(String(d2)) + '</td>';
+    h += '<td style="text-align:center;padding:4px 2px">' + escH(String(l)) + '</td>';
+    h += '<td style="text-align:center;padding:4px 2px">' + escH(String(gf)) + '</td>';
+    h += '<td style="text-align:center;padding:4px 2px">' + escH(String(ga)) + '</td>';
+    h += '<td style="text-align:center;padding:4px 2px">' + (gd > 0 ? '+' + gd : String(gd)) + '</td>';
+    h += '<td style="text-align:center;padding:4px 2px;font-weight:700">' + escH(String(pts)) + '</td>';
+    h += '</tr>';
+  }
+  h += '</tbody></table></div>';
+  container.innerHTML = h;
+}
+
+async function _loadTopScorers(container, ticker) {
+  container.innerHTML = '<div class="ed-stats-loading">Loading top scorers…</div>';
+  try {
+    var r = await fetch("/api/event/" + encodeURIComponent(ticker) + "/topscorers");
+    var d = await r.json();
+    if (d.error) {
+      container.innerHTML = '<div class="ed-stats-loading">' + escH(d.error) + '</div>';
+      return;
+    }
+    var data = d.data || {};
+    var groups = data.DATA || data.data || [];
+    if (!Array.isArray(groups)) groups = [groups];
+    var players = [];
+    for (var gi = 0; gi < groups.length; gi++) {
+      var grpRows = groups[gi].ROWS || groups[gi].rows || [];
+      if (!Array.isArray(grpRows)) continue;
+      for (var ri = 0; ri < grpRows.length; ri++) players.push(grpRows[ri]);
+    }
+    if (!players.length) {
+      container.innerHTML = '<div class="ed-stats-loading">No top scorers data available.</div>';
+      return;
+    }
+    var h = '<div style="overflow-x:auto">';
+    h += '<table style="width:100%;font-size:11px;border-collapse:collapse">';
+    h += '<thead><tr style="color:var(--text-muted);border-bottom:1px solid var(--border)">';
+    h += '<th style="text-align:left;padding:4px 2px;width:20px">#</th>';
+    h += '<th style="text-align:left;padding:4px 2px">Player</th>';
+    h += '<th style="text-align:left;padding:4px 2px">Team</th>';
+    h += '<th style="text-align:center;padding:4px 2px">G</th>';
+    h += '<th style="text-align:center;padding:4px 2px">A</th>';
+    h += '</tr></thead><tbody>';
+    for (var i = 0; i < players.length; i++) {
+      var p = players[i];
+      var name = p.PLAYER_NAME || p.player_name || p.name || "";
+      var team = p.TEAM_NAME || p.team_name || "";
+      var goals = p.GOALS || p.goals || p.SCORE || p.score || "";
+      var assists = p.ASSISTS || p.assists || "";
+      var rank = p.RANKING || p.ranking || (i + 1);
+      h += '<tr style="border-bottom:1px solid var(--border)">';
+      h += '<td style="text-align:left;padding:4px 2px;color:var(--text-muted)">' + escH(String(rank)) + '</td>';
+      h += '<td style="text-align:left;padding:4px 2px">' + escH(name) + '</td>';
+      h += '<td style="text-align:left;padding:4px 2px;color:var(--text-muted)">' + escH(team) + '</td>';
+      h += '<td style="text-align:center;padding:4px 2px;font-weight:700">' + escH(String(goals)) + '</td>';
+      h += '<td style="text-align:center;padding:4px 2px">' + escH(String(assists)) + '</td>';
+      h += '</tr>';
+    }
+    h += '</tbody></table></div>';
+    container.innerHTML = h;
+  } catch (e) {
+    container.innerHTML = '<div class="ed-stats-loading">Failed to load top scorers.</div>';
   }
 }
 
@@ -4083,13 +4200,24 @@ window.switchSBTab = function(btn) {
   var panel = btn.closest(".ed-sb-main") || btn.closest(".ed-stats-panel");
   if (!panel) return;
   var target = btn.getAttribute("data-panel");
-  var tabs = panel.querySelectorAll(".ed-sb-tab");
+  var tabs = panel.querySelectorAll(":scope > .ed-sb-tabs > .ed-sb-tab, :scope > .ed-sb-sub-tabs > .ed-sb-tab");
   for (var i = 0; i < tabs.length; i++) {
     tabs[i].classList.toggle("active", tabs[i].getAttribute("data-panel") === target);
   }
-  var panels = panel.querySelectorAll(".ed-sb-panel");
+  var panels = panel.querySelectorAll(":scope > .ed-sb-panel");
   for (var j = 0; j < panels.length; j++) {
     panels[j].classList.toggle("active", panels[j].getAttribute("data-panel") === target);
+  }
+  // Lazy-load standings sub-tab content
+  var activePanel = panel.querySelector('.ed-sb-panel[data-panel="' + target + '"]');
+  if (activePanel) {
+    var lazy = activePanel.querySelector(".ed-sb-lazy");
+    if (lazy && !lazy.dataset.loaded) {
+      lazy.dataset.loaded = "1";
+      var ticker = panel.closest(".ed-stats-panel").dataset.ticker;
+      var lazyKey = lazy.getAttribute("data-lazy");
+      if (lazyKey === "topscorers") _loadTopScorers(lazy, ticker);
+    }
   }
 };
 
