@@ -317,6 +317,9 @@ html,body{overscroll-behavior:none}
 .ed-sb-main.active{display:block}
 .ed-sb-main-tabs{margin-bottom:4px}
 .ed-sb-sub-tabs{margin-bottom:12px;border-bottom-color:var(--border)}
+.ed-sb-filter-tabs{margin-bottom:6px;gap:2px}
+.ed-sb-filter-tabs .ed-sb-tab{font-size:9px;padding:5px 6px}
+.ed-sb-select{flex:1;background:var(--bg3);border:1px solid var(--border);color:var(--text);font-size:10px;font-family:inherit;padding:5px 6px;border-radius:4px;cursor:pointer}
 .ed-tl-item{display:flex;align-items:flex-start;gap:8px;padding:6px 0;border-bottom:1px solid var(--border);font-size:11px}
 .ed-tl-item:last-child{border-bottom:0}
 .ed-tl-time{min-width:28px;color:var(--text-muted);font-weight:700;font-variant-numeric:tabular-nums;text-align:right;flex-shrink:0}
@@ -3846,28 +3849,96 @@ async function hydrateGameStats(evTicker) {
     h += '</div>'; // close MATCH main panel
 
     // ════════════════════════════════════════════════════
-    // H2H main panel (lazy-loaded on click)
+    // H2H main panel
     // ════════════════════════════════════════════════════
     h += '<div class="ed-sb-main" data-main="h2h">';
-    h += '<div class="ed-sb-lazy" data-lazy="h2h">';
-    h += '<div class="ed-stats-loading">Click to load head-to-head data…</div>';
-    h += '</div></div>';
+    h += '<div class="ed-sb-tabs ed-sb-sub-tabs">';
+    h += '<button class="ed-sb-tab active" data-panel="h2h-overall" onclick="window.switchSBTab(this)">Overall</button>';
+    h += '<button class="ed-sb-tab" data-panel="h2h-home" onclick="window.switchSBTab(this)">' + escH(home) + ' - Home</button>';
+    h += '<button class="ed-sb-tab" data-panel="h2h-away" onclick="window.switchSBTab(this)">' + escH(away) + ' - Away</button>';
+    h += '</div>';
+    h += '<div class="ed-sb-panel active" data-panel="h2h-overall"><div class="ed-sb-lazy" data-lazy="h2h">Loading H2H…</div></div>';
+    h += '<div class="ed-sb-panel" data-panel="h2h-home"><div class="ed-stats-loading">Loading…</div></div>';
+    h += '<div class="ed-sb-panel" data-panel="h2h-away"><div class="ed-stats-loading">Loading…</div></div>';
+    h += '</div>';
 
     // ════════════════════════════════════════════════════
-    // STANDINGS main panel (lazy-loaded on click)
+    // STANDINGS main panel
     // ════════════════════════════════════════════════════
     h += '<div class="ed-sb-main" data-main="standings">';
-    h += '<div class="ed-sb-lazy" data-lazy="standings">';
-    h += '<div class="ed-stats-loading">Click to load standings…</div>';
-    h += '</div></div>';
+    // Level 2 sub-tabs
+    h += '<div class="ed-sb-tabs ed-sb-sub-tabs">';
+    h += '<button class="ed-sb-tab active" data-panel="st-standings" onclick="window.switchSBTab(this)">Standings</button>';
+    h += '<button class="ed-sb-tab" data-panel="st-form" onclick="window.switchSBTab(this)">Form</button>';
+    h += '<button class="ed-sb-tab" data-panel="st-overunder" onclick="window.switchSBTab(this)">Over/Under</button>';
+    h += '<button class="ed-sb-tab" data-panel="st-htft" onclick="window.switchSBTab(this)">HT/FT</button>';
+    h += '<button class="ed-sb-tab" data-panel="st-topscorers" onclick="window.switchSBTab(this)">Top Scorers</button>';
+    h += '</div>';
+    // Standings panel with Overall/Home/Away
+    h += '<div class="ed-sb-panel active" data-panel="st-standings">';
+    h += '<div class="ed-sb-tabs ed-sb-filter-tabs">';
+    h += '<button class="ed-sb-tab active" data-filter="overall" onclick="window.switchFilterTab(this)">Overall</button>';
+    h += '<button class="ed-sb-tab" data-filter="home" onclick="window.switchFilterTab(this)">Home</button>';
+    h += '<button class="ed-sb-tab" data-filter="away" onclick="window.switchFilterTab(this)">Away</button>';
+    h += '</div>';
+    h += '<div class="ed-sb-lazy" data-lazy="standings">Loading standings…</div>';
+    h += '</div>';
+    // Form panel with Overall/Home/Away + match count
+    h += '<div class="ed-sb-panel" data-panel="st-form">';
+    h += '<div class="ed-sb-tabs ed-sb-filter-tabs">';
+    h += '<button class="ed-sb-tab active" data-filter="overall" onclick="window.switchFilterTab(this)">Overall</button>';
+    h += '<button class="ed-sb-tab" data-filter="home" onclick="window.switchFilterTab(this)">Home</button>';
+    h += '<button class="ed-sb-tab" data-filter="away" onclick="window.switchFilterTab(this)">Away</button>';
+    h += '</div>';
+    h += '<div class="ed-sb-tabs ed-sb-filter-tabs" style="margin-top:4px">';
+    var formCounts = [5, 10, 15, 20, 25, 30];
+    for (var fc = 0; fc < formCounts.length; fc++) {
+      h += '<button class="ed-sb-tab' + (fc === 0 ? ' active' : '') + '" data-count="' + formCounts[fc] + '" onclick="window.switchCountTab(this)">' + formCounts[fc] + '</button>';
+    }
+    h += '</div>';
+    h += '<div class="ed-sb-lazy" data-lazy="form">Loading form…</div>';
+    h += '</div>';
+    // Over/Under panel
+    h += '<div class="ed-sb-panel" data-panel="st-overunder">';
+    h += '<div class="ed-sb-tabs ed-sb-filter-tabs">';
+    h += '<button class="ed-sb-tab active" data-filter="overall" onclick="window.switchFilterTab(this)">Overall</button>';
+    h += '<button class="ed-sb-tab" data-filter="home" onclick="window.switchFilterTab(this)">Home</button>';
+    h += '<button class="ed-sb-tab" data-filter="away" onclick="window.switchFilterTab(this)">Away</button>';
+    h += '</div>';
+    h += '<div class="ed-sb-tabs ed-sb-filter-tabs" style="margin-top:4px">';
+    var ouLines = [0.5, 1.5, 2.5, 3.5, 4.5, 5.5, 6.5];
+    for (var ou = 0; ou < ouLines.length; ou++) {
+      h += '<button class="ed-sb-tab' + (ou === 2 ? ' active' : '') + '" data-line="' + ouLines[ou] + '" onclick="window.switchLineTab(this)">' + ouLines[ou] + '</button>';
+    }
+    h += '</div>';
+    h += '<div class="ed-sb-lazy" data-lazy="overunder">Loading over/under…</div>';
+    h += '</div>';
+    // HT/FT panel
+    h += '<div class="ed-sb-panel" data-panel="st-htft">';
+    h += '<div class="ed-sb-tabs ed-sb-filter-tabs">';
+    h += '<button class="ed-sb-tab active" data-filter="overall" onclick="window.switchFilterTab(this)">Overall</button>';
+    h += '<button class="ed-sb-tab" data-filter="home" onclick="window.switchFilterTab(this)">Home</button>';
+    h += '<button class="ed-sb-tab" data-filter="away" onclick="window.switchFilterTab(this)">Away</button>';
+    h += '</div>';
+    h += '<div class="ed-sb-lazy" data-lazy="htft">Loading HT/FT…</div>';
+    h += '</div>';
+    // Top Scorers panel with dropdowns
+    h += '<div class="ed-sb-panel" data-panel="st-topscorers">';
+    h += '<div style="display:flex;gap:6px;margin-bottom:10px">';
+    h += '<select class="ed-sb-select" data-filter="team"><option>Team</option></select>';
+    h += '<select class="ed-sb-select" data-filter="nationality"><option>Nationality</option></select>';
+    h += '<select class="ed-sb-select" data-filter="position"><option>Position</option></select>';
+    h += '</div>';
+    h += '<div class="ed-sb-lazy" data-lazy="topscorers">Loading top scorers…</div>';
+    h += '</div>';
+    h += '</div>'; // close STANDINGS
 
     // ════════════════════════════════════════════════════
-    // NEWS main panel (lazy-loaded on click)
+    // NEWS main panel
     // ════════════════════════════════════════════════════
     h += '<div class="ed-sb-main" data-main="news">';
-    h += '<div class="ed-sb-lazy" data-lazy="news">';
-    h += '<div class="ed-stats-loading">Click to load news…</div>';
-    h += '</div></div>';
+    h += '<div class="ed-sb-lazy" data-lazy="news">Loading news…</div>';
+    h += '</div>';
 
     panel.innerHTML = h;
   } catch (ex) {
@@ -3898,6 +3969,33 @@ window.switchMainTab = function(btn) {
     else if (target === "standings") _loadStandings(lazy, ticker);
     else if (target === "news") _loadNews(lazy, ticker);
   }
+};
+
+// Filter tab switcher (Overall/Home/Away)
+window.switchFilterTab = function(btn) {
+  var row = btn.closest(".ed-sb-filter-tabs");
+  if (!row) return;
+  var tabs = row.querySelectorAll(".ed-sb-tab");
+  for (var i = 0; i < tabs.length; i++) tabs[i].classList.remove("active");
+  btn.classList.add("active");
+};
+
+// Count tab switcher (5/10/15/20/25/30)
+window.switchCountTab = function(btn) {
+  var row = btn.closest(".ed-sb-filter-tabs");
+  if (!row) return;
+  var tabs = row.querySelectorAll(".ed-sb-tab");
+  for (var i = 0; i < tabs.length; i++) tabs[i].classList.remove("active");
+  btn.classList.add("active");
+};
+
+// Line tab switcher (0.5/1.5/2.5/...)
+window.switchLineTab = function(btn) {
+  var row = btn.closest(".ed-sb-filter-tabs");
+  if (!row) return;
+  var tabs = row.querySelectorAll(".ed-sb-tab");
+  for (var i = 0; i < tabs.length; i++) tabs[i].classList.remove("active");
+  btn.classList.add("active");
 };
 
 // Placeholder loaders — will be wired to FlashLive endpoints
