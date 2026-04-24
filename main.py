@@ -5399,26 +5399,25 @@ def _parse_flashlive_stats(fl_data, title, sport):
                         aval = item.get("AWAY") or item.get("away") or item.get("VALUE_AWAY") or "0"
                         if name:
                             stats_list.append({
-                                "label": str(name),
+                                "name": str(name),
                                 "home": str(hval),
                                 "away": str(aval),
                             })
-        if not stats_list:
-            # Return raw data for debugging
-            return {
-                "home": home,
-                "away": away,
-                "sport": sport,
-                "stats": [],
-                "source": "flashlive",
-                "_debug_raw_type": str(type(data)),
-                "_debug_raw_preview": str(data)[:1500],
-            }
+        # Deduplicate — FlashLive returns match + per-half stats.
+        # Keep only the first occurrence of each stat name.
+        seen = set()
+        deduped = []
+        for s in stats_list:
+            if s["name"] not in seen:
+                seen.add(s["name"])
+                deduped.append(s)
+        if not deduped:
+            return None
         return {
             "home": home,
             "away": away,
             "sport": sport,
-            "stats": stats_list,
+            "stats": deduped,
             "source": "flashlive",
         }
     except Exception:
