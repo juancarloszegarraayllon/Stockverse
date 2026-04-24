@@ -265,7 +265,8 @@ async def _score_flush_loop():
             try:
                 from flashlive_feed import GAMES as FL_GAMES
                 flashlive_snap = list(FL_GAMES.values())
-                await sync_scores_to_db("flashlive", flashlive_snap)
+                if flashlive_snap:
+                    await sync_scores_to_db("flashlive", flashlive_snap)
             except Exception as e:
                 _log.error("flashlive score flush: %s", e)
 
@@ -278,6 +279,12 @@ async def _score_flush_loop():
                     from db import upsert_entities, refresh_alias_sport_cache
                     all_teams = []
                     if flashlive_snap:
+                        # Add home_display/away_display aliases for entity seeder
+                        for g in flashlive_snap:
+                            if not g.get("home_display"):
+                                g["home_display"] = g.get("home_name", "")
+                            if not g.get("away_display"):
+                                g["away_display"] = g.get("away_name", "")
                         all_teams.extend(extract_teams(flashlive_snap, "flashlive"))
                     if all_teams:
                         await upsert_entities(all_teams)
