@@ -5372,6 +5372,50 @@ def get_event_history(ticker: str, hours: int = 24, period: int = 60, debug: boo
         return {"series": [], "error": str(e)}
 
 
+def _parse_flashlive_stats(fl_data, title, sport):
+    """Parse FlashLive statistics response into our standard stats
+    format for the sidebar panel."""
+    try:
+        import re
+        parts = re.split(r'\s+(?:vs\.?|v|at)\s+', title, maxsplit=1, flags=re.IGNORECASE)
+        home = parts[0].strip() if len(parts) >= 2 else "Home"
+        away = parts[1].strip() if len(parts) >= 2 else "Away"
+        stats_list = []
+        # FlashLive returns DATA array with stat groups
+        data = fl_data if isinstance(fl_data, list) else fl_data.get("DATA", [])
+        if isinstance(data, list):
+            for group in data:
+                if not isinstance(group, dict):
+                    continue
+                # Each group has GROUPS with stat rows
+                for sg in (group.get("GROUPS") or [group]):
+                    if not isinstance(sg, dict):
+                        continue
+                    for item in (sg.get("ITEMS") or sg.get("items") or [sg]):
+                        if not isinstance(item, dict):
+                            continue
+                        name = item.get("INCIDENT_NAME") or item.get("NAME") or item.get("name") or ""
+                        hval = item.get("HOME") or item.get("home") or item.get("VALUE_HOME") or "0"
+                        aval = item.get("AWAY") or item.get("away") or item.get("VALUE_AWAY") or "0"
+                        if name:
+                            stats_list.append({
+                                "label": str(name),
+                                "home": str(hval),
+                                "away": str(aval),
+                            })
+        if not stats_list:
+            return None
+        return {
+            "home": home,
+            "away": away,
+            "sport": sport,
+            "stats": stats_list,
+            "source": "flashlive",
+        }
+    except Exception:
+        return None
+
+
 @app.get("/api/event/{ticker}/stats")
 def get_event_stats(ticker: str, debug: bool = False):
     """Fetch live game statistics (shots, possession, cards, etc.)
@@ -5476,6 +5520,23 @@ def get_event_stats(ticker: str, debug: bool = False):
                                 break
         except Exception:
             pass
+    # FlashLive fallback when SofaScore can't find the event.
+    if not sofa_id:
+        try:
+            from flashlive_feed import find_flashlive_event_id, fetch_event_stats as fl_stats
+            fl_id = find_flashlive_event_id(title, sport)
+            if fl_id:
+                import asyncio
+                loop = asyncio.new_event_loop()
+                fl_data = loop.run_until_complete(fl_stats(fl_id))
+                loop.close()
+                if fl_data:
+                    # Parse FlashLive stats into our format
+                    stats = _parse_flashlive_stats(fl_data, title, sport)
+                    if stats:
+                        return stats
+        except Exception as e:
+            logging.getLogger("stochverse").debug("FlashLive stats fallback failed: %s", e)
     if not sofa_id:
         out_err = {"error": "no SofaScore match found for this event", "sport": sport, "title": title}
         if debug:

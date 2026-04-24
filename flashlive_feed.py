@@ -339,6 +339,40 @@ def _parse_event(ev):
         return None
 
 
+async def fetch_event_stats(event_id: str):
+    """Fetch match statistics from FlashLive's event detail/stats
+    endpoint. Returns a dict with stats or None if unavailable."""
+    if not API_KEY or not event_id or httpx is None:
+        return None
+    headers = {
+        "x-rapidapi-key": API_KEY,
+        "x-rapidapi-host": API_HOST,
+    }
+    # Try statistics endpoint
+    endpoints = [
+        f"/v1/events/statistics?event_id={event_id}&locale=en_INT",
+        f"/v1/events/stats?event_id={event_id}&locale=en_INT",
+    ]
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        for url_path in endpoints:
+            try:
+                r = await client.get(f"{BASE_URL}{url_path}", headers=headers)
+                if r.status_code == 200:
+                    data = r.json()
+                    return data
+            except Exception:
+                continue
+    return None
+
+
+def find_flashlive_event_id(title: str, sport: str = ""):
+    """Find the FlashLive EVENT_ID for a game matching the title."""
+    g = match_game(title, sport)
+    if g:
+        return g.get("event_id")
+    return None
+
+
 async def run_flashlive_feed():
     """Background task: poll FlashLive for live scores."""
     if not API_KEY:
