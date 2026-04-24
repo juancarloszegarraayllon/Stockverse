@@ -5769,18 +5769,11 @@ def _parse_flashlive_stats(fl_data, title, sport):
 
 
 @app.get("/api/event/{ticker}/stats")
-def get_event_stats(ticker: str, debug: bool = False):
-    """Fetch live game statistics (shots, possession, cards, etc.)
-    from SofaScore for the matched game. Returns a symmetric
-    home/away structure suitable for rendering a stats panel.
-
-    On-demand — only called when a user opens the event detail
-    page. Doesn't poll or cache beyond the request lifecycle.
-    """
+async def get_event_stats(ticker: str, debug: bool = False):
+    """Fetch live game statistics, lineups, and incidents from FlashLive."""
     ticker = (ticker or "").strip().upper()
     if not ticker:
         return {"error": "ticker required"}
-    # Find the event in our cache to get sport + title.
     get_data()
     records = _cache.get("data_all") or _cache.get("data") or []
     found = None
@@ -5794,7 +5787,6 @@ def get_event_stats(ticker: str, debug: bool = False):
     title = found.get("title", "")
     if not sport or not title:
         return {"error": "event has no sport or title"}
-    # Try FlashLive first (primary feed).
     try:
         from flashlive_feed import (
             find_flashlive_event_id, fetch_event_stats as fl_stats,
@@ -5802,12 +5794,9 @@ def get_event_stats(ticker: str, debug: bool = False):
         )
         fl_id = find_flashlive_event_id(title, sport)
         if fl_id:
-            import asyncio
-            loop = asyncio.new_event_loop()
-            fl_data = loop.run_until_complete(fl_stats(fl_id))
-            fl_lineups_data = loop.run_until_complete(fl_lineups(fl_id))
-            fl_summary_data = loop.run_until_complete(fl_summary(fl_id))
-            loop.close()
+            fl_data = await fl_stats(fl_id)
+            fl_lineups_data = await fl_lineups(fl_id)
+            fl_summary_data = await fl_summary(fl_id)
             result = _parse_flashlive_stats(fl_data, title, sport) if fl_data else None
             if not result:
                 result = {"home": "", "away": "", "sport": sport, "stats": [], "source": "flashlive"}
@@ -5819,10 +5808,17 @@ def get_event_stats(ticker: str, debug: bool = False):
                 result["lineups"] = _parse_flashlive_lineups(fl_lineups_data)
             if fl_summary_data:
                 result["incidents"] = _parse_flashlive_incidents(fl_summary_data)
-            if result.get("stats") or result.get("lineups") or result.get("incidents"):
-                return result
+                # Also include match info (referee, venue)
+                info = fl_summary_data.get("INFO") if isinstance(fl_summary_data, dict) else None
+                if info:
+                    result["match_info"] = {
+                        "referee": info.get("REFEREE", ""),
+                        "venue": info.get("VENUE", ""),
+                        "attendance": info.get("MIV", ""),
+                    }
+            return result
     except Exception as e:
-        logging.getLogger("stochverse").debug("FlashLive stats failed: %s", e)
+        logging.getLogger("stochverse").warning("FlashLive stats failed: %s", e)
     # Fallback: SofaScore (kept but feeds disabled).
     sofa_id = None
     home_name = ""
