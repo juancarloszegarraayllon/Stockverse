@@ -313,6 +313,10 @@ html,body{overscroll-behavior:none}
 .ed-sb-tab.active{color:var(--text);border-bottom-color:var(--green)}
 .ed-sb-panel{display:none}
 .ed-sb-panel.active{display:block}
+.ed-sb-main{display:none}
+.ed-sb-main.active{display:block}
+.ed-sb-main-tabs{margin-bottom:4px}
+.ed-sb-sub-tabs{margin-bottom:12px;border-bottom-color:var(--border)}
 .ed-tl-item{display:flex;align-items:flex-start;gap:8px;padding:6px 0;border-bottom:1px solid var(--border);font-size:11px}
 .ed-tl-item:last-child{border-bottom:0}
 .ed-tl-time{min-width:28px;color:var(--text-muted);font-weight:700;font-variant-numeric:tabular-nums;text-align:right;flex-shrink:0}
@@ -3681,17 +3685,11 @@ function renderStatsSidebar(evTicker) {
 async function hydrateGameStats(evTicker) {
   var panel = document.querySelector('[data-stats-ticker="' + evTicker + '"]');
   if (!panel) return;
+  // Store evTicker for lazy-loaded tabs (H2H, Standings, News).
+  panel.dataset.ticker = evTicker;
   try {
     var r = await fetch("/api/event/" + encodeURIComponent(evTicker) + "/stats");
     var d = await r.json();
-    if (d.error && !d.stats) {
-      panel.innerHTML = '<div class="ed-stats-loading">'
-        + (d.error === "no SofaScore match found for this event"
-          ? 'Game stats not available for this event.'
-          : (d.error || 'No stats available yet.'))
-        + '</div>';
-      return;
-    }
     var home = d.home || "Home";
     var away = d.away || "Away";
     var stats = d.stats || [];
@@ -3700,19 +3698,27 @@ async function hydrateGameStats(evTicker) {
     var hasStats = stats.length > 0;
     var hasTimeline = incidents.length > 0;
     var hasLineups = (lineups.home && lineups.home.players && lineups.home.players.length > 0);
-    if (!hasStats && !hasTimeline && !hasLineups) {
-      panel.innerHTML = '<div class="ed-stats-loading">No match data available yet.</div>';
-      return;
-    }
-    // Tab strip.
-    var h = '<div class="ed-sb-tabs">';
-    if (hasStats) h += '<button class="ed-sb-tab active" data-panel="stats" onclick="window.switchSBTab(this)">Stats</button>';
-    if (hasTimeline) h += '<button class="ed-sb-tab' + (!hasStats ? ' active' : '') + '" data-panel="timeline" onclick="window.switchSBTab(this)">Timeline</button>';
-    if (hasLineups) h += '<button class="ed-sb-tab' + (!hasStats && !hasTimeline ? ' active' : '') + '" data-panel="lineups" onclick="window.switchSBTab(this)">Lineups</button>';
+
+    // ── Main tabs: MATCH | H2H | STANDINGS | NEWS ──
+    var h = '<div class="ed-sb-tabs ed-sb-main-tabs">';
+    h += '<button class="ed-sb-tab active" data-main="match" onclick="window.switchMainTab(this)">Match</button>';
+    h += '<button class="ed-sb-tab" data-main="h2h" onclick="window.switchMainTab(this)">H2H</button>';
+    h += '<button class="ed-sb-tab" data-main="standings" onclick="window.switchMainTab(this)">Standings</button>';
+    h += '<button class="ed-sb-tab" data-main="news" onclick="window.switchMainTab(this)">News</button>';
     h += '</div>';
-    // ── Stats panel ──────────────────────────────────────────
+
+    // ════════════════════════════════════════════════════
+    // MATCH main panel
+    // ════════════════════════════════════════════════════
+    h += '<div class="ed-sb-main active" data-main="match">';
+    // Sub-tabs: Summary | Lineups
+    h += '<div class="ed-sb-tabs ed-sb-sub-tabs">';
+    h += '<button class="ed-sb-tab active" data-panel="summary" onclick="window.switchSBTab(this)">Summary</button>';
+    if (hasLineups) h += '<button class="ed-sb-tab" data-panel="lineups" onclick="window.switchSBTab(this)">Lineups</button>';
+    h += '</div>';
+    // Summary panel (stats + timeline combined)
+    h += '<div class="ed-sb-panel active" data-panel="summary">';
     if (hasStats) {
-      h += '<div class="ed-sb-panel active" data-panel="stats">';
       h += '<div class="ed-stats-title">Team Stats</div>';
       h += '<div class="ed-stats-teams">';
       h += '<div class="ed-stats-team">' + escH(home) + '</div>';
@@ -3735,11 +3741,9 @@ async function hydrateGameStats(evTicker) {
           h += '</div>';
         }
       }
-      h += '</div>';
     }
-    // ── Timeline panel ───────────────────────────────────────
     if (hasTimeline) {
-      h += '<div class="ed-sb-panel' + (!hasStats ? ' active' : '') + '" data-panel="timeline">';
+      h += '<div class="ed-stats-title" style="margin-top:16px">Timeline</div>';
       for (var ti = 0; ti < incidents.length; ti++) {
         var inc = incidents[ti];
         var itype = inc.type || "";
@@ -3796,9 +3800,10 @@ async function hydrateGameStats(evTicker) {
       }
       h += '</div>';
     }
+    h += '</div>'; // close summary panel
     // ── Lineups panel ────────────────────────────────────────
     if (hasLineups) {
-      h += '<div class="ed-sb-panel' + (!hasStats && !hasTimeline ? ' active' : '') + '" data-panel="lineups">';
+      h += '<div class="ed-sb-panel" data-panel="lineups">';
       for (var side = 0; side < 2; side++) {
         var key = side === 0 ? "home" : "away";
         var teamName = side === 0 ? home : away;
@@ -3838,6 +3843,32 @@ async function hydrateGameStats(evTicker) {
       }
       h += '</div>';
     }
+    h += '</div>'; // close MATCH main panel
+
+    // ════════════════════════════════════════════════════
+    // H2H main panel (lazy-loaded on click)
+    // ════════════════════════════════════════════════════
+    h += '<div class="ed-sb-main" data-main="h2h">';
+    h += '<div class="ed-sb-lazy" data-lazy="h2h">';
+    h += '<div class="ed-stats-loading">Click to load head-to-head data…</div>';
+    h += '</div></div>';
+
+    // ════════════════════════════════════════════════════
+    // STANDINGS main panel (lazy-loaded on click)
+    // ════════════════════════════════════════════════════
+    h += '<div class="ed-sb-main" data-main="standings">';
+    h += '<div class="ed-sb-lazy" data-lazy="standings">';
+    h += '<div class="ed-stats-loading">Click to load standings…</div>';
+    h += '</div></div>';
+
+    // ════════════════════════════════════════════════════
+    // NEWS main panel (lazy-loaded on click)
+    // ════════════════════════════════════════════════════
+    h += '<div class="ed-sb-main" data-main="news">';
+    h += '<div class="ed-sb-lazy" data-lazy="news">';
+    h += '<div class="ed-stats-loading">Click to load news…</div>';
+    h += '</div></div>';
+
     panel.innerHTML = h;
   } catch (ex) {
     panel.innerHTML = '<div class="ed-stats-loading">Failed to load game stats.</div>';
@@ -3845,8 +3876,63 @@ async function hydrateGameStats(evTicker) {
   }
 }
 
-window.switchSBTab = function(btn) {
+// Main tab switcher (MATCH / H2H / STANDINGS / NEWS)
+window.switchMainTab = function(btn) {
   var panel = btn.closest(".ed-stats-panel");
+  if (!panel) return;
+  var target = btn.getAttribute("data-main");
+  var tabs = panel.querySelectorAll(".ed-sb-main-tabs .ed-sb-tab");
+  for (var i = 0; i < tabs.length; i++) {
+    tabs[i].classList.toggle("active", tabs[i].getAttribute("data-main") === target);
+  }
+  var mains = panel.querySelectorAll(".ed-sb-main");
+  for (var j = 0; j < mains.length; j++) {
+    mains[j].classList.toggle("active", mains[j].getAttribute("data-main") === target);
+  }
+  // Lazy-load on first click
+  var lazy = panel.querySelector('.ed-sb-lazy[data-lazy="' + target + '"]');
+  if (lazy && !lazy.dataset.loaded) {
+    lazy.dataset.loaded = "1";
+    var ticker = panel.dataset.ticker;
+    if (target === "h2h") _loadH2H(lazy, ticker);
+    else if (target === "standings") _loadStandings(lazy, ticker);
+    else if (target === "news") _loadNews(lazy, ticker);
+  }
+};
+
+// Placeholder loaders — will be wired to FlashLive endpoints
+async function _loadH2H(container, ticker) {
+  container.innerHTML = '<div class="ed-stats-loading">Loading H2H…</div>';
+  try {
+    // TODO: call FlashLive H2H endpoint
+    container.innerHTML = '<div class="ed-stats-loading">H2H data coming soon.</div>';
+  } catch (e) {
+    container.innerHTML = '<div class="ed-stats-loading">Failed to load H2H.</div>';
+  }
+}
+
+async function _loadStandings(container, ticker) {
+  container.innerHTML = '<div class="ed-stats-loading">Loading standings…</div>';
+  try {
+    // TODO: call FlashLive standings endpoint
+    container.innerHTML = '<div class="ed-stats-loading">Standings coming soon.</div>';
+  } catch (e) {
+    container.innerHTML = '<div class="ed-stats-loading">Failed to load standings.</div>';
+  }
+}
+
+async function _loadNews(container, ticker) {
+  container.innerHTML = '<div class="ed-stats-loading">Loading news…</div>';
+  try {
+    // TODO: call FlashLive news endpoint
+    container.innerHTML = '<div class="ed-stats-loading">News coming soon.</div>';
+  } catch (e) {
+    container.innerHTML = '<div class="ed-stats-loading">Failed to load news.</div>';
+  }
+}
+
+window.switchSBTab = function(btn) {
+  var panel = btn.closest(".ed-sb-main") || btn.closest(".ed-stats-panel");
   if (!panel) return;
   var target = btn.getAttribute("data-panel");
   var tabs = panel.querySelectorAll(".ed-sb-tab");
