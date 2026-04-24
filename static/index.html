@@ -3877,8 +3877,8 @@ async function hydrateGameStats(evTicker) {
     h += '<button class="ed-sb-tab" data-panel="h2h-away" onclick="window.switchSBTab(this)">' + escH(away) + ' - Away</button>';
     h += '</div>';
     h += '<div class="ed-sb-panel active" data-panel="h2h-overall"><div class="ed-sb-lazy" data-lazy="h2h">Loading H2H…</div></div>';
-    h += '<div class="ed-sb-panel" data-panel="h2h-home"><div class="ed-stats-loading">Loading…</div></div>';
-    h += '<div class="ed-sb-panel" data-panel="h2h-away"><div class="ed-stats-loading">Loading…</div></div>';
+    h += '<div class="ed-sb-panel" data-panel="h2h-home"><div class="ed-sb-lazy" data-lazy="h2h-home">Loading…</div></div>';
+    h += '<div class="ed-sb-panel" data-panel="h2h-away"><div class="ed-sb-lazy" data-lazy="h2h-away">Loading…</div></div>';
     h += '</div>';
 
     // ════════════════════════════════════════════════════
@@ -4017,6 +4017,9 @@ window.switchLineTab = function(btn) {
   btn.classList.add("active");
 };
 
+// H2H: shared cache on the h2h main panel so all sub-tabs use one fetch
+var _h2hCache = {}; // ticker → {tabs, homeName, awayName}
+
 async function _loadH2H(container, ticker) {
   container.innerHTML = '<div class="ed-stats-loading">Loading H2H…</div>';
   try {
@@ -4026,29 +4029,21 @@ async function _loadH2H(container, ticker) {
     var data = d.data || {};
     var homeName = d.home_name || "";
     var awayName = d.away_name || "";
-    // FlashLive H2H: DATA → array of tabs, each with GROUPS → ITEMS
-    // Typically: tab 0 = H2H Overall, containing 3 groups:
-    //   group 0 = "Last matches: Home", group 1 = "Last matches: Away", group 2 = "Head-to-head"
+    // FlashLive H2H: DATA → array of tabs (Overall, Home, Away)
+    // Each tab has GROUPS → ITEMS
     var tabs = data.DATA || data.data || [];
     if (!Array.isArray(tabs)) tabs = [];
-    var sections = []; // {title, items[]}
-    for (var ti = 0; ti < tabs.length; ti++) {
-      var groups = tabs[ti].GROUPS || [];
-      for (var gi = 0; gi < groups.length; gi++) {
-        var grp = groups[gi];
-        var title = grp.GROUP_LABEL || grp.NAME || "";
-        var items = grp.ITEMS || [];
-        if (items.length) sections.push({title: title, items: items});
-      }
-    }
-    if (!sections.length) { container.innerHTML = '<div class="ed-stats-loading">No H2H data available.</div>'; return; }
-    container._h2hSections = sections;
-    container._h2hHome = homeName;
-    container._h2hAway = awayName;
-    _renderH2HSections(container, sections, homeName, awayName);
+    _h2hCache[ticker] = {tabs: tabs, homeName: homeName, awayName: awayName};
+    _renderH2HTab(container, tabs, 0, homeName, awayName);
   } catch (e) {
     container.innerHTML = '<div class="ed-stats-loading">Failed to load H2H.</div>';
   }
+}
+
+function _loadH2HSubTab(container, ticker, tabIdx) {
+  var cached = _h2hCache[ticker];
+  if (!cached) { container.innerHTML = '<div class="ed-stats-loading">Load Overall first.</div>'; return; }
+  _renderH2HTab(container, cached.tabs, tabIdx, cached.homeName, cached.awayName);
 }
 
 function _renderH2HRow(m, homeName, awayName) {
@@ -4068,10 +4063,8 @@ function _renderH2HRow(m, homeName, awayName) {
   }
   var homeHL = homeName && home.toLowerCase().indexOf(homeName.toLowerCase()) >= 0;
   var awayHL = awayName && away.toLowerCase().indexOf(awayName.toLowerCase()) >= 0;
-  // Determine winner
   var homeWon = parseInt(hs) > parseInt(as2);
   var awayWon = parseInt(as2) > parseInt(hs);
-  // W/D/L badge
   var badgeHTML = "";
   if (result === "WIN") badgeHTML = '<span class="h2h-badge h2h-win">W</span>';
   else if (result === "LOSS") badgeHTML = '<span class="h2h-badge h2h-loss">L</span>';
@@ -4089,18 +4082,33 @@ function _renderH2HRow(m, homeName, awayName) {
   return h;
 }
 
-function _renderH2HSections(container, sections, homeName, awayName) {
+function _renderH2HTab(container, allTabs, tabIdx, homeName, awayName) {
+  var tab = allTabs[tabIdx];
+  if (!tab) { container.innerHTML = '<div class="ed-stats-loading">No data for this tab.</div>'; return; }
+  var groups = tab.GROUPS || [];
+  if (!groups.length) { container.innerHTML = '<div class="ed-stats-loading">No H2H data available.</div>'; return; }
+  var sections = [];
+  for (var gi = 0; gi < groups.length; gi++) {
+    var grp = groups[gi];
+    var title = grp.GROUP_LABEL || grp.NAME || "";
+    var items = grp.ITEMS || [];
+    if (items.length) sections.push({title: title, items: items, idx: gi});
+  }
+  if (!sections.length) { container.innerHTML = '<div class="ed-stats-loading">No matches found.</div>'; return; }
+  container._h2hSections = sections;
+  container._h2hHome = homeName;
+  container._h2hAway = awayName;
   var h = '';
   for (var si = 0; si < sections.length; si++) {
     var sec = sections[si];
-    var title = sec.title;
-    if (!title) {
-      if (si === 0) title = "Last matches: " + homeName;
-      else if (si === 1) title = "Last matches: " + awayName;
-      else title = "Head-to-head matches";
+    var secTitle = sec.title;
+    if (!secTitle) {
+      if (si === 0) secTitle = "Last matches: " + homeName;
+      else if (si === 1) secTitle = "Last matches: " + awayName;
+      else secTitle = "Head-to-head matches";
     }
     h += '<div class="h2h-section">';
-    h += '<div class="h2h-section-title">' + escH(title) + '</div>';
+    h += '<div class="h2h-section-title">' + escH(secTitle) + '</div>';
     h += '<div class="h2h-rows">';
     var max = Math.min(sec.items.length, 5);
     for (var mi = 0; mi < max; mi++) {
@@ -4283,15 +4291,16 @@ window.switchSBTab = function(btn) {
   for (var j = 0; j < panels.length; j++) {
     panels[j].classList.toggle("active", panels[j].getAttribute("data-panel") === target);
   }
-  // Lazy-load standings sub-tab content
   var activePanel = panel.querySelector('.ed-sb-panel[data-panel="' + target + '"]');
   if (activePanel) {
     var lazy = activePanel.querySelector(".ed-sb-lazy");
     if (lazy && !lazy.dataset.loaded) {
       lazy.dataset.loaded = "1";
-      var ticker = panel.closest(".ed-stats-panel").dataset.ticker;
+      var ticker = (panel.closest(".ed-stats-panel") || {}).dataset && panel.closest(".ed-stats-panel").dataset.ticker;
       var lazyKey = lazy.getAttribute("data-lazy");
-      if (lazyKey === "topscorers") _loadTopScorers(lazy, ticker);
+      if (lazyKey === "h2h-home") _loadH2HSubTab(lazy, ticker, 1);
+      else if (lazyKey === "h2h-away") _loadH2HSubTab(lazy, ticker, 2);
+      else if (lazyKey === "topscorers") _loadTopScorers(lazy, ticker);
     }
   }
 };

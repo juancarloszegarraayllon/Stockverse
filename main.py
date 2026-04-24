@@ -5411,6 +5411,112 @@ def get_event_history(ticker: str, hours: int = 24, period: int = 60, debug: boo
         return {"series": [], "error": str(e)}
 
 
+def _parse_flashlive_lineups(fl_data):
+    """Parse FlashLive lineups response into our standard format."""
+    try:
+        data = fl_data if isinstance(fl_data, dict) else {}
+        top = data.get("DATA") or data
+        if isinstance(top, list):
+            top = top[0] if top else {}
+        home_lineup = []
+        away_lineup = []
+        home_formation = ""
+        away_formation = ""
+        for side_key in ("HOME", "AWAY"):
+            side_data = top.get(side_key) or {}
+            players = side_data.get("PLAYERS") or side_data.get("players") or []
+            formation = side_data.get("FORMATION") or ""
+            parsed = []
+            for p in players:
+                if not isinstance(p, dict):
+                    continue
+                parsed.append({
+                    "name": p.get("PLAYER_NAME") or p.get("name") or "",
+                    "jerseyNumber": p.get("SHIRT_NUMBER") or p.get("jersey_number"),
+                    "position": p.get("POSITION") or p.get("position") or "",
+                    "substitute": bool(p.get("SUBSTITUTE") or p.get("substitute")),
+                })
+            if side_key == "HOME":
+                home_lineup = parsed
+                home_formation = formation
+            else:
+                away_lineup = parsed
+                away_formation = formation
+        if not home_lineup and not away_lineup:
+            return None
+        starters_home = [p for p in home_lineup if not p.get("substitute")]
+        subs_home = [p for p in home_lineup if p.get("substitute")]
+        starters_away = [p for p in away_lineup if not p.get("substitute")]
+        subs_away = [p for p in away_lineup if p.get("substitute")]
+        return {
+            "home": {
+                "formation": home_formation,
+                "players": starters_home,
+                "substitutes": subs_home,
+            },
+            "away": {
+                "formation": away_formation,
+                "players": starters_away,
+                "substitutes": subs_away,
+            },
+        }
+    except Exception:
+        return None
+
+
+def _parse_flashlive_incidents(fl_data):
+    """Parse FlashLive summary/incidents into our timeline format."""
+    try:
+        data = fl_data if isinstance(fl_data, dict) else {}
+        items = data.get("DATA") or data.get("data") or []
+        if not isinstance(items, list):
+            return []
+        incidents = []
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            for inc in (item.get("ITEMS") or item.get("items") or [item]):
+                if not isinstance(inc, dict):
+                    continue
+                inc_type = inc.get("INCIDENT_TYPE") or inc.get("type") or ""
+                minute = inc.get("TIME") or inc.get("INCIDENT_TIME") or ""
+                player = inc.get("PLAYER_NAME") or inc.get("PARTICIPANT_NAME") or ""
+                assist = inc.get("ASSIST_NAME") or inc.get("ASSIST1_NAME") or ""
+                score = inc.get("SCORE") or ""
+                side = "home" if inc.get("HOME_AWAY") == "1" or inc.get("SIDE") == "home" else "away"
+                icon = ""
+                label = ""
+                if "goal" in str(inc_type).lower():
+                    icon = "⚽"
+                    label = "Goal"
+                elif "yellow" in str(inc_type).lower():
+                    icon = "\U0001f7e8"
+                    label = "Yellow Card"
+                elif "red" in str(inc_type).lower():
+                    icon = "\U0001f7e5"
+                    label = "Red Card"
+                elif "subst" in str(inc_type).lower():
+                    icon = "\U0001f504"
+                    label = "Substitution"
+                elif "penalty" in str(inc_type).lower():
+                    icon = "P"
+                    label = "Penalty"
+                else:
+                    continue
+                incidents.append({
+                    "time": str(minute),
+                    "type": label,
+                    "icon": icon,
+                    "player": player,
+                    "assist": assist,
+                    "score": score,
+                    "side": side,
+                })
+        return incidents
+    except Exception:
+        return []
+
+
 def _parse_flashlive_stats(fl_data, title, sport):
     """Parse FlashLive statistics response into our standard stats
     format for the sidebar panel."""
@@ -5491,17 +5597,31 @@ def get_event_stats(ticker: str, debug: bool = False):
         return {"error": "event has no sport or title"}
     # Try FlashLive first (primary feed).
     try:
-        from flashlive_feed import find_flashlive_event_id, fetch_event_stats as fl_stats
+        from flashlive_feed import (
+            find_flashlive_event_id, fetch_event_stats as fl_stats,
+            fetch_event_lineups as fl_lineups, fetch_event_summary as fl_summary,
+        )
         fl_id = find_flashlive_event_id(title, sport)
         if fl_id:
             import asyncio
             loop = asyncio.new_event_loop()
             fl_data = loop.run_until_complete(fl_stats(fl_id))
+            fl_lineups_data = loop.run_until_complete(fl_lineups(fl_id))
+            fl_summary_data = loop.run_until_complete(fl_summary(fl_id))
             loop.close()
-            if fl_data:
-                stats = _parse_flashlive_stats(fl_data, title, sport)
-                if stats:
-                    return stats
+            result = _parse_flashlive_stats(fl_data, title, sport) if fl_data else None
+            if not result:
+                result = {"home": "", "away": "", "sport": sport, "stats": [], "source": "flashlive"}
+                import re as _re_fl
+                parts = _re_fl.split(r'\s+(?:vs\.?|v|at)\s+', title, maxsplit=1, flags=_re_fl.IGNORECASE)
+                result["home"] = parts[0].strip() if len(parts) >= 2 else "Home"
+                result["away"] = parts[1].strip() if len(parts) >= 2 else "Away"
+            if fl_lineups_data:
+                result["lineups"] = _parse_flashlive_lineups(fl_lineups_data)
+            if fl_summary_data:
+                result["incidents"] = _parse_flashlive_incidents(fl_summary_data)
+            if result.get("stats") or result.get("lineups") or result.get("incidents"):
+                return result
     except Exception as e:
         logging.getLogger("stochverse").debug("FlashLive stats failed: %s", e)
     # Fallback: SofaScore (kept but feeds disabled).
