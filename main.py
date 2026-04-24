@@ -5651,6 +5651,18 @@ def _parse_flashlive_incidents(fl_data):
         for stage in stages:
             if not isinstance(stage, dict):
                 continue
+            # Add period header from stage data
+            stage_name = stage.get("STAGE_NAME") or ""
+            rh = stage.get("RESULT_HOME")
+            ra = stage.get("RESULT_AWAY")
+            if stage_name:
+                score_text = f"{rh} - {ra}" if rh is not None and ra is not None else ""
+                incidents.append({
+                    "time": "", "type": "period", "icon": "",
+                    "player": stage_name, "assist": "", "score": score_text,
+                    "side": "neutral", "text": stage_name,
+                    "isHome": None, "homeScore": rh, "awayScore": ra,
+                })
             for inc in (stage.get("ITEMS") or stage.get("items") or []):
                 if not isinstance(inc, dict):
                     continue
