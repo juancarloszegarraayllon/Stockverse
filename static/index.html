@@ -291,8 +291,8 @@ html,body{overscroll-behavior:none}
 #event-detail{display:none;max-width:1100px;margin:0 auto;padding:0 4px}
 .ed-layout{position:relative}
 .ed-main{}
-.ed-sidebar{position:fixed;right:50px;top:calc(50% + var(--header-h) / 2);transform:translateY(-50%);width:300px;max-height:calc(100vh - var(--header-h) - 32px);overflow-y:auto;scrollbar-width:thin;scrollbar-color:var(--border) transparent;z-index:50}
-@media(max-width:1500px){.ed-sidebar{width:260px}}
+.ed-sidebar{position:fixed;right:50px;top:calc(50% + var(--header-h) / 2);transform:translateY(-50%);width:420px;max-height:calc(100vh - var(--header-h) - 32px);overflow-y:auto;scrollbar-width:thin;scrollbar-color:var(--border) transparent;z-index:50}
+@media(max-width:1500px){.ed-sidebar{width:350px}}
 @media(max-width:1200px){.ed-sidebar{position:static;width:100%;max-height:none;margin-bottom:16px;transform:none}}
 .ed-stats-panel{background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:14px}
 .ed-stats-title{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;color:var(--green);text-align:center;margin-bottom:12px}
@@ -4002,8 +4002,17 @@ window.switchLineTab = function(btn) {
 async function _loadH2H(container, ticker) {
   container.innerHTML = '<div class="ed-stats-loading">Loading H2H…</div>';
   try {
-    // TODO: call FlashLive H2H endpoint
-    container.innerHTML = '<div class="ed-stats-loading">H2H data coming soon.</div>';
+    var r = await fetch("/api/event/" + encodeURIComponent(ticker) + "/h2h");
+    var d = await r.json();
+    if (d.error) {
+      container.innerHTML = '<div class="ed-stats-loading">' + escH(d.error) + '</div>';
+      return;
+    }
+    // Render H2H data
+    var data = d.data || {};
+    var h = '<div class="ed-stats-title">Head to Head</div>';
+    h += '<pre style="font-size:10px;color:var(--text-dim);overflow-x:auto;white-space:pre-wrap">' + escH(JSON.stringify(data, null, 2)).substring(0, 2000) + '</pre>';
+    container.innerHTML = h;
   } catch (e) {
     container.innerHTML = '<div class="ed-stats-loading">Failed to load H2H.</div>';
   }
@@ -4012,21 +4021,23 @@ async function _loadH2H(container, ticker) {
 async function _loadStandings(container, ticker) {
   container.innerHTML = '<div class="ed-stats-loading">Loading standings…</div>';
   try {
-    // TODO: call FlashLive standings endpoint
-    container.innerHTML = '<div class="ed-stats-loading">Standings coming soon.</div>';
+    var r = await fetch("/api/event/" + encodeURIComponent(ticker) + "/standings");
+    var d = await r.json();
+    if (d.error) {
+      container.innerHTML = '<div class="ed-stats-loading">' + escH(d.error) + '</div>';
+      return;
+    }
+    var data = d.data || {};
+    var h = '<div class="ed-stats-title">Standings</div>';
+    h += '<pre style="font-size:10px;color:var(--text-dim);overflow-x:auto;white-space:pre-wrap">' + escH(JSON.stringify(data, null, 2)).substring(0, 2000) + '</pre>';
+    container.innerHTML = h;
   } catch (e) {
     container.innerHTML = '<div class="ed-stats-loading">Failed to load standings.</div>';
   }
 }
 
 async function _loadNews(container, ticker) {
-  container.innerHTML = '<div class="ed-stats-loading">Loading news…</div>';
-  try {
-    // TODO: call FlashLive news endpoint
-    container.innerHTML = '<div class="ed-stats-loading">News coming soon.</div>';
-  } catch (e) {
-    container.innerHTML = '<div class="ed-stats-loading">Failed to load news.</div>';
-  }
+  container.innerHTML = '<div class="ed-stats-loading">News coming soon.</div>';
 }
 
 window.switchSBTab = function(btn) {

@@ -339,7 +339,70 @@ def _parse_event(ev):
         return None
 
 
-async def fetch_event_stats(event_id: str):
+async def fetch_event_h2h(event_id: str):
+    """Fetch head-to-head data for an event."""
+    if not API_KEY or not event_id or httpx is None:
+        return None
+    headers = {"x-rapidapi-key": API_KEY, "x-rapidapi-host": API_HOST}
+    endpoints = [
+        f"/v1/events/h2h?event_id={event_id}&locale=en_INT",
+        f"/v1/events/head2head?event_id={event_id}&locale=en_INT",
+    ]
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        for url_path in endpoints:
+            try:
+                r = await client.get(f"{BASE_URL}{url_path}", headers=headers)
+                if r.status_code == 200:
+                    return r.json()
+            except Exception:
+                continue
+    return None
+
+
+async def fetch_standings(tournament_id: str, season_id: str = ""):
+    """Fetch league standings for a tournament."""
+    if not API_KEY or not tournament_id or httpx is None:
+        return None
+    headers = {"x-rapidapi-key": API_KEY, "x-rapidapi-host": API_HOST}
+    params = {"tournament_id": tournament_id, "locale": "en_INT"}
+    if season_id:
+        params["season_id"] = season_id
+    endpoints = [
+        "/v1/tournaments/standings",
+        "/v1/tournaments/table",
+    ]
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        for ep in endpoints:
+            try:
+                r = await client.get(f"{BASE_URL}{ep}", headers=headers, params=params)
+                if r.status_code == 200:
+                    return r.json()
+            except Exception:
+                continue
+    return None
+
+
+async def fetch_top_scorers(tournament_id: str, season_id: str = ""):
+    """Fetch top scorers for a tournament."""
+    if not API_KEY or not tournament_id or httpx is None:
+        return None
+    headers = {"x-rapidapi-key": API_KEY, "x-rapidapi-host": API_HOST}
+    params = {"tournament_id": tournament_id, "locale": "en_INT"}
+    if season_id:
+        params["season_id"] = season_id
+    endpoints = [
+        "/v1/tournaments/top-scorers",
+        "/v1/tournaments/topscorers",
+    ]
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        for ep in endpoints:
+            try:
+                r = await client.get(f"{BASE_URL}{ep}", headers=headers, params=params)
+                if r.status_code == 200:
+                    return r.json()
+            except Exception:
+                continue
+    return None
     """Fetch match statistics from FlashLive's event detail/stats
     endpoint. Returns a dict with stats or None if unavailable."""
     if not API_KEY or not event_id or httpx is None:

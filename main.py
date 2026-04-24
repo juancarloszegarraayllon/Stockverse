@@ -4174,6 +4174,64 @@ async def sportsdb_probe():
     except Exception as e:
         return {"error": str(e)}
 
+@app.get("/api/event/{ticker}/h2h")
+async def get_event_h2h(ticker: str):
+    """Fetch H2H data from FlashLive for this event."""
+    ticker = (ticker or "").strip().upper()
+    get_data()
+    records = _cache.get("data_all") or _cache.get("data") or []
+    found = None
+    for r in records:
+        if r.get("event_ticker") == ticker:
+            found = r
+            break
+    if not found:
+        return {"error": "event not found"}
+    try:
+        from flashlive_feed import find_flashlive_event_id, fetch_event_h2h
+        fl_id = find_flashlive_event_id(found.get("title", ""), found.get("_sport", ""))
+        if not fl_id:
+            return {"error": "no FlashLive match found"}
+        data = await fetch_event_h2h(fl_id)
+        if not data:
+            return {"error": "no H2H data available"}
+        return {"data": data, "source": "flashlive"}
+    except Exception as e:
+        return {"error": str(e)[:200]}
+
+
+@app.get("/api/event/{ticker}/standings")
+async def get_event_standings(ticker: str):
+    """Fetch league standings from FlashLive for this event's tournament."""
+    ticker = (ticker or "").strip().upper()
+    get_data()
+    records = _cache.get("data_all") or _cache.get("data") or []
+    found = None
+    for r in records:
+        if r.get("event_ticker") == ticker:
+            found = r
+            break
+    if not found:
+        return {"error": "event not found"}
+    try:
+        from flashlive_feed import match_game as flash_match, fetch_standings
+        g = flash_match(found.get("title", ""), found.get("_sport", ""))
+        if not g:
+            return {"error": "no FlashLive match found"}
+        # FlashLive events store tournament info
+        raw = g.get("_raw_preview", "")
+        # Try to extract tournament_id from the game data
+        tournament_id = g.get("_tournament_id", "")
+        if not tournament_id:
+            return {"error": "no tournament ID available", "hint": "FlashLive events/list may not include tournament_id in individual events"}
+        data = await fetch_standings(tournament_id)
+        if not data:
+            return {"error": "no standings data available"}
+        return {"data": data, "source": "flashlive"}
+    except Exception as e:
+        return {"error": str(e)[:200]}
+
+
 @app.get("/api/flashlive_status")
 def flashlive_status():
     """Debug endpoint: reports the FlashLive feed state."""
