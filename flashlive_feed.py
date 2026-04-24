@@ -287,7 +287,7 @@ def _parse_event(ev):
             if len(w) >= 4:
                 away_phrases.append(w)
 
-        return {
+        result = {
             "event_id": event_id,
             "sport": sport,
             "league": league,
@@ -309,6 +309,31 @@ def _parse_event(ev):
             "_raw_keys": list(ev.keys())[:30] if isinstance(ev, dict) else [],
             "_raw_preview": str(ev)[:600] if isinstance(ev, dict) else "",
         }
+        # Tennis: build per-set scoring data
+        if sport == "Tennis" and home_name and away_name:
+            set_history = []
+            for si in range(1, 6):
+                hs = ev.get(f"HOME_SCORE_PART_{si}")
+                as_ = ev.get(f"AWAY_SCORE_PART_{si}")
+                if hs is not None or as_ is not None:
+                    set_history.append({
+                        "set": si,
+                        "row1": str(hs) if hs is not None else "",
+                        "row2": str(as_) if as_ is not None else "",
+                    })
+            result["tennis"] = {
+                "row1_name": home_name,
+                "row2_name": away_name,
+                "row1_sets": home_score if home_score not in ("", "None") else "0",
+                "row2_sets": away_score if away_score not in ("", "None") else "0",
+                "row1_games": set_history[-1]["row1"] if set_history else "",
+                "row2_games": set_history[-1]["row2"] if set_history else "",
+                "row1_point": "",
+                "row2_point": "",
+                "set_history": set_history,
+                "server": "",
+            }
+        return result
     except Exception as e:
         log.debug("parse error: %s", e)
         return None
