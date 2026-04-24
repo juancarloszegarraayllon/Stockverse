@@ -81,12 +81,14 @@ async def startup_event():
         logging.getLogger("stochverse").warning("failed to start ws client: %s", e)
     try:
         from espn_feed import run_espn_feed
-        asyncio.create_task(run_espn_feed())
+        # ESPN feed kept but disabled — FlashLive is primary
+        # asyncio.create_task(run_espn_feed())
     except Exception as e:
         logging.getLogger("stochverse").warning("failed to start espn feed: %s", e)
     try:
         from sportsdb_feed import run_sportsdb_feed
-        asyncio.create_task(run_sportsdb_feed())
+        # SportsDB feed kept but disabled — FlashLive is primary
+        # asyncio.create_task(run_sportsdb_feed())
     except Exception as e:
         logging.getLogger("stochverse").warning("failed to start sportsdb feed: %s", e)
     # SofaScore feed with a built-in exponential-backoff circuit
@@ -98,7 +100,8 @@ async def startup_event():
     # back up on the next 30-second cycle.
     try:
         from sofascore_feed import run_sofascore_feed
-        asyncio.create_task(run_sofascore_feed())
+        # SofaScore feed kept but disabled — FlashLive is primary
+        # asyncio.create_task(run_sofascore_feed())
     except Exception as e:
         logging.getLogger("stochverse").warning("failed to start sofascore feed: %s", e)
     # FlashLive Sports feed (RapidAPI) — reliable replacement for
@@ -258,25 +261,13 @@ async def _score_flush_loop():
     while True:
         try:
             from db import sync_scores_to_db
-            espn_snap = sportsdb_snap = sofascore_snap = []
+            flashlive_snap = []
             try:
-                from espn_feed import ESPN_GAMES
-                espn_snap = list(ESPN_GAMES)
-                await sync_scores_to_db("espn", espn_snap)
+                from flashlive_feed import GAMES as FL_GAMES
+                flashlive_snap = list(FL_GAMES.values())
+                await sync_scores_to_db("flashlive", flashlive_snap)
             except Exception as e:
-                _log.error("espn score flush: %s", e)
-            try:
-                from sportsdb_feed import SPORTSDB_GAMES
-                sportsdb_snap = list(SPORTSDB_GAMES)
-                await sync_scores_to_db("sportsdb", sportsdb_snap)
-            except Exception as e:
-                _log.error("sportsdb score flush: %s", e)
-            try:
-                from sofascore_feed import SOFASCORE_GAMES
-                sofascore_snap = list(SOFASCORE_GAMES)
-                await sync_scores_to_db("sofascore", sofascore_snap)
-            except Exception as e:
-                _log.error("sofascore score flush: %s", e)
+                _log.error("flashlive score flush: %s", e)
 
             # Phase 5: seed entities every 5th cycle (~2.5 min)
             _seed_counter += 1
@@ -286,16 +277,10 @@ async def _score_flush_loop():
                     from entity_seeder import extract_teams
                     from db import upsert_entities, refresh_alias_sport_cache
                     all_teams = []
-                    if espn_snap:
-                        all_teams.extend(extract_teams(espn_snap, "espn"))
-                    if sportsdb_snap:
-                        all_teams.extend(extract_teams(sportsdb_snap, "sportsdb"))
-                    if sofascore_snap:
-                        all_teams.extend(extract_teams(sofascore_snap, "sofascore"))
+                    if flashlive_snap:
+                        all_teams.extend(extract_teams(flashlive_snap, "flashlive"))
                     if all_teams:
                         await upsert_entities(all_teams)
-                    # Always refresh the alias→sport cache so new
-                    # entities are classifiable by get_data().
                     await refresh_alias_sport_cache()
                 except Exception as e:
                     _log.error("entity seed: %s", e)
@@ -1589,23 +1574,14 @@ def _build_cache():
     # Free the raw events list explicitly so GC can reclaim the big
     # Kalshi payloads before we return.
     del all_ev
-    # Pre-compute which sport events are confirmed live by ESPN /
-    # SofaScore / SportsDB. This runs once per cache rebuild (~30min)
-    # so the per-request Live filter can just check a flag instead of
-    # running expensive match_game calls on every request. Non-sport
-    # events are handled separately via close_dt/exp_dt in the filter.
+    # Pre-compute which sport events are confirmed live by FlashLive.
+    # This runs once per cache rebuild (~30min) so the per-request
+    # Live filter can just check a flag instead of running expensive
+    # match_game calls on every request.
     try:
-        from espn_feed import match_game as _em_cache
+        from flashlive_feed import match_game as _fl_cache
     except Exception:
-        _em_cache = None
-    try:
-        from sportsdb_feed import match_game as _sm_cache
-    except Exception:
-        _sm_cache = None
-    try:
-        from sofascore_feed import match_game as _fm_cache
-    except Exception:
-        _fm_cache = None
+        _fl_cache = None
     live_count = 0
     for r in records:
         if not r.get("_is_sport"):
@@ -1615,12 +1591,8 @@ def _build_cache():
         if not (_sp and _ti):
             continue
         mg = None
-        if _em_cache:
-            mg = _em_cache(_ti, _sp)
-        if mg is None and _sm_cache:
-            mg = _sm_cache(_ti, _sp)
-        if mg is None and _fm_cache:
-            mg = _fm_cache(_ti, _sp)
+        if _fl_cache:
+            mg = _fl_cache(_ti, _sp)
         if mg and mg.get("state") == "in":
             # Date guard: reject matches where ESPN's scheduled
             # kickoff is >18h from Kalshi's estimated kickoff.
@@ -1697,24 +1669,12 @@ def get_events(
     from datetime import datetime as _dt
     now_utc = _dt.now(timezone.utc)
 
-    # Import live-score feeds for the formatting loop.
+    # Import live-score feed — FlashLive is the sole active source.
     try:
-        from espn_feed import match_game, compact_label
-    except Exception:
-        match_game = None
-        compact_label = None
-    try:
-        from sportsdb_feed import match_game as sdb_match_game
-    except Exception:
-        sdb_match_game = None
-    try:
-        from sofascore_feed import match_game as sofa_match_game
-    except Exception:
-        sofa_match_game = None
-    try:
-        from flashlive_feed import match_game as flash_match_game
+        from flashlive_feed import match_game as flash_match_game, compact_label
     except Exception:
         flash_match_game = None
+        compact_label = None
 
     # Filter
     results = []
@@ -1960,7 +1920,7 @@ def get_events(
         if not g:
             return False
         try:
-            from espn_feed import _normalize
+            from flashlive_feed import _normalize
             tl = _normalize(title or "")
         except Exception:
             tl = (title or "").lower()
@@ -2048,14 +2008,8 @@ def get_events(
         title = r.get("title", "")
         g = None
         if sport and title:
-            if match_game is not None:
-                g = match_game(title, sport)
-            if g is None and flash_match_game is not None:
+            if flash_match_game is not None:
                 g = flash_match_game(title, sport)
-            if g is None and sdb_match_game is not None:
-                g = sdb_match_game(title, sport)
-            if g is None and sofa_match_game is not None:
-                g = sofa_match_game(title, sport)
         # Enrich soccer 2-leg ties with SofaScore aggregate data
         # when the primary feed (usually ESPN for UCL) didn't
         # populate it. No-op for non-soccer or when aggregate is
@@ -2367,24 +2321,12 @@ def get_event_detail(ticker: str):
     if found is None:
         return {"error": f"event {ticker!r} not found in cache"}
 
-    # Import live-score feeds + helpers the same way /api/events does.
+    # Import live-score feed — FlashLive is the sole active source.
     try:
-        from espn_feed import match_game, compact_label
-    except Exception:
-        match_game = None
-        compact_label = None
-    try:
-        from sportsdb_feed import match_game as sdb_match_game
-    except Exception:
-        sdb_match_game = None
-    try:
-        from sofascore_feed import match_game as sofa_match_game
-    except Exception:
-        sofa_match_game = None
-    try:
-        from flashlive_feed import match_game as flash_match_game
+        from flashlive_feed import match_game as flash_match_game, compact_label
     except Exception:
         flash_match_game = None
+        compact_label = None
 
     try:
         from kalshi_ws import LIVE_PRICES
@@ -2491,14 +2433,8 @@ def get_event_detail(ticker: str):
     title = r.get("title", "")
     g = None
     if sport and title:
-        if match_game is not None:
-            g = match_game(title, sport)
-        if g is None and flash_match_game is not None:
+        if flash_match_game is not None:
             g = flash_match_game(title, sport)
-        if g is None and sdb_match_game is not None:
-            g = sdb_match_game(title, sport)
-        if g is None and sofa_match_game is not None:
-            g = sofa_match_game(title, sport)
     if g and sport == "Soccer":
         g = _enrich_soccer_aggregate(g, title)
     # Wrong-date guard — same as /api/events.
@@ -5553,7 +5489,22 @@ def get_event_stats(ticker: str, debug: bool = False):
     title = found.get("title", "")
     if not sport or not title:
         return {"error": "event has no sport or title"}
-    # Find the matched game — try SofaScore first (richest stats).
+    # Try FlashLive first (primary feed).
+    try:
+        from flashlive_feed import find_flashlive_event_id, fetch_event_stats as fl_stats
+        fl_id = find_flashlive_event_id(title, sport)
+        if fl_id:
+            import asyncio
+            loop = asyncio.new_event_loop()
+            fl_data = loop.run_until_complete(fl_stats(fl_id))
+            loop.close()
+            if fl_data:
+                stats = _parse_flashlive_stats(fl_data, title, sport)
+                if stats:
+                    return stats
+    except Exception as e:
+        logging.getLogger("stochverse").debug("FlashLive stats failed: %s", e)
+    # Fallback: SofaScore (kept but feeds disabled).
     sofa_id = None
     home_name = ""
     away_name = ""
@@ -5631,23 +5582,6 @@ def get_event_stats(ticker: str, debug: bool = False):
                                 break
         except Exception:
             pass
-    # FlashLive fallback when SofaScore can't find the event.
-    if not sofa_id:
-        try:
-            from flashlive_feed import find_flashlive_event_id, fetch_event_stats as fl_stats
-            fl_id = find_flashlive_event_id(title, sport)
-            if fl_id:
-                import asyncio
-                loop = asyncio.new_event_loop()
-                fl_data = loop.run_until_complete(fl_stats(fl_id))
-                loop.close()
-                if fl_data:
-                    # Parse FlashLive stats into our format
-                    stats = _parse_flashlive_stats(fl_data, title, sport)
-                    if stats:
-                        return stats
-        except Exception as e:
-            logging.getLogger("stochverse").debug("FlashLive stats fallback failed: %s", e)
     if not sofa_id:
         out_err = {"error": "no SofaScore match found for this event", "sport": sport, "title": title}
         if debug:
