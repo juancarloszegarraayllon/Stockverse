@@ -4152,8 +4152,9 @@ async def get_event_h2h(ticker: str):
 
 
 @app.get("/api/event/{ticker}/standings")
-async def get_event_standings(ticker: str):
-    """Fetch league standings from FlashLive for this event's tournament."""
+async def get_event_standings(ticker: str, standing_type: str = "overall"):
+    """Fetch league standings from FlashLive for this event's tournament.
+    standing_type: overall, form, over_under, ht_ft, top_scores"""
     ticker = (ticker or "").strip().upper()
     get_data()
     records = _cache.get("data_all") or _cache.get("data") or []
@@ -4165,7 +4166,7 @@ async def get_event_standings(ticker: str):
     if not found:
         return {"error": "event not found"}
     try:
-        from flashlive_feed import match_game as flash_match, fetch_standings, fetch_top_scorers
+        from flashlive_feed import match_game as flash_match, _fl_get
         g = flash_match(found.get("title", ""), found.get("_sport", ""))
         if not g:
             return {"error": "no FlashLive match found"}
@@ -4173,26 +4174,18 @@ async def get_event_standings(ticker: str):
         season_id = g.get("tournament_season_id", "")
         if not stage_id:
             return {"error": "no tournament stage ID available"}
-        data = await fetch_standings(stage_id, season_id)
+        params = {"tournament_stage_id": stage_id, "standing_type": standing_type}
+        if season_id:
+            params["tournament_season_id"] = season_id
+        data = await _fl_get("/v1/tournaments/standings", params)
         if not data:
-            return {"error": "no standings data available"}
-        # Include first row keys for debugging field names
-        first_row = None
-        raw_groups = (data.get("DATA") or []) if isinstance(data, dict) else []
-        for grp in (raw_groups if isinstance(raw_groups, list) else []):
-            for row in (grp.get("ROWS") or []):
-                if isinstance(row, dict):
-                    first_row = row
-                    break
-            if first_row:
-                break
+            return {"error": f"no {standing_type} data available"}
         return {
             "data": data,
-            "tournament_stage_id": stage_id,
+            "standing_type": standing_type,
             "home_name": g.get("home_name", ""),
             "away_name": g.get("away_name", ""),
             "source": "flashlive",
-            "_debug_first_row": first_row,
         }
     except Exception as e:
         return {"error": str(e)[:200]}

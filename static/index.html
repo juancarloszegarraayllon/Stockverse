@@ -4364,6 +4364,65 @@ async function _loadTopScorers(container, ticker) {
   }
 }
 
+async function _loadStandingsType(container, ticker, standingType) {
+  container.innerHTML = '<div class="ed-stats-loading">Loading ' + standingType.replace(/_/g, ' ') + '…</div>';
+  try {
+    var r = await fetch("/api/event/" + encodeURIComponent(ticker) + "/standings?standing_type=" + encodeURIComponent(standingType));
+    var d = await r.json();
+    if (d.error) { container.innerHTML = '<div class="ed-stats-loading">' + escH(d.error) + '</div>'; return; }
+    var data = d.data || {};
+    var groups = data.DATA || data.data || [];
+    if (!Array.isArray(groups)) groups = [groups];
+    var rows = [];
+    for (var gi = 0; gi < groups.length; gi++) {
+      var grp = groups[gi];
+      var grpRows = grp.ROWS || grp.rows || [];
+      if (!Array.isArray(grpRows)) continue;
+      for (var ri = 0; ri < grpRows.length; ri++) rows.push(grpRows[ri]);
+    }
+    if (!rows.length) {
+      container.innerHTML = '<div class="ed-stats-loading">No ' + standingType.replace(/_/g, ' ') + ' data available.</div>';
+      return;
+    }
+    var homeName = (d.home_name || "").toLowerCase();
+    var awayName = (d.away_name || "").toLowerCase();
+    if (standingType === "top_scores") {
+      _renderTopScorersFromStandings(container, rows);
+    } else {
+      _renderStandingsTable(container, rows, homeName, awayName);
+    }
+  } catch (e) {
+    container.innerHTML = '<div class="ed-stats-loading">Failed to load data.</div>';
+  }
+}
+
+function _renderTopScorersFromStandings(container, rows) {
+  var h = '<div style="overflow-x:auto">';
+  h += '<table style="width:100%;font-size:11px;border-collapse:collapse">';
+  h += '<thead><tr style="color:var(--text-muted);border-bottom:1px solid var(--border)">';
+  h += '<th style="text-align:left;padding:4px 2px;width:20px">#</th>';
+  h += '<th style="text-align:left;padding:4px 2px">Player</th>';
+  h += '<th style="text-align:left;padding:4px 2px">Team</th>';
+  h += '<th style="text-align:center;padding:4px 2px;font-weight:700">G</th>';
+  h += '</tr></thead><tbody>';
+  for (var i = 0; i < rows.length; i++) {
+    var p = rows[i];
+    var name = p.TS_PLAYER_NAME || p.PLAYER_NAME || p.TEAM_NAME || "";
+    var team = p.TEAM_NAME || "";
+    if (p.TS_PLAYER_NAME) team = p.TEAM_NAME || "";
+    var goals = p.TS_PLAYER_GOALS || p.GOALS || "";
+    var rank = p.TS_RANK || p.RANKING || (i + 1);
+    h += '<tr style="border-bottom:1px solid var(--border)">';
+    h += '<td style="padding:4px 2px;color:var(--text-muted)">' + escH(String(rank)) + '</td>';
+    h += '<td style="padding:4px 2px">' + escH(name) + '</td>';
+    h += '<td style="padding:4px 2px;color:var(--text-muted)">' + escH(team) + '</td>';
+    h += '<td style="text-align:center;padding:4px 2px;font-weight:700">' + escH(String(goals)) + '</td>';
+    h += '</tr>';
+  }
+  h += '</tbody></table></div>';
+  container.innerHTML = h;
+}
+
 async function _loadCommentary(container, ticker) {
   container.innerHTML = '<div class="ed-stats-loading">Loading commentary…</div>';
   try {
@@ -4518,7 +4577,10 @@ window.switchSBTab = function(btn) {
       var lazyKey = lazy.getAttribute("data-lazy");
       if (lazyKey === "h2h-home") _loadH2HSubTab(lazy, ticker, 1);
       else if (lazyKey === "h2h-away") _loadH2HSubTab(lazy, ticker, 2);
-      else if (lazyKey === "topscorers") _loadTopScorers(lazy, ticker);
+      else if (lazyKey === "topscorers") _loadStandingsType(lazy, ticker, "top_scores");
+      else if (lazyKey === "form") _loadStandingsType(lazy, ticker, "form");
+      else if (lazyKey === "overunder") _loadStandingsType(lazy, ticker, "over_under");
+      else if (lazyKey === "htft") _loadStandingsType(lazy, ticker, "ht_ft");
       else if (lazyKey === "commentary") _loadCommentary(lazy, ticker);
       else if (lazyKey === "player-stats") _loadPlayerStats(lazy, ticker);
     }
