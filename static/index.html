@@ -4011,22 +4011,41 @@ window.switchMainTab = function(btn) {
   }
 };
 
-// Filter tab switcher (Overall/Home/Away)
+// Filter tab switcher (Overall/Home/Away) — re-fetches standings
 window.switchFilterTab = function(btn) {
   var row = btn.closest(".ed-sb-filter-tabs");
   if (!row) return;
   var tabs = row.querySelectorAll(".ed-sb-tab");
   for (var i = 0; i < tabs.length; i++) tabs[i].classList.remove("active");
   btn.classList.add("active");
+  var filter = btn.getAttribute("data-filter");
+  var panel = btn.closest(".ed-sb-panel");
+  if (!panel) return;
+  var lazy = panel.querySelector(".ed-sb-lazy");
+  if (!lazy) return;
+  var ticker = (panel.closest(".ed-stats-panel") || {}).dataset && panel.closest(".ed-stats-panel").dataset.ticker;
+  if (!ticker) return;
+  // Map filter to standing_type
+  var typeMap = {"overall": "overall", "home": "home", "away": "away"};
+  var standingType = typeMap[filter] || "overall";
+  _loadStandingsType(lazy, ticker, standingType);
 };
 
-// Count tab switcher (5/10/15/20/25/30)
+// Count tab switcher (5/10/15/20/25/30) — re-renders form table
 window.switchCountTab = function(btn) {
   var row = btn.closest(".ed-sb-filter-tabs");
   if (!row) return;
   var tabs = row.querySelectorAll(".ed-sb-tab");
   for (var i = 0; i < tabs.length; i++) tabs[i].classList.remove("active");
   btn.classList.add("active");
+  var count = btn.getAttribute("data-count");
+  var panel = btn.closest(".ed-sb-panel");
+  if (!panel) return;
+  var lazy = panel.querySelector(".ed-sb-lazy");
+  if (lazy && lazy._formWindows) {
+    var rows = lazy._formWindows[count];
+    if (rows) _renderStandingsTable(lazy, rows, lazy._formHomeName || "", lazy._formAwayName || "");
+  }
 };
 
 // Line tab switcher (0.5/1.5/2.5/...)
@@ -4393,7 +4412,7 @@ async function _loadTopScorers(container, ticker) {
 }
 
 async function _loadStandingsType(container, ticker, standingType) {
-  container.innerHTML = '<div class="ed-stats-loading">Loading ' + standingType.replace(/_/g, ' ') + '…</div>';
+  container.innerHTML = '<div class="ed-stats-loading">Loading…</div>';
   try {
     var r = await fetch("/api/event/" + encodeURIComponent(ticker) + "/standings?standing_type=" + encodeURIComponent(standingType));
     var d = await r.json();
@@ -4409,13 +4428,37 @@ async function _loadStandingsType(container, ticker, standingType) {
       for (var ri = 0; ri < grpRows.length; ri++) rows.push(grpRows[ri]);
     }
     if (!rows.length) {
-      container.innerHTML = '<div class="ed-stats-loading">No ' + standingType.replace(/_/g, ' ') + ' data available.</div>';
+      container.innerHTML = '<div class="ed-stats-loading">No data available.</div>';
       return;
     }
     var homeName = (d.home_name || "").toLowerCase();
     var awayName = (d.away_name || "").toLowerCase();
     if (standingType === "top_scores") {
       _renderTopScorersFromStandings(container, rows);
+    } else if (standingType === "form") {
+      // Form data has multiple match-count windows (5, 10, 15, 20, 25, 30)
+      // Split into groups by MATCHES_PLAYED value
+      var windows = {};
+      for (var fi = 0; fi < rows.length; fi++) {
+        var mp = rows[fi].MATCHES_PLAYED || 0;
+        if (!windows[mp]) windows[mp] = [];
+        windows[mp].push(rows[fi]);
+      }
+      var windowKeys = Object.keys(windows).sort(function(a,b) { return parseInt(a) - parseInt(b); });
+      container._formWindows = windows;
+      container._formHomeName = homeName;
+      container._formAwayName = awayName;
+      // Render the smallest window by default (typically 5)
+      var defaultKey = windowKeys[0] || "5";
+      _renderStandingsTable(container, windows[defaultKey] || rows.slice(0, 20), homeName, awayName);
+      // Update the count tabs to highlight the right one
+      var countTabs = container.closest(".ed-sb-panel");
+      if (countTabs) {
+        var btns = countTabs.querySelectorAll('[data-count]');
+        for (var bi = 0; bi < btns.length; bi++) {
+          btns[bi].classList.toggle("active", btns[bi].getAttribute("data-count") === defaultKey);
+        }
+      }
     } else {
       _renderStandingsTable(container, rows, homeName, awayName);
     }
