@@ -349,128 +349,74 @@ def _parse_event(ev):
         return None
 
 
+async def _fl_get(path: str, params: dict = None):
+    """Shared GET helper for FlashLive API calls."""
+    if not API_KEY or httpx is None:
+        return None
+    headers = {"x-rapidapi-key": API_KEY, "x-rapidapi-host": API_HOST}
+    if params is None:
+        params = {}
+    params.setdefault("locale", "en_INT")
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        try:
+            r = await client.get(f"{BASE_URL}{path}", headers=headers, params=params)
+            if r.status_code == 200:
+                return r.json()
+        except Exception:
+            pass
+    return None
+
+
 async def fetch_event_h2h(event_id: str):
-    """Fetch head-to-head data for an event."""
-    if not API_KEY or not event_id or httpx is None:
-        return None
-    headers = {"x-rapidapi-key": API_KEY, "x-rapidapi-host": API_HOST}
-    endpoints = [
-        f"/v1/events/h2h?event_id={event_id}&locale=en_INT",
-        f"/v1/events/head2head?event_id={event_id}&locale=en_INT",
-    ]
-    async with httpx.AsyncClient(timeout=10.0) as client:
-        for url_path in endpoints:
-            try:
-                r = await client.get(f"{BASE_URL}{url_path}", headers=headers)
-                if r.status_code == 200:
-                    return r.json()
-            except Exception:
-                continue
-    return None
-
-
-async def fetch_standings(tournament_id: str, season_id: str = ""):
-    """Fetch league standings for a tournament."""
-    if not API_KEY or not tournament_id or httpx is None:
-        return None
-    headers = {"x-rapidapi-key": API_KEY, "x-rapidapi-host": API_HOST}
-    params = {"tournament_id": tournament_id, "locale": "en_INT"}
-    if season_id:
-        params["season_id"] = season_id
-    endpoints = [
-        "/v1/tournaments/standings",
-        "/v1/tournaments/table",
-    ]
-    async with httpx.AsyncClient(timeout=10.0) as client:
-        for ep in endpoints:
-            try:
-                r = await client.get(f"{BASE_URL}{ep}", headers=headers, params=params)
-                if r.status_code == 200:
-                    return r.json()
-            except Exception:
-                continue
-    return None
-
-
-async def fetch_top_scorers(tournament_id: str, season_id: str = ""):
-    """Fetch top scorers for a tournament."""
-    if not API_KEY or not tournament_id or httpx is None:
-        return None
-    headers = {"x-rapidapi-key": API_KEY, "x-rapidapi-host": API_HOST}
-    params = {"tournament_id": tournament_id, "locale": "en_INT"}
-    if season_id:
-        params["season_id"] = season_id
-    endpoints = [
-        "/v1/tournaments/top-scorers",
-        "/v1/tournaments/topscorers",
-    ]
-    async with httpx.AsyncClient(timeout=10.0) as client:
-        for ep in endpoints:
-            try:
-                r = await client.get(f"{BASE_URL}{ep}", headers=headers, params=params)
-                if r.status_code == 200:
-                    return r.json()
-            except Exception:
-                continue
-    return None
-
-
-async def fetch_event_lineups(event_id: str):
-    """Fetch lineups for an event."""
-    if not API_KEY or not event_id or httpx is None:
-        return None
-    headers = {"x-rapidapi-key": API_KEY, "x-rapidapi-host": API_HOST}
-    endpoints = [
-        f"/v1/events/lineups?event_id={event_id}&locale=en_INT",
-    ]
-    async with httpx.AsyncClient(timeout=10.0) as client:
-        for url_path in endpoints:
-            try:
-                r = await client.get(f"{BASE_URL}{url_path}", headers=headers)
-                if r.status_code == 200:
-                    return r.json()
-            except Exception:
-                continue
-    return None
-
-
-async def fetch_event_summary(event_id: str):
-    """Fetch match summary/incidents for an event."""
-    if not API_KEY or not event_id or httpx is None:
-        return None
-    headers = {"x-rapidapi-key": API_KEY, "x-rapidapi-host": API_HOST}
-    endpoints = [
-        f"/v1/events/summary?event_id={event_id}&locale=en_INT",
-    ]
-    async with httpx.AsyncClient(timeout=10.0) as client:
-        for url_path in endpoints:
-            try:
-                r = await client.get(f"{BASE_URL}{url_path}", headers=headers)
-                if r.status_code == 200:
-                    return r.json()
-            except Exception:
-                continue
-    return None
+    if not event_id: return None
+    return await _fl_get("/v1/events/h2h", {"event_id": event_id})
 
 
 async def fetch_event_stats(event_id: str):
-    """Fetch match statistics from FlashLive."""
-    if not API_KEY or not event_id or httpx is None:
-        return None
-    headers = {"x-rapidapi-key": API_KEY, "x-rapidapi-host": API_HOST}
-    endpoints = [
-        f"/v1/events/statistics?event_id={event_id}&locale=en_INT",
-        f"/v1/events/stats?event_id={event_id}&locale=en_INT",
-    ]
-    async with httpx.AsyncClient(timeout=10.0) as client:
-        for url_path in endpoints:
-            try:
-                r = await client.get(f"{BASE_URL}{url_path}", headers=headers)
-                if r.status_code == 200:
-                    return r.json()
-            except Exception:
-                continue
-    return None
+    if not event_id: return None
+    return await _fl_get("/v1/events/statistics", {"event_id": event_id})
+
+
+async def fetch_event_lineups(event_id: str):
+    if not event_id: return None
+    return await _fl_get("/v1/events/lineups", {"event_id": event_id})
+
+
+async def fetch_event_summary(event_id: str):
+    """Fetch match incidents (goals, cards, subs)."""
+    if not event_id: return None
+    data = await _fl_get("/v1/events/summary-incidents", {"event_id": event_id})
+    if not data:
+        data = await _fl_get("/v1/events/summary", {"event_id": event_id})
+    return data
+
+
+async def fetch_event_commentary(event_id: str):
+    if not event_id: return None
+    return await _fl_get("/v1/events/commentary", {"event_id": event_id})
+
+
+async def fetch_event_news(event_id: str):
+    if not event_id: return None
+    return await _fl_get("/v1/events/news", {"event_id": event_id})
+
+
+async def fetch_standings(tournament_stage_id: str, season_id: str = ""):
+    """Fetch league standings. Requires tournament_stage_id."""
+    if not tournament_stage_id: return None
+    params = {"tournament_stage_id": tournament_stage_id, "standing_type": "overall"}
+    if season_id:
+        params["tournament_season_id"] = season_id
+    return await _fl_get("/v1/tournaments/standings", params)
+
+
+async def fetch_top_scorers(tournament_stage_id: str, season_id: str = ""):
+    """Fetch top scorers. Same endpoint as standings, different standing_type."""
+    if not tournament_stage_id: return None
+    params = {"tournament_stage_id": tournament_stage_id, "standing_type": "top_scores"}
+    if season_id:
+        params["tournament_season_id"] = season_id
+    return await _fl_get("/v1/tournaments/standings", params)
 
 
 def find_flashlive_event_id(title: str, sport: str = ""):

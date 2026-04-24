@@ -4162,17 +4162,16 @@ async def get_event_standings(ticker: str):
         g = flash_match(found.get("title", ""), found.get("_sport", ""))
         if not g:
             return {"error": "no FlashLive match found"}
-        tournament_id = g.get("tournament_id", "")
+        stage_id = g.get("tournament_stage_id", "")
         season_id = g.get("tournament_season_id", "")
-        if not tournament_id:
-            return {"error": "no tournament ID available"}
-        data = await fetch_standings(tournament_id, season_id)
+        if not stage_id:
+            return {"error": "no tournament stage ID available"}
+        data = await fetch_standings(stage_id, season_id)
         if not data:
             return {"error": "no standings data available"}
         return {
             "data": data,
-            "tournament_id": tournament_id,
-            "season_id": season_id,
+            "tournament_stage_id": stage_id,
             "home_name": g.get("home_name", ""),
             "away_name": g.get("away_name", ""),
             "source": "flashlive",
@@ -4199,13 +4198,42 @@ async def get_event_topscorers(ticker: str):
         g = flash_match(found.get("title", ""), found.get("_sport", ""))
         if not g:
             return {"error": "no FlashLive match found"}
-        tournament_id = g.get("tournament_id", "")
+        stage_id = g.get("tournament_stage_id", "")
         season_id = g.get("tournament_season_id", "")
-        if not tournament_id:
-            return {"error": "no tournament ID available"}
-        data = await fetch_top_scorers(tournament_id, season_id)
+        if not stage_id:
+            return {"error": "no tournament stage ID available"}
+        data = await fetch_top_scorers(stage_id, season_id)
         if not data:
             return {"error": "no top scorers data available"}
+        return {"data": data, "source": "flashlive"}
+    except Exception as e:
+        return {"error": str(e)[:200]}
+
+
+@app.get("/api/event/{ticker}/news")
+async def get_event_news(ticker: str):
+    """Fetch news from FlashLive for this event."""
+    ticker = (ticker or "").strip().upper()
+    get_data()
+    records = _cache.get("data_all") or _cache.get("data") or []
+    found = None
+    for r in records:
+        if r.get("event_ticker") == ticker:
+            found = r
+            break
+    if not found:
+        return {"error": "event not found"}
+    try:
+        from flashlive_feed import match_game as flash_match, fetch_event_news
+        g = flash_match(found.get("title", ""), found.get("_sport", ""))
+        if not g:
+            return {"error": "no FlashLive match found"}
+        fl_id = g.get("event_id")
+        if not fl_id:
+            return {"error": "no FlashLive event ID"}
+        data = await fetch_event_news(fl_id)
+        if not data:
+            return {"error": "no news available"}
         return {"data": data, "source": "flashlive"}
     except Exception as e:
         return {"error": str(e)[:200]}
@@ -4227,7 +4255,7 @@ def flashlive_status():
                 "clock": g.get("display_clock"),
                 "league": g.get("league"),
                 "tournament_id": g.get("tournament_id"),
-                "season_id": g.get("tournament_season_id"),
+                "tournament_stage_id": g.get("tournament_stage_id"),
             })
         # Include raw events for field discovery — one soccer, one tennis
         raw_events = {}
@@ -5412,106 +5440,136 @@ def get_event_history(ticker: str, hours: int = 24, period: int = 60, debug: boo
 
 
 def _parse_flashlive_lineups(fl_data):
-    """Parse FlashLive lineups response into our standard format."""
+    """Parse FlashLive lineups response into our standard format.
+    FlashLive format: DATA = [{FORMATION_NAME, FORMATIONS: [{FORMATION_LINE, MEMBERS}]}]
+    DATA has 2 entries: index 0 = home, index 1 = away."""
     try:
         data = fl_data if isinstance(fl_data, dict) else {}
-        top = data.get("DATA") or data
-        if isinstance(top, list):
-            top = top[0] if top else {}
-        home_lineup = []
-        away_lineup = []
-        home_formation = ""
-        away_formation = ""
-        for side_key in ("HOME", "AWAY"):
-            side_data = top.get(side_key) or {}
-            players = side_data.get("PLAYERS") or side_data.get("players") or []
-            formation = side_data.get("FORMATION") or ""
-            parsed = []
-            for p in players:
-                if not isinstance(p, dict):
-                    continue
-                parsed.append({
-                    "name": p.get("PLAYER_NAME") or p.get("name") or "",
-                    "jerseyNumber": p.get("SHIRT_NUMBER") or p.get("jersey_number"),
-                    "position": p.get("POSITION") or p.get("position") or "",
-                    "substitute": bool(p.get("SUBSTITUTE") or p.get("substitute")),
-                })
-            if side_key == "HOME":
-                home_lineup = parsed
-                home_formation = formation
-            else:
-                away_lineup = parsed
-                away_formation = formation
-        if not home_lineup and not away_lineup:
+        items = data.get("DATA") or []
+        if not isinstance(items, list) or len(items) < 2:
             return None
-        starters_home = [p for p in home_lineup if not p.get("substitute")]
-        subs_home = [p for p in home_lineup if p.get("substitute")]
-        starters_away = [p for p in away_lineup if not p.get("substitute")]
-        subs_away = [p for p in away_lineup if p.get("substitute")]
-        return {
-            "home": {
-                "formation": home_formation,
-                "players": starters_home,
-                "substitutes": subs_home,
-            },
-            "away": {
-                "formation": away_formation,
-                "players": starters_away,
-                "substitutes": subs_away,
-            },
-        }
+        result = {}
+        for idx, side in enumerate(["home", "away"]):
+            if idx >= len(items):
+                break
+            entry = items[idx]
+            if not isinstance(entry, dict):
+                continue
+            formation = entry.get("FORMATION_NAME") or ""
+            formations = entry.get("FORMATIONS") or []
+            starters = []
+            subs = []
+            for line in formations:
+                if not isinstance(line, dict):
+                    continue
+                members = line.get("MEMBERS") or []
+                for p in members:
+                    if not isinstance(p, dict):
+                        continue
+                    player = {
+                        "name": p.get("PLAYER_FULL_NAME") or p.get("SHORT_NAME") or "",
+                        "jerseyNumber": p.get("PLAYER_NUMBER"),
+                        "position": "",
+                    }
+                    pos_id = p.get("PLAYER_POSITION_ID")
+                    if pos_id == 1:
+                        player["position"] = "GK"
+                    elif pos_id == 2:
+                        player["position"] = "DEF"
+                    elif pos_id == 3:
+                        player["position"] = "MID"
+                    elif pos_id == 4:
+                        player["position"] = "FWD"
+                    player_type = p.get("PLAYER_TYPE") or p.get("PLAYER_GROUP_TYPE")
+                    if player_type == 2:
+                        subs.append(player)
+                    else:
+                        starters.append(player)
+            # Also check PLAYER_GROUP_TYPE at the top level for subs
+            pgt = entry.get("PLAYER_GROUP_TYPE")
+            if pgt == 2:
+                subs = starters + subs
+                starters = []
+            result[side] = {
+                "formation": formation,
+                "players": starters,
+                "substitutes": subs,
+            }
+        if not result:
+            return None
+        return result
     except Exception:
         return None
 
 
 def _parse_flashlive_incidents(fl_data):
-    """Parse FlashLive summary/incidents into our timeline format."""
+    """Parse FlashLive summary-incidents into our timeline format.
+    Format: DATA[].ITEMS[].INCIDENT_PARTICIPANTS[].{INCIDENT_TYPE, PARTICIPANT_NAME}
+    Also handles simpler summary format as fallback."""
     try:
         data = fl_data if isinstance(fl_data, dict) else {}
-        items = data.get("DATA") or data.get("data") or []
-        if not isinstance(items, list):
+        stages = data.get("DATA") or data.get("data") or []
+        if not isinstance(stages, list):
             return []
         incidents = []
-        for item in items:
-            if not isinstance(item, dict):
+        for stage in stages:
+            if not isinstance(stage, dict):
                 continue
-            for inc in (item.get("ITEMS") or item.get("items") or [item]):
+            for inc in (stage.get("ITEMS") or stage.get("items") or []):
                 if not isinstance(inc, dict):
                     continue
-                inc_type = inc.get("INCIDENT_TYPE") or inc.get("type") or ""
-                minute = inc.get("TIME") or inc.get("INCIDENT_TIME") or ""
-                player = inc.get("PLAYER_NAME") or inc.get("PARTICIPANT_NAME") or ""
-                assist = inc.get("ASSIST_NAME") or inc.get("ASSIST1_NAME") or ""
-                score = inc.get("SCORE") or ""
-                side = "home" if inc.get("HOME_AWAY") == "1" or inc.get("SIDE") == "home" else "away"
-                icon = ""
-                label = ""
-                if "goal" in str(inc_type).lower():
-                    icon = "⚽"
-                    label = "Goal"
-                elif "yellow" in str(inc_type).lower():
-                    icon = "\U0001f7e8"
-                    label = "Yellow Card"
-                elif "red" in str(inc_type).lower():
-                    icon = "\U0001f7e5"
-                    label = "Red Card"
-                elif "subst" in str(inc_type).lower():
-                    icon = "\U0001f504"
-                    label = "Substitution"
-                elif "penalty" in str(inc_type).lower():
-                    icon = "P"
-                    label = "Penalty"
+                minute = inc.get("INCIDENT_TIME") or inc.get("TIME") or ""
+                side_val = inc.get("INCIDENT_TEAM") or inc.get("HOME_AWAY") or ""
+                side = "home" if str(side_val) in ("1", "home") else "away"
+                # summary-incidents: participants nested
+                participants = inc.get("INCIDENT_PARTICIPANTS") or []
+                if participants:
+                    for p in participants:
+                        if not isinstance(p, dict):
+                            continue
+                        inc_type = str(p.get("INCIDENT_TYPE") or "").lower()
+                        player = p.get("PARTICIPANT_NAME") or ""
+                        icon = ""
+                        label = ""
+                        if "goal" in inc_type:
+                            icon = "⚽"; label = "Goal"
+                        elif "yellow" in inc_type:
+                            icon = "\U0001f7e8"; label = "Yellow Card"
+                        elif "red" in inc_type:
+                            icon = "\U0001f7e5"; label = "Red Card"
+                        elif "subst" in inc_type:
+                            icon = "\U0001f504"; label = "Substitution"
+                        elif "penalty" in inc_type or "missed" in inc_type:
+                            icon = "P"; label = "Penalty"
+                        else:
+                            continue
+                        incidents.append({
+                            "time": str(minute), "type": label, "icon": icon,
+                            "player": player, "assist": "", "score": "", "side": side,
+                        })
                 else:
-                    continue
-                incidents.append({
-                    "time": str(minute),
-                    "type": label,
-                    "icon": icon,
-                    "player": player,
-                    "assist": assist,
-                    "score": score,
-                    "side": side,
-                })
+                    # Simpler format fallback
+                    inc_type = str(inc.get("INCIDENT_TYPE") or inc.get("type") or "").lower()
+                    player = inc.get("PLAYER_NAME") or inc.get("PARTICIPANT_NAME") or ""
+                    assist = inc.get("ASSIST_NAME") or inc.get("ASSIST1_NAME") or ""
+                    icon = ""; label = ""
+                    if "goal" in inc_type:
+                        icon = "⚽"; label = "Goal"
+                    elif "yellow" in inc_type:
+                        icon = "\U0001f7e8"; label = "Yellow Card"
+                    elif "red" in inc_type:
+                        icon = "\U0001f7e5"; label = "Red Card"
+                    elif "subst" in inc_type:
+                        icon = "\U0001f504"; label = "Substitution"
+                    elif "penalty" in inc_type:
+                        icon = "P"; label = "Penalty"
+                    else:
+                        continue
+                    incidents.append({
+                        "time": str(minute), "type": label, "icon": icon,
+                        "player": player, "assist": assist,
+                        "score": inc.get("SCORE") or "", "side": side,
+                    })
         return incidents
     except Exception:
         return []

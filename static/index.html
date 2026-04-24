@@ -3733,15 +3733,84 @@ async function hydrateGameStats(evTicker) {
     // MATCH main panel
     // ════════════════════════════════════════════════════
     h += '<div class="ed-sb-main active" data-main="match">';
-    // Sub-tabs: Summary | Lineups
+    // Sub-tabs: Summary | Stats | Lineups
     h += '<div class="ed-sb-tabs ed-sb-sub-tabs">';
     h += '<button class="ed-sb-tab active" data-panel="summary" onclick="window.switchSBTab(this)">Summary</button>';
+    if (hasStats) h += '<button class="ed-sb-tab" data-panel="match-stats" onclick="window.switchSBTab(this)">Stats</button>';
     if (hasLineups) h += '<button class="ed-sb-tab" data-panel="lineups" onclick="window.switchSBTab(this)">Lineups</button>';
     h += '</div>';
-    // Summary panel (stats + timeline combined)
+    // Summary panel (timeline / incidents)
     h += '<div class="ed-sb-panel active" data-panel="summary">';
+    if (hasTimeline) {
+      h += '<div class="ed-stats-title" style="margin-top:16px">Timeline</div>';
+      for (var ti = 0; ti < incidents.length; ti++) {
+        var inc = incidents[ti];
+        var itype = inc.type || "";
+        var minute = inc.time != null ? String(inc.time) + "'" : "";
+        if (inc.addedTime && inc.addedTime !== 999) minute += "+" + inc.addedTime;
+        // Support both SofaScore (isHome bool) and FlashLive (side string) formats
+        var sideCls;
+        if (inc.side === "home" || inc.isHome === true) sideCls = " ed-tl-home";
+        else if (inc.side === "away" || inc.isHome === false) sideCls = " ed-tl-away";
+        else sideCls = " ed-tl-neutral";
+        var icon = "";
+        var detail = "";
+        // Normalize FlashLive types to lowercase for matching
+        var itypeLower = itype.toLowerCase();
+        if (inc.icon) icon = inc.icon;
+        if (itypeLower === "goal" || itype === "Goal") {
+          icon = "\u26BD";
+          detail = '<span class="ed-tl-player">' + escH(inc.player) + '</span>';
+          if (inc.assist) detail += '<br><span class="ed-tl-assist">Assist: ' + escH(inc.assist) + '</span>';
+          if (inc.homeScore != null && inc.awayScore != null) {
+            detail += '<span class="ed-tl-score">' + inc.homeScore + '-' + inc.awayScore + '</span>';
+          }
+          if (inc.goalType === "ownGoal") detail += ' <span class="ed-tl-assist">(OG)</span>';
+          if (inc.goalType === "penalty") detail += ' <span class="ed-tl-assist">(Pen)</span>';
+        } else if (itypeLower === "card" || itypeLower === "yellow card" || itypeLower === "red card") {
+          icon = inc.incidentClass === "red" ? "\uD83D\uDFE5" : "\uD83D\uDFE8";
+          detail = '<span class="ed-tl-player">' + escH(inc.player) + '</span>';
+        } else if (itypeLower === "substitution") {
+          icon = "\uD83D\uDD04";
+          detail = '<span class="ed-tl-sub-in">\u25B2 ' + escH(inc.playerIn || "") + '</span>';
+          detail += '<br><span class="ed-tl-sub-out">\u25BC ' + escH(inc.playerOut || "") + '</span>';
+        } else if (itypeLower === "period") {
+          icon = "\u23F1";
+          detail = '<span class="ed-tl-player">' + escH(inc.text || "Period") + '</span>';
+          sideCls = " ed-tl-neutral";
+        } else if (itypeLower === "injurytime") {
+          icon = "\u23F3";
+          detail = '<span class="ed-tl-assist">+' + escH(String(inc.length || inc.text || "")) + ' min added</span>';
+          sideCls = " ed-tl-neutral";
+        } else if (itypeLower === "vardecision") {
+          icon = "\uD83D\uDCFA";
+          detail = '<span class="ed-tl-player">VAR: ' + escH(inc.text || inc.incidentClass || "") + '</span>';
+        } else if (itypeLower === "ingamepenalty" || itypeLower === "penalty") {
+          icon = "\u26BD";
+          detail = '<span class="ed-tl-player">' + escH(inc.player || "Penalty") + '</span>';
+          if (inc.text) detail += '<br><span class="ed-tl-assist">' + escH(inc.text) + '</span>';
+        } else {
+          // Unknown type — still surface it rather than dropping it.
+          icon = "\u2022";
+          var fallback = inc.player || inc.text || inc.incidentClass || itype;
+          if (!fallback) continue;
+          detail = '<span class="ed-tl-player">' + escH(fallback) + '</span>';
+        }
+        h += '<div class="ed-tl-item' + sideCls + '">';
+        h += '<div class="ed-tl-time">' + minute + '</div>';
+        h += '<div class="ed-tl-icon">' + icon + '</div>';
+        h += '<div class="ed-tl-detail">' + detail + '</div>';
+        h += '</div>';
+      }
+      h += '</div>';
+    }
+    if (!hasTimeline) {
+      h += '<div class="ed-stats-loading">No match events yet.</div>';
+    }
+    h += '</div>'; // close summary panel
+    // ── Stats panel (possession, shots, etc.) ──────────────────
     if (hasStats) {
-      h += '<div class="ed-stats-title">Team Stats</div>';
+      h += '<div class="ed-sb-panel" data-panel="match-stats">';
       h += '<div class="ed-stats-teams">';
       h += '<div class="ed-stats-team">' + escH(home) + '</div>';
       h += '<div class="ed-stats-team">' + escH(away) + '</div>';
@@ -3763,66 +3832,8 @@ async function hydrateGameStats(evTicker) {
           h += '</div>';
         }
       }
-    }
-    if (hasTimeline) {
-      h += '<div class="ed-stats-title" style="margin-top:16px">Timeline</div>';
-      for (var ti = 0; ti < incidents.length; ti++) {
-        var inc = incidents[ti];
-        var itype = inc.type || "";
-        var minute = inc.time != null ? inc.time + "'" : "";
-        // SofaScore uses addedTime=999 as a sentinel for "end of
-        // period" (not actual added time). Only show real values.
-        if (inc.addedTime && inc.addedTime !== 999) minute += "+" + inc.addedTime;
-        var sideCls = inc.isHome === true ? " ed-tl-home" : (inc.isHome === false ? " ed-tl-away" : " ed-tl-neutral");
-        var icon = "";
-        var detail = "";
-        if (itype === "goal") {
-          icon = "\u26BD";
-          detail = '<span class="ed-tl-player">' + escH(inc.player) + '</span>';
-          if (inc.assist) detail += '<br><span class="ed-tl-assist">Assist: ' + escH(inc.assist) + '</span>';
-          if (inc.homeScore != null && inc.awayScore != null) {
-            detail += '<span class="ed-tl-score">' + inc.homeScore + '-' + inc.awayScore + '</span>';
-          }
-          if (inc.goalType === "ownGoal") detail += ' <span class="ed-tl-assist">(OG)</span>';
-          if (inc.goalType === "penalty") detail += ' <span class="ed-tl-assist">(Pen)</span>';
-        } else if (itype === "card") {
-          icon = inc.incidentClass === "red" ? "\uD83D\uDFE5" : "\uD83D\uDFE8";
-          detail = '<span class="ed-tl-player">' + escH(inc.player) + '</span>';
-        } else if (itype === "substitution") {
-          icon = "\uD83D\uDD04";
-          detail = '<span class="ed-tl-sub-in">\u25B2 ' + escH(inc.playerIn || "") + '</span>';
-          detail += '<br><span class="ed-tl-sub-out">\u25BC ' + escH(inc.playerOut || "") + '</span>';
-        } else if (itype === "period") {
-          icon = "\u23F1";
-          detail = '<span class="ed-tl-player">' + escH(inc.text || "Period") + '</span>';
-          sideCls = " ed-tl-neutral";
-        } else if (itype === "injuryTime") {
-          icon = "\u23F3";
-          detail = '<span class="ed-tl-assist">+' + escH(String(inc.length || inc.text || "")) + ' min added</span>';
-          sideCls = " ed-tl-neutral";
-        } else if (itype === "varDecision") {
-          icon = "\uD83D\uDCFA";
-          detail = '<span class="ed-tl-player">VAR: ' + escH(inc.text || inc.incidentClass || "") + '</span>';
-        } else if (itype === "inGamePenalty") {
-          icon = "\u26BD";
-          detail = '<span class="ed-tl-player">' + escH(inc.player || "Penalty") + '</span>';
-          if (inc.text) detail += '<br><span class="ed-tl-assist">' + escH(inc.text) + '</span>';
-        } else {
-          // Unknown type — still surface it rather than dropping it.
-          icon = "\u2022";
-          var fallback = inc.player || inc.text || inc.incidentClass || itype;
-          if (!fallback) continue;
-          detail = '<span class="ed-tl-player">' + escH(fallback) + '</span>';
-        }
-        h += '<div class="ed-tl-item' + sideCls + '">';
-        h += '<div class="ed-tl-time">' + minute + '</div>';
-        h += '<div class="ed-tl-icon">' + icon + '</div>';
-        h += '<div class="ed-tl-detail">' + detail + '</div>';
-        h += '</div>';
-      }
       h += '</div>';
     }
-    h += '</div>'; // close summary panel
     // ── Lineups panel ────────────────────────────────────────
     if (hasLineups) {
       h += '<div class="ed-sb-panel" data-panel="lineups">';
@@ -4193,12 +4204,14 @@ function _renderStandingsTable(container, rows, homeName, awayName) {
     var row = rows[i];
     var teamName = row.TEAM_NAME || row.team_name || row.name || "";
     var rank = row.RANKING || row.ranking || row.rank || (i + 1);
-    var mp = row.MATCHES || row.matches || row.played || row.MP || "";
+    var mp = row.MATCHES_PLAYED || row.MATCHES || row.matches || row.played || row.MP || "";
     var w = row.WINS || row.wins || row.W || "";
     var d2 = row.DRAWS || row.draws || row.D || "";
     var l = row.LOSSES || row.losses || row.L || "";
-    var gf = row.GOALS_FOR || row.goals_for || row.GF || "";
-    var ga = row.GOALS_AGAINST || row.goals_against || row.GA || "";
+    var goals = row.GOALS || "";
+    var goalParts = String(goals).split(":");
+    var gf = goalParts[0] || row.GOALS_FOR || row.goals_for || row.GF || "";
+    var ga = goalParts[1] || row.GOALS_AGAINST || row.goals_against || row.GA || "";
     var pts = row.POINTS || row.points || row.PTS || "";
     var gd = "";
     if (gf !== "" && ga !== "") gd = parseInt(gf) - parseInt(ga);
@@ -4255,11 +4268,11 @@ async function _loadTopScorers(container, ticker) {
     h += '</tr></thead><tbody>';
     for (var i = 0; i < players.length; i++) {
       var p = players[i];
-      var name = p.PLAYER_NAME || p.player_name || p.name || "";
+      var name = p.TS_PLAYER_NAME || p.PLAYER_NAME || p.player_name || p.name || "";
       var team = p.TEAM_NAME || p.team_name || "";
-      var goals = p.GOALS || p.goals || p.SCORE || p.score || "";
+      var goals = p.TS_PLAYER_GOALS || p.GOALS || p.goals || p.SCORE || p.score || "";
       var assists = p.ASSISTS || p.assists || "";
-      var rank = p.RANKING || p.ranking || (i + 1);
+      var rank = p.TS_RANK || p.RANKING || p.ranking || (i + 1);
       h += '<tr style="border-bottom:1px solid var(--border)">';
       h += '<td style="text-align:left;padding:4px 2px;color:var(--text-muted)">' + escH(String(rank)) + '</td>';
       h += '<td style="text-align:left;padding:4px 2px">' + escH(name) + '</td>';
@@ -4276,7 +4289,42 @@ async function _loadTopScorers(container, ticker) {
 }
 
 async function _loadNews(container, ticker) {
-  container.innerHTML = '<div class="ed-stats-loading">News coming soon.</div>';
+  container.innerHTML = '<div class="ed-stats-loading">Loading news…</div>';
+  try {
+    var r = await fetch("/api/event/" + encodeURIComponent(ticker) + "/news");
+    var d = await r.json();
+    if (d.error) { container.innerHTML = '<div class="ed-stats-loading">' + escH(d.error) + '</div>'; return; }
+    var data = d.data || {};
+    var articles = data.DATA || data.data || [];
+    if (!Array.isArray(articles) || !articles.length) {
+      container.innerHTML = '<div class="ed-stats-loading">No news available.</div>';
+      return;
+    }
+    var h = '';
+    for (var i = 0; i < Math.min(articles.length, 10); i++) {
+      var a = articles[i];
+      if (!a || typeof a !== 'object') continue;
+      var title = a.TITLE || a.title || "";
+      var published = "";
+      if (a.PUBLISHED_AT || a.published_at) {
+        try { published = new Date((a.PUBLISHED_AT || a.published_at) * 1000).toLocaleDateString("en-US", {month:"short",day:"numeric",year:"numeric"}); } catch(e){}
+      }
+      var source = a.SOURCE_NAME || a.source_name || "";
+      var desc = a.BODY || a.body || a.DESCRIPTION || a.description || "";
+      if (desc.length > 150) desc = desc.substring(0, 147) + "…";
+      h += '<div style="padding:10px 0;border-bottom:1px solid var(--border)">';
+      h += '<div style="font-size:12px;font-weight:600;color:var(--text);line-height:1.3">' + escH(title) + '</div>';
+      if (desc) h += '<div style="font-size:11px;color:var(--text-dim);margin-top:4px;line-height:1.3">' + escH(desc) + '</div>';
+      h += '<div style="font-size:10px;color:var(--text-muted);margin-top:4px">';
+      if (source) h += escH(source);
+      if (source && published) h += ' · ';
+      if (published) h += escH(published);
+      h += '</div></div>';
+    }
+    container.innerHTML = h || '<div class="ed-stats-loading">No news available.</div>';
+  } catch (e) {
+    container.innerHTML = '<div class="ed-stats-loading">Failed to load news.</div>';
+  }
 }
 
 window.switchSBTab = function(btn) {
