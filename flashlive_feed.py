@@ -130,13 +130,14 @@ async def _fetch_live_events():
     errors = []
     async with httpx.AsyncClient(timeout=15.0) as client:
         for sport_id, sport_name in ACTIVE_SPORTS.items():
+          for day in ("0", "1"):
             try:
                 r = await client.get(
                     f"{BASE_URL}/v1/events/list",
                     headers=headers,
                     params={
                         "sport_id": sport_id,
-                        "indent_days": "0",
+                        "indent_days": day,
                         "timezone": "-4",
                         "locale": "en_INT",
                     },
