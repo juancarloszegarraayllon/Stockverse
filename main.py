@@ -4371,16 +4371,6 @@ async def debug_flashlive_data(ticker: str):
         result["summary_raw"] = await fetch_event_summary(fl_id)
         result["commentary_raw"] = await fetch_event_commentary(fl_id)
         result["news_raw"] = await fetch_event_news(fl_id)
-        result["player_stats_alt_raw"] = await _fl_get("/v1/events/player-statistics-alt", {"event_id": fl_id})
-        result["player_stats_raw"] = await _fl_get("/v1/events/player-statistics", {"event_id": fl_id})
-        result["ps_top_stats"] = await _fl_get("/v1/events/top-stats", {"event_id": fl_id})
-        result["ps_v2"] = await _fl_get("/v2/events/player-statistics", {"event_id": fl_id})
-        result["ps_player_stats"] = await _fl_get("/v1/events/player-stats", {"event_id": fl_id})
-        result["ps_match_player"] = await _fl_get("/v1/events/match-player-statistics", {"event_id": fl_id})
-        result["ps_player_match"] = await _fl_get("/v1/events/player-match-statistics", {"event_id": fl_id})
-        result["ps_lineups_stats"] = await _fl_get("/v1/events/lineups-statistics", {"event_id": fl_id})
-        result["ps_top_players"] = await _fl_get("/v1/events/top-players", {"event_id": fl_id})
-        result["ps_players"] = await _fl_get("/v1/events/players", {"event_id": fl_id})
         if stage_id:
             result["standings_raw"] = await fetch_standings(stage_id, season_id)
             # Try multiple endpoint variants to find the right ones
