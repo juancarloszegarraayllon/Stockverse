@@ -448,7 +448,12 @@ async def search_flashlive_event(title: str, sport: str = ""):
     data = await _fl_get("/v1/search/multi-search", {"query": query})
     if not data:
         return None
-    results = data.get("DATA") or data.get("data") or []
+    if isinstance(data, list):
+        results = data
+    elif isinstance(data, dict):
+        results = data.get("DATA") or data.get("data") or []
+    else:
+        return None
     if not isinstance(results, list):
         return None
     for item in results:

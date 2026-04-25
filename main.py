@@ -4359,9 +4359,10 @@ async def debug_flashlive_data(ticker: str):
         if stage_id:
             result["standings_raw"] = await fetch_standings(stage_id, season_id)
             # Try multiple endpoint variants to find the right ones
-            # Get stage data to find the correct season ID
             result["stage_data"] = await _fl_get("/v1/tournaments/stages/data", {"tournament_stage_id": stage_id})
             result["standings_tabs"] = await _fl_get("/v1/tournaments/standings/tabs", {"tournament_stage_id": stage_id, "tournament_season_id": season_id})
+            result["standings_form"] = "has_data" if await _fl_get("/v1/tournaments/standings", {"tournament_stage_id": stage_id, "standing_type": "form", "tournament_season_id": season_id}) else None
+            result["standings_home"] = "has_data" if await _fl_get("/v1/tournaments/standings", {"tournament_stage_id": stage_id, "standing_type": "home", "tournament_season_id": season_id}) else None
         # Show first standings row keys
         st = result.get("standings_raw")
         if st and isinstance(st, dict):
