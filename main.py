@@ -4312,7 +4312,7 @@ async def get_event_player_stats(ticker: str):
         if not fl_id:
             return {"error": "no FlashLive event ID"}
         from flashlive_feed import _fl_get
-        data = await _fl_get("/v1/events/player-statistics-alt", {"event_id": fl_id})
+        data = await _fl_get("/v1/events/player-statistics", {"event_id": fl_id})
         if not data:
             return {"error": "no player stats available"}
         return {"data": data, "source": "flashlive"}
