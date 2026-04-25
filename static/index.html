@@ -4404,7 +4404,7 @@ async function _loadStandingsType(container, ticker, standingType) {
     }
     var homeName = (d.home_name || "").toLowerCase();
     var awayName = (d.away_name || "").toLowerCase();
-    if (standingType === "top_scorers" || standingType === "TOP_SCORERS") {
+    if (standingType === "top_scores" || standingType === "top_scorers" || standingType === "TOP_SCORERS") {
       _renderTopScorersFromStandings(container, rows);
     } else if (standingType === "form") {
       // Form data has multiple match-count windows (5, 10, 15, 20, 25, 30)
@@ -4440,23 +4440,30 @@ function _renderTopScorersFromStandings(container, rows) {
   var h = '<div style="overflow-x:auto">';
   h += '<table style="width:100%;font-size:11px;border-collapse:collapse">';
   h += '<thead><tr style="color:var(--text-muted);border-bottom:1px solid var(--border)">';
-  h += '<th style="text-align:left;padding:4px 2px;width:20px">#</th>';
-  h += '<th style="text-align:left;padding:4px 2px">Player</th>';
-  h += '<th style="text-align:left;padding:4px 2px">Team</th>';
-  h += '<th style="text-align:center;padding:4px 2px;font-weight:700">G</th>';
+  h += '<th style="text-align:left;padding:6px 4px;width:24px">#</th>';
+  h += '<th style="text-align:left;padding:6px 4px">Player</th>';
+  h += '<th style="text-align:left;padding:6px 4px">Team</th>';
+  h += '<th style="text-align:center;padding:6px 4px;font-weight:700">G</th>';
+  h += '<th style="text-align:center;padding:6px 4px">A</th>';
   h += '</tr></thead><tbody>';
   for (var i = 0; i < rows.length; i++) {
     var p = rows[i];
-    var name = p.TS_PLAYER_NAME || p.PLAYER_NAME || p.TEAM_NAME || "";
-    var team = p.TEAM_NAME || "";
-    if (p.TS_PLAYER_NAME) team = p.TEAM_NAME || "";
-    var goals = p.TS_PLAYER_GOALS || p.GOALS || "";
     var rank = p.TS_RANK || p.RANKING || (i + 1);
-    h += '<tr style="border-bottom:1px solid var(--border)">';
-    h += '<td style="padding:4px 2px;color:var(--text-muted)">' + escH(String(rank)) + '</td>';
-    h += '<td style="padding:4px 2px">' + escH(name) + '</td>';
-    h += '<td style="padding:4px 2px;color:var(--text-muted)">' + escH(team) + '</td>';
-    h += '<td style="text-align:center;padding:4px 2px;font-weight:700">' + escH(String(goals)) + '</td>';
+    var name = p.TS_PLAYER_NAME || p.PLAYER_NAME || "";
+    var team = p.TEAM_NAME || "";
+    var goals = p.TS_PLAYER_GOALS || p.GOALS || "";
+    var assists = p.TS_PLAYER_ASISTS || p.TS_PLAYER_ASSISTS || p.ASSISTS || "";
+    var flagUrl = p.TS_IMAGE_PATH || p.TEAM_IMAGE_PATH || "";
+    var isHighlight = team.toLowerCase().indexOf("barcelona") >= 0 || team.toLowerCase().indexOf("getafe") >= 0;
+    var rowBg = isHighlight ? 'background:rgba(74,144,226,0.12);font-weight:600' : '';
+    h += '<tr style="border-bottom:1px solid var(--border);' + rowBg + '">';
+    h += '<td style="padding:6px 4px;color:var(--text-muted)">' + escH(String(rank)) + '.</td>';
+    h += '<td style="padding:6px 4px">';
+    if (flagUrl) h += '<img src="' + escH(flagUrl) + '" style="width:16px;height:11px;margin-right:6px;vertical-align:middle" loading="lazy">';
+    h += escH(name) + '</td>';
+    h += '<td style="padding:6px 4px;color:var(--text-dim)">' + escH(team) + '</td>';
+    h += '<td style="text-align:center;padding:6px 4px;font-weight:700">' + escH(String(goals)) + '</td>';
+    h += '<td style="text-align:center;padding:6px 4px;color:var(--text-dim)">' + escH(String(assists)) + '</td>';
     h += '</tr>';
   }
   h += '</tbody></table></div>';
