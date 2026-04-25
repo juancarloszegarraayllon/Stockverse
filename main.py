@@ -4359,14 +4359,9 @@ async def debug_flashlive_data(ticker: str):
         if stage_id:
             result["standings_raw"] = await fetch_standings(stage_id, season_id)
             # Try multiple endpoint variants to find the right ones
-            result["standings_tabs_v1"] = await _fl_get("/v1/tournaments/standings/tabs", {"tournament_stage_id": stage_id})
-            result["standings_tabs_v2"] = await _fl_get("/v1/tournaments/standings/tabs", {"tournament_stage_id": stage_id, "tournament_season_id": season_id})
-            result["standings_form"] = await _fl_get("/v1/tournaments/standings", {"tournament_stage_id": stage_id, "standing_type": "form", "tournament_season_id": season_id})
-            result["standings_top_scorers"] = await _fl_get("/v1/tournaments/standings", {"tournament_stage_id": stage_id, "standing_type": "top_scorers", "tournament_season_id": season_id})
-            result["standings_home"] = await _fl_get("/v1/tournaments/standings", {"tournament_stage_id": stage_id, "standing_type": "home", "tournament_season_id": season_id})
-            result["player_stats_v1"] = await _fl_get("/v1/events/player-statistics", {"event_id": fl_id})
-            result["player_stats_v2"] = await _fl_get("/v1/events/player-statistics-alt", {"event_id": fl_id})
-            result["player_stats_v3"] = await _fl_get("/v1/events/statistics-alt", {"event_id": fl_id})
+            # Get stage data to find the correct season ID
+            result["stage_data"] = await _fl_get("/v1/tournaments/stages/data", {"tournament_stage_id": stage_id})
+            result["standings_tabs"] = await _fl_get("/v1/tournaments/standings/tabs", {"tournament_stage_id": stage_id, "tournament_season_id": season_id})
         # Show first standings row keys
         st = result.get("standings_raw")
         if st and isinstance(st, dict):
