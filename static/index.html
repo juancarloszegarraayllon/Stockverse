@@ -4544,44 +4544,60 @@ async function _loadPlayerStats(container, ticker) {
     var d = await r.json();
     if (d.error) { container.innerHTML = '<div class="ed-stats-loading">' + escH(d.error) + '</div>'; return; }
     var data = d.data || {};
-    var groups = data.DATA || data.data || [];
-    if (!Array.isArray(groups)) groups = [groups];
-    var allPlayers = [];
-    for (var gi = 0; gi < groups.length; gi++) {
-      var grp = groups[gi];
-      var rows = grp.ROWS || grp.ITEMS || [];
-      for (var ri = 0; ri < rows.length; ri++) allPlayers.push(rows[ri]);
+    var inner = data.DATA || data;
+    var players = inner.PLAYERS || [];
+    var ratings = inner.RATINGS || [];
+    var stats = inner.STATS || [];
+    var teams = inner.TEAMS || [];
+    if (!players.length) { container.innerHTML = '<div class="ed-stats-loading">No player stats available.</div>'; return; }
+    // Build lookup: playerId -> {info, rating, statsByType}
+    var byPlayer = {};
+    for (var i = 0; i < players.length; i++) {
+      byPlayer[players[i].ID] = {info: players[i], rating: null, stats: {}};
     }
-    if (!allPlayers.length) { container.innerHTML = '<div class="ed-stats-loading">No player stats available.</div>'; return; }
-    // Sort by rating descending
-    allPlayers.sort(function(a, b) {
-      var ra = parseFloat(a.RATING || a.rating || 0);
-      var rb = parseFloat(b.RATING || b.rating || 0);
+    for (var ri = 0; ri < ratings.length; ri++) {
+      var rt = ratings[ri];
+      if (byPlayer[rt.PLAYER_ID]) byPlayer[rt.PLAYER_ID].rating = parseFloat(rt.VALUE);
+    }
+    for (var si = 0; si < stats.length; si++) {
+      var s = stats[si];
+      if (byPlayer[s.PLAYER_ID]) byPlayer[s.PLAYER_ID].stats[s.TYPE_ID] = s.VALUE;
+    }
+    // Build team name lookup
+    var teamNames = {};
+    for (var ti = 0; ti < teams.length; ti++) {
+      teamNames[teams[ti].ID] = teams[ti].NAME || teams[ti].THREE_CHAR_NAME || "";
+    }
+    // Sort by rating desc, players who didn't play (rating null or 0) at the end
+    var arr = Object.values(byPlayer);
+    arr.sort(function(a, b) {
+      var ra = a.rating || 0, rb = b.rating || 0;
       return rb - ra;
     });
-    var h = '<div style="overflow-x:auto">';
-    h += '<table style="width:100%;font-size:10px;border-collapse:collapse">';
+    var h = '<div style="overflow-x:auto"><table style="width:100%;font-size:10px;border-collapse:collapse">';
     h += '<thead><tr style="color:var(--text-muted);border-bottom:1px solid var(--border)">';
     h += '<th style="text-align:left;padding:4px 2px">Player</th>';
     h += '<th style="text-align:center;padding:4px 2px">Rtg</th>';
     h += '<th style="text-align:center;padding:4px 2px">Shots</th>';
-    h += '<th style="text-align:center;padding:4px 2px">Pass%</th>';
+    h += '<th style="text-align:center;padding:4px 2px">Pass</th>';
     h += '<th style="text-align:center;padding:4px 2px">Tch</th>';
     h += '</tr></thead><tbody>';
-    for (var pi = 0; pi < allPlayers.length; pi++) {
-      var p = allPlayers[pi];
-      var name = p.PLAYER_NAME || p.PLAYER_FULL_NAME || p.name || "";
-      var rating = p.RATING || "";
-      var shots = p.TOTAL_SHOTS || p.SHOTS || "";
-      var passAcc = p.ACCURATE_PASSES || "";
-      var touches = p.TOUCHES || "";
-      var ratingNum = parseFloat(rating);
-      var ratingColor = ratingNum >= 7.5 ? '#4caf50' : ratingNum >= 6.5 ? 'var(--text)' : ratingNum > 0 ? '#f44336' : 'var(--text-muted)';
+    for (var pi = 0; pi < arr.length; pi++) {
+      var p = arr[pi];
+      var name = p.info.SHORT_DISPLAY_NAME || p.info.NAME || "";
+      var rating = p.rating;
+      var ratingStr = rating != null && rating > 0 ? rating.toFixed(1) : "-";
+      var ratingColor = rating >= 7.5 ? '#4caf50' : rating >= 6.5 ? 'var(--text)' : rating > 0 ? '#f44336' : 'var(--text-muted)';
+      var shots = p.stats.SHOTS_TOTAL || "0";
+      var passAcc = p.stats.PASSES_ACCURACY || "0%";
+      var passTotal = p.stats.PASSES_TOTAL || "0";
+      var touches = p.stats.TOUCHES_TOTAL || "0";
+      var passDisplay = passTotal !== "0" ? (passAcc + " (" + p.stats.PASSES_ACCURATE + "/" + passTotal + ")") : "-";
       h += '<tr style="border-bottom:1px solid var(--border)">';
       h += '<td style="text-align:left;padding:4px 2px">' + escH(name) + '</td>';
-      h += '<td style="text-align:center;padding:4px 2px;font-weight:700;color:' + ratingColor + '">' + escH(String(rating)) + '</td>';
+      h += '<td style="text-align:center;padding:4px 2px;font-weight:700;color:' + ratingColor + '">' + escH(ratingStr) + '</td>';
       h += '<td style="text-align:center;padding:4px 2px">' + escH(String(shots)) + '</td>';
-      h += '<td style="text-align:center;padding:4px 2px">' + escH(String(passAcc)) + '</td>';
+      h += '<td style="text-align:center;padding:4px 2px">' + escH(passDisplay) + '</td>';
       h += '<td style="text-align:center;padding:4px 2px">' + escH(String(touches)) + '</td>';
       h += '</tr>';
     }
