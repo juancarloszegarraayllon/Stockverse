@@ -3910,7 +3910,7 @@ async function hydrateGameStats(evTicker) {
     h += '<div class="ed-sb-tabs ed-sb-sub-tabs">';
     h += '<button class="ed-sb-tab active" data-panel="st-standings" onclick="window.switchStTab(this,\'overall\')">Standings</button>';
     h += '<button class="ed-sb-tab" data-panel="st-form" onclick="window.switchStTab(this,\'form\')">Form</button>';
-    h += '<button class="ed-sb-tab" data-panel="st-topscorers" onclick="window.switchStTab(this,\'top_scorers\')">Top Scorers</button>';
+    h += '<button class="ed-sb-tab" data-panel="st-topscorers" onclick="window.switchStTab(this,\'TOP_SCORERS\')">Top Scorers</button>';
     h += '</div>';
     // Single container for standings data (all sub-tabs render here)
     h += '<div class="ed-sb-tabs ed-sb-filter-tabs" id="st-filters-' + escH(evTicker) + '">';
@@ -4174,6 +4174,18 @@ function _stVal(row) {
   return "";
 }
 
+// Form match count click handler
+window._stFormCount = function(btn, count) {
+  var row = btn.closest(".ed-sb-filter-tabs");
+  if (row) { var tabs = row.querySelectorAll(".ed-sb-tab"); for (var i = 0; i < tabs.length; i++) tabs[i].classList.remove("active"); btn.classList.add("active"); }
+  var container = btn.closest("[id^='st-content-']");
+  if (!container || !container._formWindows) return;
+  var tableDiv = document.getElementById("st-form-table");
+  if (tableDiv && container._formWindows[count]) {
+    _renderStandingsTable(tableDiv, container._formWindows[count], container._homeName || "", container._awayName || "");
+  }
+};
+
 // Map of FlashLive field patterns to display column headers
 // NOTE: FlashLive does NOT always return D/L — many leagues only have MP, W, G, PTS
 var _ST_COL_MAP = [
@@ -4384,11 +4396,10 @@ async function _loadStandingsType(container, ticker, standingType) {
     }
     var homeName = (d.home_name || "").toLowerCase();
     var awayName = (d.away_name || "").toLowerCase();
-    if (standingType === "top_scores") {
+    if (standingType === "top_scorers" || standingType === "TOP_SCORERS") {
       _renderTopScorersFromStandings(container, rows);
     } else if (standingType === "form") {
       // Form data has multiple match-count windows (5, 10, 15, 20, 25, 30)
-      // Split into groups by MATCHES_PLAYED value
       var windows = {};
       for (var fi = 0; fi < rows.length; fi++) {
         var mp = rows[fi].MATCHES_PLAYED || 0;
@@ -4396,20 +4407,19 @@ async function _loadStandingsType(container, ticker, standingType) {
         windows[mp].push(rows[fi]);
       }
       var windowKeys = Object.keys(windows).sort(function(a,b) { return parseInt(a) - parseInt(b); });
-      container._formWindows = windows;
-      container._formHomeName = homeName;
-      container._formAwayName = awayName;
-      // Render the smallest window by default (typically 5)
-      var defaultKey = windowKeys[0] || "5";
-      _renderStandingsTable(container, windows[defaultKey] || rows.slice(0, 20), homeName, awayName);
-      // Update the count tabs to highlight the right one
-      var countTabs = container.closest(".ed-sb-panel");
-      if (countTabs) {
-        var btns = countTabs.querySelectorAll('[data-count]');
-        for (var bi = 0; bi < btns.length; bi++) {
-          btns[bi].classList.toggle("active", btns[bi].getAttribute("data-count") === defaultKey);
-        }
+      // Render match count buttons + table
+      var h = '<div class="ed-sb-tabs ed-sb-filter-tabs" style="margin-bottom:8px">';
+      for (var wk = 0; wk < windowKeys.length; wk++) {
+        var k = windowKeys[wk];
+        h += '<button class="ed-sb-tab' + (wk === 0 ? ' active' : '') + '" onclick="window._stFormCount(this,\'' + k + '\')">' + k + '</button>';
       }
+      h += '</div><div id="st-form-table"></div>';
+      container.innerHTML = h;
+      container._formWindows = windows;
+      container._homeName = homeName;
+      container._awayName = awayName;
+      var tableDiv = document.getElementById("st-form-table");
+      if (tableDiv && windowKeys.length) _renderStandingsTable(tableDiv, windows[windowKeys[0]], homeName, awayName);
     } else {
       _renderStandingsTable(container, rows, homeName, awayName);
     }
