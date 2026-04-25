@@ -4338,11 +4338,26 @@ async def debug_flashlive_data(ticker: str):
             match_game as flash_match, _fl_get,
             fetch_event_stats, fetch_event_lineups,
             fetch_event_summary, fetch_event_commentary, fetch_event_news,
-            fetch_standings,
+            fetch_standings, GAMES,
         )
-        g = await _find_fl_game(found)
+        title = found.get("title", "")
+        sport = found.get("_sport", "")
+        g = flash_match(title, sport)
+        # Show raw search results for debugging
+        import re as _re_dbg
+        parts = _re_dbg.split(r'\s+(?:vs\.?|v|at)\s+', title, maxsplit=1, flags=_re_dbg.IGNORECASE)
+        search_query = (parts[0].strip() + " " + parts[1].strip()) if len(parts) >= 2 else title
+        search_raw = await _fl_get("/v1/search/multi-search", {"query": search_query})
+        result = {
+            "match_game_found": g is not None,
+            "search_query": search_query,
+            "search_raw": search_raw,
+            "games_count": len(GAMES),
+            "title": title,
+            "sport": sport,
+        }
         if not g:
-            return {"error": "no FlashLive match", "title": found.get("title"), "sport": found.get("_sport")}
+            return result
         fl_id = g.get("event_id")
         stage_id = g.get("tournament_stage_id", "")
         season_id = g.get("tournament_season_id", "")
