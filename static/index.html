@@ -4540,7 +4540,54 @@ async function _loadCommentary(container, ticker) {
     container.innerHTML = '<div class="ed-stats-loading">Failed to load commentary.</div>';
   }
 }
-
+async function _loadMissingPlayers(container, ticker) {
+  container.innerHTML = '<div class="ed-stats-loading">Loading missing players…</div>';
+  try {
+    var r = await fetch("/api/event/" + encodeURIComponent(ticker) + "/missing-players");
+    var d = await r.json();
+    if (d.error) {
+      container.innerHTML = '<div class="ed-stats-loading">' + escH(d.error) + '</div>';
+      return;
+    }
+    var data = d.data || {};
+    var players = data.DATA || [];
+    if (!Array.isArray(players) || !players.length) {
+      container.innerHTML = '<div class="ed-stats-loading">No missing players reported.</div>';
+      return;
+    }
+    var homeName = d.home_name || "Home";
+    var awayName = d.away_name || "Away";
+    var homeList = players.filter(function(p) { return p.TEAM === 1; });
+    var awayList = players.filter(function(p) { return p.TEAM === 2; });
+    function chanceColor(chance) {
+      var c = String(chance || "").toLowerCase();
+      if (c.indexOf("doubt") >= 0) return "#ffb74d";
+      if (c.indexOf("out") >= 0 || c.indexOf("miss") >= 0) return "#f44336";
+      if (c.indexOf("expected") >= 0 || c.indexOf("likely") >= 0) return "#4caf50";
+      return "var(--text-dim)";
+    }
+    function renderTeam(name, list) {
+      if (!list.length) return '';
+      var h = '<div class="ed-stats-title" style="margin-top:14px">' + escH(name) + '</div>';
+      for (var i = 0; i < list.length; i++) {
+        var p = list[i];
+        var chance = p.CHANCE_TO_PLAY || "";
+        var reason = p.ABSENCE_REASON || "";
+        h += '<div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--border);font-size:11px">';
+        h += '<div style="flex:1;color:var(--text)">' + escH(p.PLAYER_NAME || "") + '</div>';
+        if (reason) h += '<div style="color:var(--text-muted);font-size:10px">' + escH(reason) + '</div>';
+        if (chance) h += '<div style="color:' + chanceColor(chance) + ';font-size:10px;font-weight:700;text-transform:uppercase">' + escH(chance) + '</div>';
+        h += '</div>';
+      }
+      return h;
+    }
+    var html = renderTeam(homeName, homeList) + renderTeam(awayName, awayList);
+    if (!html) html = '<div class="ed-stats-loading">No missing players reported.</div>';
+    container.innerHTML = html;
+  } catch (e) {
+    container.innerHTML = '<div class="ed-stats-loading">Failed to load missing players.</div>';
+  }
+}
 async function _loadPlayerStats(container, ticker) {
   container.innerHTML = '<div class="ed-stats-loading">Loading player stats…</div>';
   try {
