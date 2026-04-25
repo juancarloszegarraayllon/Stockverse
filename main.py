@@ -4319,7 +4319,126 @@ async def get_event_player_stats(ticker: str):
     except Exception as e:
         return {"error": str(e)[:200]}
 
+def _describe_fl(obj, depth=0, max_depth=4):
+    """Compact structural summary of a FlashLive response — shows
+    the shape (keys, list lengths, nesting) without dumping all the
+    data. Used by the schema scanner to discover which endpoints
+    have hidden sub-tabs."""
+    if obj is None:
+        return "null"
+    if depth >= max_depth:
+        return type(obj).__name__
+    if isinstance(obj, list):
+        if not obj:
+            return "[empty list]"
+        # Show count + shape of first element
+        return f"[{len(obj)} items] " + str(_describe_fl(obj[0], depth+1, max_depth))
+    if isinstance(obj, dict):
+        keys = list(obj.keys())
+        # Cap to first 12 keys to avoid huge output
+        capped = keys[:12]
+        out = {k: _describe_fl(obj[k], depth+1, max_depth) for k in capped}
+        if len(keys) > 12:
+            out["__more_keys__"] = f"+{len(keys)-12} more"
+        return out
+    if isinstance(obj, str):
+        # Show string length category instead of value
+        if len(obj) > 50:
+            return f"str[long, {len(obj)} chars]"
+        return "str"
+    return type(obj).__name__
 
+
+@app.get("/api/debug_fl_schema/{ticker}")
+async def debug_fl_schema(ticker: str):
+    """Schema scanner — calls every FlashLive event-level endpoint
+    for a match and returns the SHAPE of each response (not the
+    data). Lets you see at a glance which endpoints have nested
+    sub-tabs and how deep they go.
+
+    Usage: /api/debug_fl_schema/KXARGPREMDIVGAME-26APR25SARTIG
+    """
+    ticker = (ticker or "").strip().upper()
+    if not ticker:
+        return {"error": "ticker required"}
+    # Find FlashLive event_id (same lookup pattern as debug_fl)
+    get_data()
+    records = _cache.get("data_all") or _cache.get("data") or []
+    found = None
+    for r in records:
+        if r.get("event_ticker") == ticker:
+            found = r
+            break
+    if not found:
+        return {"error": f"event {ticker!r} not found in cache"}
+    try:
+        from flashlive_feed import match_game, _fl_get
+        title = found.get("title", "")
+        sport = found.get("_sport", "")
+        g = match_game(title, sport)
+        if not g:
+            return {"error": "no FlashLive match found",
+                    "title": title, "sport": sport}
+        fl_id = g.get("event_id")
+        if not fl_id:
+            return {"error": "no FlashLive event_id"}
+        stage_id = g.get("tournament_stage_id", "")
+        season_id = g.get("tournament_season_id", "")
+        # Endpoints that take just event_id
+        event_endpoints = [
+            "/v1/events/data",
+            "/v1/events/details",
+            "/v1/events/brief",
+            "/v1/events/summary",
+            "/v1/events/summary-incidents",
+            "/v1/events/summary-results",
+            "/v1/events/statistics",
+            "/v1/events/lineups",
+            "/v1/events/predicted-lineups",
+            "/v1/events/missing-players",
+            "/v1/events/player-stats",
+            "/v1/events/h2h",
+            "/v1/events/commentary",
+            "/v1/events/news",
+            "/v1/events/highlights",
+            "/v1/events/report",
+            "/v1/events/last-change",
+            "/v1/events/odds",
+        ]
+        out = {
+            "event_id": fl_id,
+            "stage_id": stage_id,
+            "season_id": season_id,
+            "endpoints": {},
+        }
+        for ep in event_endpoints:
+            try:
+                data = await _fl_get(ep, {"event_id": fl_id})
+                out["endpoints"][ep] = {
+                    "has_data": data is not None,
+                    "shape": _describe_fl(data),
+                }
+            except Exception as ex:
+                out["endpoints"][ep] = {"error": str(ex)[:200]}
+        # Tournament endpoints (need stage_id)
+        if stage_id:
+            tournament_endpoints = [
+                ("/v1/tournaments/standings", {"tournament_stage_id": stage_id, "standing_type": "overall", "tournament_season_id": season_id}),
+                ("/v1/tournaments/standings/tabs", {"tournament_stage_id": stage_id, "tournament_season_id": season_id}),
+                ("/v1/tournaments/stages/data", {"tournament_stage_id": stage_id}),
+            ]
+            for ep, params in tournament_endpoints:
+                try:
+                    data = await _fl_get(ep, params)
+                    out["endpoints"][ep] = {
+                        "has_data": data is not None,
+                        "shape": _describe_fl(data),
+                    }
+                except Exception as ex:
+                    out["endpoints"][ep] = {"error": str(ex)[:200]}
+        return out
+    except Exception as e:
+        return {"error": str(e)[:300]}
 @app.get("/api/event/{ticker}/debug_fl")
 async def debug_flashlive_data(ticker: str):
     """Debug: show raw FlashLive API responses for all endpoints."""
